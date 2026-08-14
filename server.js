@@ -9,20 +9,18 @@
  *      nguyên nội dung 2 file Excel vào 2 tab này, giữ nguyên hàng
  *      tiêu đề cột giống file gốc).
  *   2. Lọc đúng 6 sản phẩm trà C2, gộp theo siêu thị, quy đổi thùng.
- *   3. Trả lời lại đúng định dạng báo cáo (dạng thẻ Flex Message đẹp).
+ *   3. Trả lời lại đúng định dạng báo cáo.
  *
- * CẦN CHUẨN BỊ TRƯỚC KHI CHẠY (điền vào file .env cùng thư mục, hoặc biến
- * môi trường trên Render):
+ * CẦN CHUẨN BỊ TRƯỚC KHI CHẠY (điền vào file .env cùng thư mục):
  * ------------------------------------------------------------
  *   LINE_CHANNEL_ACCESS_TOKEN=...........(lấy trong LINE Developers Console)
  *   LINE_CHANNEL_SECRET=..................(lấy trong LINE Developers Console)
- *   GOOGLE_SERVICE_ACCOUNT_JSON=..........(nội dung file json service account,
- *      dán nguyên cả JSON vào biến này - dùng khi deploy lên Render)
- *   HOẶC GOOGLE_SERVICE_ACCOUNT_KEY_PATH=./service-account.json
- *      (đường dẫn tới file json, chỉ dùng khi chạy local trên máy)
+ *   GOOGLE_SERVICE_ACCOUNT_KEY_PATH=./service-account.json
+ *      (đường dẫn tới file json service account anh đang có trên máy)
  *   GOOGLE_SHEET_ID=..............(ID của Google Sheet - lấy trong URL:
  *      docs.google.com/spreadsheets/d/<ID_Ở_ĐÂY>/edit)
- *   GOOGLE_SHEET_TAB_TON=TON       (tên tab chứa data Tồn)
+ *   GOOGLE_SHEET_TAB_TON=TON       (tên tab chứa data Tồn - đổi cho khớp
+ *      tên tab thật anh đặt)
  *   GOOGLE_SHEET_TAB_DOANHTHU=DOANHTHU  (tên tab chứa data Doanh thu)
  *   PORT=3000
  *
@@ -150,7 +148,7 @@ function docBan(rows) {
 }
 
 // ---------------------------------------------------------------------------
-// TÍNH TOÁN
+// TÍNH TOÁN + FORMAT BÁO CÁO
 // ---------------------------------------------------------------------------
 function tenNganSieuThi(tenDayDu) {
   if (!tenDayDu) return '';
@@ -192,6 +190,35 @@ function tinhDuLieu(ton, ban) {
   const tongTl = tongMauSo > 0 ? (tongBan / tongMauSo) * 100 : 0;
 
   return { rows, tong: { ton: tongTon, ban: tongBan, tl: tongTl, soSieuThi: rows.length } };
+}
+
+function taoNoiDungBaoCao(ton, ban) {
+  const { rows, tong } = tinhDuLieu(ton, ban);
+  const now = new Date();
+  const thoiGian = now.toLocaleString('vi-VN', {
+    hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric',
+  });
+
+  const lines = [];
+  lines.push('🍵 BÁO CÁO TRÀ');
+  Object.values(SAN_PHAM_TRA).forEach((ten) => lines.push(`• ${ten}`));
+  lines.push('');
+  lines.push(
+    `${Object.keys(SAN_PHAM_TRA).length} sản phẩm · cập nhật lúc ${thoiGian} · ` +
+    `${tong.soSieuThi} siêu thị · quy đổi 1 thùng = ${QUY_DOI_THUNG} chai`
+  );
+  lines.push('');
+  lines.push(
+    `TỔNG TẤT CẢ: Tồn ${fmtSo(tong.ton)} thùng | Bán ${fmtSo(tong.ban)} thùng | TL ${fmtPct(tong.tl)}`
+  );
+  lines.push('');
+
+  rows.forEach((r) => {
+    const icon = r.tl >= 20 ? '🟢' : '🔴';
+    lines.push(`${icon} ${r.ten}: Tồn ${fmtSo(r.ton)} | Bán ${fmtSo(r.ban)} | TL ${fmtPct(r.tl)}`);
+  });
+
+  return lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -302,6 +329,291 @@ function taoFlexBaoCao(ton, ban) {
 }
 
 // ---------------------------------------------------------------------------
+// BÁO CÁO DOANH THU / SẢN LƯỢNG (đọc 4 tab thang7_doanhthu, thang8_doanhthu,
+// thang7_sanluong, thang8_sanluong) - kích hoạt khi nhắn "Báo cáo" / "Báo cáo DT"
+// ---------------------------------------------------------------------------
+const GOOGLE_SHEET_TAB_T7_DOANHTHU = process.env.GOOGLE_SHEET_TAB_T7_DOANHTHU || 'thang7_doanhthu.xlsx';
+const GOOGLE_SHEET_TAB_T8_DOANHTHU = process.env.GOOGLE_SHEET_TAB_T8_DOANHTHU || 'thang8_doanhthu.xlsx';
+const GOOGLE_SHEET_TAB_T7_SANLUONG = process.env.GOOGLE_SHEET_TAB_T7_SANLUONG || 'thang7_sanluong.xlsx';
+const GOOGLE_SHEET_TAB_T8_SANLUONG = process.env.GOOGLE_SHEET_TAB_T8_SANLUONG || 'thang8_sanluong.xlsx';
+
+// Nhóm ngành hàng FRESH - còn lại tất cả coi là FMCG
+const NGANH_FRESH = ['Thịt', 'Cá (Hải sản)', 'Rau Củ Quả CL', 'Trái cây', 'Trứng'];
+function laFresh(nganh) {
+  return NGANH_FRESH.includes((nganh || '').trim());
+}
+
+// Chuyển giá trị "Ngày xuất" (có thể là serial number của Google Sheets hoặc
+// chuỗi dd/mm/yyyy) về 1 khoá ngày thống nhất "yyyy-mm-dd" để đếm số ngày.
+function toDateKey(value) {
+  if (typeof value === 'number') {
+    const epoch = Date.UTC(1899, 11, 30); // mốc ngày 0 của Google Sheets
+    const d = new Date(epoch + value * 86400000);
+    return d.toISOString().slice(0, 10);
+  }
+  const s = (value || '').toString().trim();
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return s;
+}
+
+function soNgayTrongThang(thang, nam) {
+  return new Date(nam, thang, 0).getDate();
+}
+
+// Gộp 1 tab (doanh thu hoặc sản lượng) theo Ngành hàng BHX, trả về tổng theo
+// từng ngành + tổng tất cả + số ngày có phát sinh dữ liệu trong tab.
+function gomTheoNganhHang(rows, tenCotGiaTri) {
+  const header = rows[0];
+  const colNgay = timCotTheoTen(header, 'Ngày xuất');
+  const colNganh = timCotTheoTen(header, 'Ngành hàng BHX');
+  const colGiaTri = timCotTheoTen(header, tenCotGiaTri);
+
+  const byNganh = {};
+  const ngayKeys = new Set();
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const ngay = row[colNgay];
+    if (ngay === undefined || ngay === '') continue;
+    ngayKeys.add(toDateKey(ngay));
+
+    const nganh = (row[colNganh] || '').toString().trim();
+    if (!nganh) continue;
+    const giaTri = Number(row[colGiaTri]) || 0;
+    byNganh[nganh] = (byNganh[nganh] || 0) + giaTri;
+  }
+
+  const tong = Object.values(byNganh).reduce((s, v) => s + v, 0);
+  return { byNganh, tong, soNgay: ngayKeys.size };
+}
+
+// Định dạng tiền kiểu VN: >=1 tỷ -> "x,xx tỷ", >=1 triệu -> "x,x triệu", còn lại -> "xxx.xxx đ"
+function fmtTien(n) {
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return (n / 1e9).toFixed(2).replace('.', ',') + ' tỷ';
+  if (abs >= 1e6) return (n / 1e6).toFixed(1).replace('.', ',') + ' triệu';
+  return fmtSo(n) + ' đ';
+}
+
+// Định dạng số lượng kiểu VN 1 chữ số thập phân: 19416.4 -> "19.416,4"
+function fmtSoLuongVN(n) {
+  const rounded = Math.round(n * 10) / 10;
+  const parts = rounded.toFixed(1).split('.');
+  const nguyen = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${nguyen},${parts[1]}`;
+}
+
+// "+12.3%" hoặc "-5.0%" kèm mũi tên
+function tinhPhanTramTangGiam(giaTriMoi, giaTriCu) {
+  if (!giaTriCu) return 0;
+  return ((giaTriMoi - giaTriCu) / giaTriCu) * 100;
+}
+function fmtPctMuiTen(p) {
+  const r = Math.round(p * 10) / 10;
+  const mui = r >= 0 ? '▲' : '▼';
+  const dau = r >= 0 ? '+' : '';
+  return `${mui}${dau}${r.toFixed(1)}%`;
+}
+function mauTangGiam(p) {
+  return p >= 0 ? '#27AE60' : '#E74C3C';
+}
+
+function taoFlexBaoCaoDoanhThu(t7, t8) {
+  const nam = new Date().getFullYear();
+  const soNgayThang8 = soNgayTrongThang(8, nam);
+  const heSoQuyDoi = t8.soNgay > 0 ? soNgayThang8 / t8.soNgay : 0;
+
+  const duKienT8Tong = t8.tong * heSoQuyDoi;
+  const thucTeT7Tong = t7.tong;
+  const momTong = tinhPhanTramTangGiam(duKienT8Tong, thucTeT7Tong);
+
+  const tatCaNganh = new Set([...Object.keys(t7.byNganh), ...Object.keys(t8.byNganh)]);
+  let freshT8 = 0, freshT7 = 0, fmcgT8 = 0, fmcgT7 = 0;
+  const chiTiet = [];
+  tatCaNganh.forEach((nganh) => {
+    const t7v = t7.byNganh[nganh] || 0;
+    const t8vDuKien = (t8.byNganh[nganh] || 0) * heSoQuyDoi;
+    if (laFresh(nganh)) { freshT8 += t8vDuKien; freshT7 += t7v; }
+    else { fmcgT8 += t8vDuKien; fmcgT7 += t7v; }
+    chiTiet.push({ nganh, duKienT8: t8vDuKien, thucTeT7: t7v, mom: tinhPhanTramTangGiam(t8vDuKien, t7v) });
+  });
+
+  const momFresh = tinhPhanTramTangGiam(freshT8, freshT7);
+  const momFmcg = tinhPhanTramTangGiam(fmcgT8, fmcgT7);
+
+  const card1 = {
+    type: 'bubble',
+    size: 'giga',
+    header: {
+      type: 'box', layout: 'vertical', backgroundColor: '#22A45D', paddingAll: '20px',
+      contents: [
+        { type: 'text', text: '📊 BÁO CÁO DOANH THU', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+        { type: 'text', text: `Dự kiến T8 (${t8.soNgay}/${soNgayThang8} ngày) so với T7`, color: '#E8F8EF', size: 'sm', margin: 'sm' },
+      ],
+    },
+    body: {
+      type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'md',
+      contents: [
+        {
+          type: 'box', layout: 'horizontal', contents: [
+            { type: 'box', layout: 'vertical', flex: 1, contents: [
+              { type: 'text', text: 'DỰ KIẾN T8', size: 'xs', color: '#888888' },
+              { type: 'text', text: fmtTien(duKienT8Tong), size: 'md', weight: 'bold' },
+            ]},
+            { type: 'box', layout: 'vertical', flex: 1, contents: [
+              { type: 'text', text: 'THỰC TẾ T7', size: 'xs', color: '#888888' },
+              { type: 'text', text: fmtTien(thucTeT7Tong), size: 'md', weight: 'bold' },
+            ]},
+            { type: 'box', layout: 'vertical', flex: 1, contents: [
+              { type: 'text', text: 'MoM T8 - T7', size: 'xs', color: '#888888' },
+              { type: 'text', text: fmtPctMuiTen(momTong), size: 'md', weight: 'bold', color: mauTangGiam(momTong) },
+              { type: 'text', text: `${momTong >= 0 ? '▲' : '▼'} ${fmtTien(Math.abs(duKienT8Tong - thucTeT7Tong))}`, size: 'xs', color: mauTangGiam(momTong) },
+            ]},
+          ],
+        },
+        { type: 'separator' },
+        { type: 'text', text: 'DOANH THU THEO NGÀNH HÀNG (DỰ KIẾN T8)', size: 'xs', color: '#888888', weight: 'bold' },
+        {
+          type: 'box', layout: 'horizontal', contents: [
+            { type: 'text', text: '🥬 FRESH', size: 'sm', weight: 'bold', flex: 3 },
+            { type: 'text', text: fmtTien(freshT8), size: 'sm', flex: 2, align: 'end' },
+            { type: 'text', text: fmtPctMuiTen(momFresh), size: 'sm', flex: 2, align: 'end', color: mauTangGiam(momFresh), weight: 'bold' },
+          ],
+        },
+        {
+          type: 'box', layout: 'horizontal', contents: [
+            { type: 'text', text: '🛒 FMCG', size: 'sm', weight: 'bold', flex: 3 },
+            { type: 'text', text: fmtTien(fmcgT8), size: 'sm', flex: 2, align: 'end' },
+            { type: 'text', text: fmtPctMuiTen(momFmcg), size: 'sm', flex: 2, align: 'end', color: mauTangGiam(momFmcg), weight: 'bold' },
+          ],
+        },
+        { type: 'text', text: '* Số liệu T8 là dự kiến, chiếu từ dữ liệu thực tế các ngày đã phát sinh', size: 'xxs', color: '#AAAAAA', wrap: true, margin: 'md' },
+      ],
+    },
+  };
+
+  const freshRows = chiTiet.filter((c) => laFresh(c.nganh)).sort((a, b) => b.duKienT8 - a.duKienT8);
+  const fmcgRows = chiTiet.filter((c) => !laFresh(c.nganh)).sort((a, b) => b.duKienT8 - a.duKienT8);
+
+  function dongNganhHang(c) {
+    return {
+      type: 'box', layout: 'horizontal', margin: 'sm', contents: [
+        { type: 'text', text: c.nganh, size: 'sm', flex: 5, wrap: true },
+        { type: 'text', text: fmtTien(c.duKienT8), size: 'sm', flex: 3, align: 'end' },
+        { type: 'text', text: fmtPctMuiTen(c.mom), size: 'sm', flex: 2, align: 'end', color: mauTangGiam(c.mom), weight: 'bold' },
+      ],
+    };
+  }
+
+  const card2 = {
+    type: 'bubble',
+    size: 'giga',
+    header: {
+      type: 'box', layout: 'vertical', backgroundColor: '#2E86DE', paddingAll: '20px',
+      contents: [
+        { type: 'text', text: '📋 CHI TIẾT NGÀNH HÀNG', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+        { type: 'text', text: 'Tăng/giảm doanh thu dự kiến T8 so với T7', color: '#E4F0FD', size: 'sm', margin: 'sm' },
+      ],
+    },
+    body: {
+      type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'sm',
+      contents: [
+        {
+          type: 'box', layout: 'horizontal', contents: [
+            { type: 'text', text: '🥬 Ngành FRESH', size: 'sm', weight: 'bold', flex: 5 },
+            { type: 'text', text: `${momFresh >= 0 ? '▲' : '▼'}${fmtTien(Math.abs(freshT8 - freshT7))} (${fmtPctMuiTen(momFresh).slice(1)})`, size: 'xs', flex: 5, align: 'end', color: mauTangGiam(momFresh), weight: 'bold' },
+          ],
+        },
+        { type: 'separator', margin: 'sm' },
+        ...freshRows.map(dongNganhHang),
+        { type: 'separator', margin: 'md' },
+        {
+          type: 'box', layout: 'horizontal', margin: 'md', contents: [
+            { type: 'text', text: '🛒 Ngành FMCG', size: 'sm', weight: 'bold', flex: 5 },
+            { type: 'text', text: `${momFmcg >= 0 ? '▲' : '▼'}${fmtTien(Math.abs(fmcgT8 - fmcgT7))} (${fmtPctMuiTen(momFmcg).slice(1)})`, size: 'xs', flex: 5, align: 'end', color: mauTangGiam(momFmcg), weight: 'bold' },
+          ],
+        },
+        { type: 'separator', margin: 'sm' },
+        ...fmcgRows.map(dongNganhHang),
+      ],
+    },
+  };
+
+  return { card1, card2, altText: `Báo cáo doanh thu: Dự kiến T8 ${fmtTien(duKienT8Tong)}, MoM ${fmtPctMuiTen(momTong)}` };
+}
+
+function taoFlexSanLuong(t7, t8) {
+  const nam = new Date().getFullYear();
+  const soNgayThang8 = soNgayTrongThang(8, nam);
+  const heSoQuyDoi = t8.soNgay > 0 ? soNgayThang8 / t8.soNgay : 0;
+
+  const duKienT8 = t8.tong * heSoQuyDoi;
+  const thucTeT7 = t7.tong;
+  const mom = tinhPhanTramTangGiam(duKienT8, thucTeT7);
+
+  return {
+    type: 'bubble',
+    size: 'giga',
+    header: {
+      type: 'box', layout: 'vertical', backgroundColor: '#E67E22', paddingAll: '20px',
+      contents: [
+        { type: 'text', text: '📦 SẢN LƯỢNG BÁN', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+        { type: 'text', text: `Dự kiến T8 (${t8.soNgay}/${soNgayThang8} ngày) so với T7`, color: '#FCEEE0', size: 'sm', margin: 'sm' },
+      ],
+    },
+    body: {
+      type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'md',
+      contents: [
+        {
+          type: 'box', layout: 'horizontal', contents: [
+            { type: 'box', layout: 'vertical', flex: 1, contents: [
+              { type: 'text', text: 'DỰ KIẾN T8', size: 'xs', color: '#888888' },
+              { type: 'text', text: fmtSoLuongVN(duKienT8), size: 'md', weight: 'bold' },
+            ]},
+            { type: 'box', layout: 'vertical', flex: 1, contents: [
+              { type: 'text', text: 'THỰC TẾ T7', size: 'xs', color: '#888888' },
+              { type: 'text', text: fmtSoLuongVN(thucTeT7), size: 'md', weight: 'bold' },
+            ]},
+            { type: 'box', layout: 'vertical', flex: 1, contents: [
+              { type: 'text', text: 'MoM T8 - T7', size: 'xs', color: '#888888' },
+              { type: 'text', text: fmtPctMuiTen(mom), size: 'md', weight: 'bold', color: mauTangGiam(mom) },
+              { type: 'text', text: `${mom >= 0 ? '▲' : '▼'} ${fmtSoLuongVN(Math.abs(duKienT8 - thucTeT7))}`, size: 'xs', color: mauTangGiam(mom) },
+            ]},
+          ],
+        },
+      ],
+    },
+  };
+}
+
+async function generateRevenueReport() {
+  const sheets = getSheetsClient();
+
+  const [rowsT7DT, rowsT8DT, rowsT7SL, rowsT8SL] = await Promise.all([
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_T7_DOANHTHU),
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_T8_DOANHTHU),
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_T7_SANLUONG),
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_T8_SANLUONG),
+  ]);
+
+  const t7DT = gomTheoNganhHang(rowsT7DT, 'Doanh thu');
+  const t8DT = gomTheoNganhHang(rowsT8DT, 'Doanh thu');
+  const t7SL = gomTheoNganhHang(rowsT7SL, 'Sản lượng bán');
+  const t8SL = gomTheoNganhHang(rowsT8SL, 'Sản lượng bán');
+
+  const { card1, card2, altText } = taoFlexBaoCaoDoanhThu(t7DT, t8DT);
+  const card3 = taoFlexSanLuong(t7SL, t8SL);
+
+  return [
+    { type: 'flex', altText: altText.slice(0, 400), contents: card1 },
+    { type: 'flex', altText: 'Chi tiết ngành hàng dự kiến T8', contents: card2 },
+    { type: 'flex', altText: 'Sản lượng bán dự kiến T8', contents: card3 },
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // TẠO BÁO CÁO ĐẦY ĐỦ: ĐỌC 2 TAB TRONG GOOGLE SHEET -> FLEX MESSAGE
 // ---------------------------------------------------------------------------
 async function generateTraReport() {
@@ -324,10 +636,14 @@ async function generateTraReport() {
 const app = express();
 const client = new line.Client(config);
 
-function laTrigger(text) {
-  if (!text) return false;
+// Trả về 'tra' nếu nhắn "báo cáo trà", 'doanhthu' nếu nhắn "báo cáo"/"báo cáo dt"
+// (kiểm tra "trà" trước để không bị từ khoá "báo cáo" tổng quát nuốt mất)
+function loaiTrigger(text) {
+  if (!text) return null;
   const t = text.trim().toLowerCase();
-  return TRIGGER_KEYWORDS.some((kw) => t === kw || t.includes(kw));
+  if (TRIGGER_KEYWORDS.some((kw) => t === kw || t.includes(kw))) return 'tra';
+  if (t === 'báo cáo' || t === 'bao cao' || t.includes('báo cáo') || t.includes('bao cao')) return 'doanhthu';
+  return null;
 }
 
 app.post('/webhook', line.middleware(config), async (req, res) => {
@@ -341,23 +657,28 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
     console.log(`[webhook] event type=${event.type} messageType=${event.message?.type} text="${event.message?.text}"`);
 
     if (event.type !== 'message' || event.message.type !== 'text') continue;
-    if (!laTrigger(event.message.text)) {
+    const loai = loaiTrigger(event.message.text);
+    if (!loai) {
       console.log('[webhook] text không khớp từ khoá trigger, bỏ qua');
       continue;
     }
 
-    console.log('[webhook] khớp trigger, đang tạo báo cáo...');
+    console.log(`[webhook] khớp trigger loại="${loai}", đang tạo báo cáo...`);
     try {
-      const flexMessage = await generateTraReport();
-      console.log('[webhook] tạo báo cáo thành công, đang reply...');
-      await client.replyMessage(event.replyToken, flexMessage);
-      console.log('[webhook] đã reply xong');
+      if (loai === 'tra') {
+        const flexMessage = await generateTraReport();
+        await client.replyMessage(event.replyToken, flexMessage);
+      } else {
+        const flexMessages = await generateRevenueReport();
+        await client.replyMessage(event.replyToken, flexMessages);
+      }
+      console.log('[webhook] tạo báo cáo + reply thành công');
     } catch (err) {
-      console.error('[webhook] Lỗi tạo báo cáo trà:', err);
+      console.error('[webhook] Lỗi tạo báo cáo:', err);
       try {
         await client.replyMessage(event.replyToken, {
           type: 'text',
-          text: `⚠️ Không tạo được báo cáo trà: ${err.message}`,
+          text: `⚠️ Không tạo được báo cáo: ${err.message}`,
         });
       } catch (replyErr) {
         console.error('[webhook] Lỗi luôn cả khi reply lỗi (có thể replyToken hết hạn):', replyErr.message);
