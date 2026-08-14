@@ -11,16 +11,18 @@
  *   2. Lọc đúng 6 sản phẩm trà C2, gộp theo siêu thị, quy đổi thùng.
  *   3. Trả lời lại đúng định dạng báo cáo.
  *
- * CẦN CHUẨN BỊ TRƯỚC KHI CHẠY (điền vào file .env cùng thư mục):
+ * CẦN CHUẨN BỊ TRƯỚC KHI CHẠY (điền vào file .env cùng thư mục, hoặc biến
+ * môi trường trên Render):
  * ------------------------------------------------------------
  *   LINE_CHANNEL_ACCESS_TOKEN=...........(lấy trong LINE Developers Console)
  *   LINE_CHANNEL_SECRET=..................(lấy trong LINE Developers Console)
- *   GOOGLE_SERVICE_ACCOUNT_KEY_PATH=./service-account.json
- *      (đường dẫn tới file json service account anh đang có trên máy)
+ *   GOOGLE_SERVICE_ACCOUNT_JSON=..........(nội dung file json service account,
+ *      dán nguyên cả JSON vào biến này - dùng khi deploy lên Render)
+ *   HOẶC GOOGLE_SERVICE_ACCOUNT_KEY_PATH=./service-account.json
+ *      (đường dẫn tới file json, chỉ dùng khi chạy local trên máy)
  *   GOOGLE_SHEET_ID=..............(ID của Google Sheet - lấy trong URL:
  *      docs.google.com/spreadsheets/d/<ID_Ở_ĐÂY>/edit)
- *   GOOGLE_SHEET_TAB_TON=TON       (tên tab chứa data Tồn - đổi cho khớp
- *      tên tab thật anh đặt)
+ *   GOOGLE_SHEET_TAB_TON=TON       (tên tab chứa data Tồn)
  *   GOOGLE_SHEET_TAB_DOANHTHU=DOANHTHU  (tên tab chứa data Doanh thu)
  *   PORT=3000
  *
@@ -73,10 +75,20 @@ const QUY_DOI_THUNG = 24; // 1 thùng = 24 chai
 // GOOGLE SHEETS: đọc trực tiếp 2 tab TON / DOANHTHU
 // ---------------------------------------------------------------------------
 function getSheetsClient() {
-  const auth = new google.auth.GoogleAuth({
-    keyFile: GOOGLE_SERVICE_ACCOUNT_KEY_PATH,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-  });
+  const scopes = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
+  let auth;
+
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    // Trên Render: credential được lưu thẳng dưới dạng nội dung JSON trong biến môi trường
+    const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    auth = new google.auth.GoogleAuth({ credentials, scopes });
+  } else if (GOOGLE_SERVICE_ACCOUNT_KEY_PATH) {
+    // Chạy local: credential là 1 file .json nằm trên đĩa
+    auth = new google.auth.GoogleAuth({ keyFile: GOOGLE_SERVICE_ACCOUNT_KEY_PATH, scopes });
+  } else {
+    throw new Error('Thiếu credential Google: cần GOOGLE_SERVICE_ACCOUNT_JSON hoặc GOOGLE_SERVICE_ACCOUNT_KEY_PATH');
+  }
+
   return google.sheets({ version: 'v4', auth });
 }
 
