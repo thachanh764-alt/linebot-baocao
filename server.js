@@ -588,6 +588,117 @@ function taoFlexSanLuong(t7, t8) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// BÁO CÁO NGÀY THEO TỪNG SIÊU THỊ (đọc tab baocao_ngay.xlsx)
+// - kích hoạt khi nhắn "Báo cáo ngày"
+// ---------------------------------------------------------------------------
+const GOOGLE_SHEET_TAB_BAOCAO_NGAY = process.env.GOOGLE_SHEET_TAB_BAOCAO_NGAY || 'baocao_ngay.xlsx';
+const SO_THE_MOI_CAROUSEL = 12; // giới hạn của LINE: tối đa 12 bubble / carousel
+const SO_CAROUSEL_TOI_DA = 5; // giới hạn của LINE: tối đa 5 tin nhắn / lần reply
+
+const TEN_THU_VN = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+function fmtNgayVN(d) {
+  return `${TEN_THU_VN[d.getDay()]}, ${d.toLocaleDateString('vi-VN')}`;
+}
+
+function dongThongTin(icon, nhan, giaTri, dam) {
+  return {
+    type: 'box', layout: 'horizontal', contents: [
+      { type: 'text', text: `${icon} ${nhan}`, size: 'sm', flex: 3, color: '#555555' },
+      { type: 'text', text: giaTri, size: dam ? 'md' : 'sm', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular', color: dam ? '#22A45D' : '#111111' },
+    ],
+  };
+}
+
+function taoTheBaoCaoNgay(cuaHang, ngayHienThi) {
+  const tongDoanhThu = cuaHang.dtOffline + cuaHang.dtOnline;
+  const giaTriBill = cuaHang.soBill > 0 ? tongDoanhThu / cuaHang.soBill : 0;
+
+  return {
+    type: 'bubble',
+    size: 'mega',
+    header: {
+      type: 'box', layout: 'vertical', backgroundColor: '#22A45D', paddingAll: '16px',
+      contents: [
+        { type: 'text', text: '📊 BÁO CÁO DOANH THU', color: '#FFFFFF', weight: 'bold', size: 'md' },
+        { type: 'text', text: `📅 ${ngayHienThi}`, color: '#E8F8EF', size: 'xs', margin: 'sm' },
+      ],
+    },
+    body: {
+      type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'sm',
+      contents: [
+        { type: 'text', text: `🏢 ${cuaHang.ten}`, weight: 'bold', size: 'sm', wrap: true, margin: 'none' },
+        { type: 'separator', margin: 'md' },
+        dongThongTin('🏬', 'Doanh thu offline', fmtSo(cuaHang.dtOffline) + ' đ', false),
+        dongThongTin('🛍️', 'Doanh thu online', fmtSo(cuaHang.dtOnline) + ' đ', false),
+        dongThongTin('📋', 'Số lượng bill', fmtSo(cuaHang.soBill), false),
+        dongThongTin('🧾', 'Bill online', fmtSo(cuaHang.soBillOnline), false),
+        dongThongTin('📈', 'Giá trị bill', fmtSo(giaTriBill) + ' đ', false),
+        { type: 'separator', margin: 'md' },
+        dongThongTin('💰', 'Tổng doanh thu', fmtSo(tongDoanhThu) + ' đ', true),
+      ],
+    },
+  };
+}
+
+async function generateDailyStoreReport() {
+  const sheets = getSheetsClient();
+  const rows = await docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_BAOCAO_NGAY);
+
+  const header = rows[0];
+  const colNgay = timCotTheoTen(header, 'Ngày');
+  const colMaST = timCotTheoTen(header, 'Mã siêu thị');
+  const colTenST = timCotTheoTen(header, 'Tên siêu thị');
+  const colDTOffline = timCotTheoTen(header, 'Doanh thu offline');
+  const colDTOnline = timCotTheoTen(header, 'Doanh thu Online');
+  const colSoBill = timCotTheoTen(header, 'Tổng số bill');
+  const colSoBillOnline = timCotTheoTen(header, 'Tổng số bill online');
+
+  // Chỉ lấy đúng ngày mới nhất có trong tab (tránh dữ liệu ngày cũ còn sót lại)
+  let ngayMoiNhat = null;
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row[colNgay] === undefined || row[colNgay] === '') continue;
+    const key = toDateKey(row[colNgay]);
+    if (ngayMoiNhat === null || key > ngayMoiNhat) ngayMoiNhat = key;
+  }
+
+  const cuaHangs = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row[colNgay] === undefined || row[colNgay] === '') continue;
+    if (toDateKey(row[colNgay]) !== ngayMoiNhat) continue;
+
+    cuaHangs.push({
+      ma: row[colMaST],
+      ten: row[colTenST] || row[colMaST],
+      dtOffline: Number(row[colDTOffline]) || 0,
+      dtOnline: Number(row[colDTOnline]) || 0,
+      soBill: Number(row[colSoBill]) || 0,
+      soBillOnline: Number(row[colSoBillOnline]) || 0,
+    });
+  }
+
+  if (cuaHangs.length === 0) {
+    throw new Error(`Tab "${GOOGLE_SHEET_TAB_BAOCAO_NGAY}" chưa có dữ liệu siêu thị nào`);
+  }
+
+  const ngayHienThi = fmtNgayVN(new Date());
+  const theTatCa = cuaHangs.map((ch) => taoTheBaoCaoNgay(ch, ngayHienThi));
+
+  const messages = [];
+  for (let i = 0; i < theTatCa.length && messages.length < SO_CAROUSEL_TOI_DA; i += SO_THE_MOI_CAROUSEL) {
+    const nhom = theTatCa.slice(i, i + SO_THE_MOI_CAROUSEL);
+    messages.push({
+      type: 'flex',
+      altText: `Báo cáo ngày: ${cuaHangs.length} siêu thị (${ngayHienThi})`,
+      contents: nhom.length === 1 ? nhom[0] : { type: 'carousel', contents: nhom },
+    });
+  }
+
+  return messages;
+}
+
 async function generateRevenueReport() {
   const sheets = getSheetsClient();
 
@@ -636,12 +747,14 @@ async function generateTraReport() {
 const app = express();
 const client = new line.Client(config);
 
-// Trả về 'tra' nếu nhắn "báo cáo trà", 'doanhthu' nếu nhắn "báo cáo"/"báo cáo dt"
-// (kiểm tra "trà" trước để không bị từ khoá "báo cáo" tổng quát nuốt mất)
+// Trả về 'tra' nếu nhắn "báo cáo trà", 'ngay' nếu nhắn "báo cáo ngày",
+// 'doanhthu' nếu nhắn "báo cáo"/"báo cáo dt" chung chung
+// (kiểm tra các từ khoá cụ thể trước để không bị "báo cáo" tổng quát nuốt mất)
 function loaiTrigger(text) {
   if (!text) return null;
   const t = text.trim().toLowerCase();
   if (TRIGGER_KEYWORDS.some((kw) => t === kw || t.includes(kw))) return 'tra';
+  if (t.includes('báo cáo ngày') || t.includes('bao cao ngay')) return 'ngay';
   if (t === 'báo cáo' || t === 'bao cao' || t.includes('báo cáo') || t.includes('bao cao')) return 'doanhthu';
   return null;
 }
@@ -668,6 +781,9 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
       if (loai === 'tra') {
         const flexMessage = await generateTraReport();
         await client.replyMessage(event.replyToken, flexMessage);
+      } else if (loai === 'ngay') {
+        const flexMessages = await generateDailyStoreReport();
+        await client.replyMessage(event.replyToken, flexMessages);
       } else {
         const flexMessages = await generateRevenueReport();
         await client.replyMessage(event.replyToken, flexMessages);
