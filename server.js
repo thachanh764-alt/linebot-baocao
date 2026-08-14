@@ -26,9 +26,9 @@
  *
  * Và phải SHARE Google Sheet đó cho email của service account
  * (vd: linebot-sheets@linebot-baocao.iam.gserviceaccount.com) với quyền
- * ít nhất là "Viewer" (Người xem), nếu không bot sẽ không đọc được data.
+ * Editor (không phải chỉ Viewer, vì bot cần ghi/nạp data từ file gửi vào).
  *
- * QUAN TRỌNG: 2 tab đó phải giữ nguyên tên cột giống file gốc ở hàng đầu
+ * QUAN TRỌNG: các tab phải giữ nguyên tên cột giống file gốc ở hàng đầu
  * tiên: tab TỒN cần có cột "Mã Model", "Tên siêu thị", "Tồn kho siêu thị";
  * tab DOANH THU cần có cột "Mã Model", "Tên siêu thị", "Tổng số lượng".
  *
@@ -39,6 +39,7 @@ require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
 const { google } = require('googleapis');
+const XLSX = require('xlsx');
 
 // ---------------------------------------------------------------------------
 // CẤU HÌNH
@@ -73,7 +74,9 @@ const QUY_DOI_THUNG = 24; // 1 thùng = 24 chai
 // GOOGLE SHEETS: đọc trực tiếp 2 tab TON / DOANHTHU
 // ---------------------------------------------------------------------------
 function getSheetsClient() {
-  const scopes = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
+  // Cần quyền ghi (spreadsheets - không phải readonly) vì bot còn phải nạp
+  // (append) dữ liệu từ file người dùng gửi vào group.
+  const scopes = ['https://www.googleapis.com/auth/spreadsheets'];
   let auth;
 
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
@@ -742,6 +745,106 @@ async function generateTraReport() {
 }
 
 // ---------------------------------------------------------------------------
+// NẠP FILE NGƯỜI DÙNG GỬI TRỰC TIẾP VÀO GROUP (.xlsx/.xls)
+// - Tự nhận diện loại báo cáo qua tiêu đề cột, nối thêm data vào đúng tab,
+//   rồi tự trả báo cáo tương ứng.
+// ---------------------------------------------------------------------------
+
+// Tải nội dung file người dùng gửi trong LINE về dạng Buffer
+async function taiNoiDungFileLine(messageId) {
+  const stream = await client.getMessageContent(messageId);
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
+// Xác định tháng (7 hoặc 8) dựa vào cột "Ngày xuất" xuất hiện nhiều nhất trong file
+function xacDinhThangDuLieu(header, dataRows) {
+  const idx = header.indexOf('Ngày xuất');
+  const dem = {};
+  for (const row of dataRows) {
+    const v = row[idx];
+    if (v === undefined || v === null || v === '') continue;
+    const key = toDateKey(v);
+    const thang = parseInt(key.slice(5, 7), 10);
+    if (!Number.isNaN(thang)) dem[thang] = (dem[thang] || 0) + 1;
+  }
+  const phoBien = Object.entries(dem).sort((a, b) => b[1] - a[1])[0];
+  if (!phoBien) throw new Error('Không xác định được tháng của dữ liệu (cột "Ngày xuất" trống)');
+  const thang = parseInt(phoBien[0], 10);
+  if (thang !== 7 && thang !== 8) {
+    throw new Error(`Hiện chỉ hỗ trợ dữ liệu tháng 7 hoặc tháng 8, file này là tháng ${thang}`);
+  }
+  return thang;
+}
+
+// Nhận diện loại file dựa theo tiêu đề cột -> trả về { loai, tenTab } hoặc null nếu không nhận ra
+function nhanDangLoaiFile(header, dataRows) {
+  const co = (ten) => header.includes(ten);
+
+  if (co('Mã Model') && co('Tồn kho siêu thị')) {
+    return { loai: 'ton', tenTab: GOOGLE_SHEET_TAB_TON };
+  }
+  if (co('Mã Model') && co('Tổng số lượng') && !co('Tồn kho siêu thị')) {
+    return { loai: 'tra_ban', tenTab: GOOGLE_SHEET_TAB_DOANHTHU };
+  }
+  if (co('Ngày') && co('Mã siêu thị') && co('Doanh thu offline')) {
+    return { loai: 'ngay', tenTab: GOOGLE_SHEET_TAB_BAOCAO_NGAY };
+  }
+  if (co('Ngày xuất') && co('Ngành hàng BHX') && co('Sản lượng bán')) {
+    const thang = xacDinhThangDuLieu(header, dataRows);
+    return { loai: 'sanluong', tenTab: thang === 7 ? GOOGLE_SHEET_TAB_T7_SANLUONG : GOOGLE_SHEET_TAB_T8_SANLUONG };
+  }
+  if (co('Ngày xuất') && co('Ngành hàng BHX') && co('Doanh thu') && !co('Sản lượng bán')) {
+    const thang = xacDinhThangDuLieu(header, dataRows);
+    return { loai: 'doanhthu', tenTab: thang === 7 ? GOOGLE_SHEET_TAB_T7_DOANHTHU : GOOGLE_SHEET_TAB_T8_DOANHTHU };
+  }
+  return null;
+}
+
+// Nạp data vào đúng tab (nối thêm, giữ nguyên data cũ), trả về { loai, tenTab, soDong }
+async function napFileVaoSheet(fileName, buffer) {
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  if (allRows.length < 2) throw new Error('File trống hoặc không đọc được dữ liệu');
+
+  const header = allRows[0].map((h) => (h || '').toString().trim());
+  const dataRows = allRows.slice(1).filter((r) => r && r.some((v) => v !== null && v !== ''));
+  if (dataRows.length === 0) throw new Error('File không có dòng dữ liệu nào');
+
+  const nhanDang = nhanDangLoaiFile(header, dataRows);
+  if (!nhanDang) {
+    throw new Error(
+      `Không nhận diện được loại báo cáo từ file "${fileName || ''}". Kiểm tra lại tiêu đề cột trong file có đúng mẫu không.`
+    );
+  }
+
+  const sheets = getSheetsClient();
+  const destRows = await docTabThanhMangDong(sheets, nhanDang.tenTab);
+  const destHeader = destRows[0];
+
+  // Sắp lại cột theo đúng thứ tự cột của tab đích (khớp theo TÊN cột, không
+  // phụ thuộc thứ tự cột trong file người dùng gửi)
+  const rowsToAppend = dataRows.map((row) =>
+    destHeader.map((tenCot) => {
+      const idx = header.indexOf(tenCot);
+      return idx === -1 ? '' : row[idx] ?? '';
+    })
+  );
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: nhanDang.tenTab,
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: { values: rowsToAppend },
+  });
+
+  return { loai: nhanDang.loai, tenTab: nhanDang.tenTab, soDong: rowsToAppend.length };
+}
+
+// ---------------------------------------------------------------------------
 // LINE BOT
 // ---------------------------------------------------------------------------
 const app = express();
@@ -769,7 +872,48 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
   for (const event of events) {
     console.log(`[webhook] event type=${event.type} messageType=${event.message?.type} text="${event.message?.text}"`);
 
-    if (event.type !== 'message' || event.message.type !== 'text') continue;
+    if (event.type !== 'message') continue;
+
+    // ---- Người dùng gửi FILE (.xlsx/.xls) vào group -> tự nạp + tự báo cáo ----
+    if (event.message.type === 'file') {
+      const fileName = event.message.fileName || '';
+      if (!/\.(xlsx|xls)$/i.test(fileName)) {
+        console.log(`[webhook] file "${fileName}" không phải Excel, bỏ qua`);
+        continue;
+      }
+      console.log(`[webhook] nhận file "${fileName}", đang tải + nạp vào Sheet...`);
+      try {
+        const buffer = await taiNoiDungFileLine(event.message.id);
+        const ketQua = await napFileVaoSheet(fileName, buffer);
+        console.log(`[webhook] đã nạp ${ketQua.soDong} dòng vào tab "${ketQua.tenTab}" (loại: ${ketQua.loai})`);
+
+        // Nạp xong tự trả báo cáo tương ứng loại file đó
+        try {
+          let baoCao;
+          if (ketQua.loai === 'ton' || ketQua.loai === 'tra_ban') baoCao = await generateTraReport();
+          else if (ketQua.loai === 'ngay') baoCao = await generateDailyStoreReport();
+          else baoCao = await generateRevenueReport();
+          await client.replyMessage(event.replyToken, baoCao);
+        } catch (loiBaoCao) {
+          // Nạp file đã thành công, chỉ là chưa đủ data để lên báo cáo (vd thiếu tab kia)
+          console.error('[webhook] nạp file OK nhưng chưa tạo được báo cáo:', loiBaoCao.message);
+          await client.replyMessage(event.replyToken, {
+            type: 'text',
+            text: `✅ Đã nạp ${ketQua.soDong} dòng vào tab "${ketQua.tenTab}".\n⚠️ Chưa tạo được báo cáo ngay: ${loiBaoCao.message}`,
+          });
+        }
+      } catch (err) {
+        console.error('[webhook] Lỗi nạp file:', err);
+        try {
+          await client.replyMessage(event.replyToken, { type: 'text', text: `❌ Lỗi nạp file: ${err.message}` });
+        } catch (replyErr) {
+          console.error('[webhook] Lỗi luôn cả khi reply lỗi:', replyErr.message);
+        }
+      }
+      continue;
+    }
+
+    if (event.message.type !== 'text') continue;
     const loai = loaiTrigger(event.message.text);
     if (!loai) {
       console.log('[webhook] text không khớp từ khoá trigger, bỏ qua');
