@@ -9,7 +9,7 @@
  *      nguyên nội dung 2 file Excel vào 2 tab này, giữ nguyên hàng
  *      tiêu đề cột giống file gốc).
  *   2. Lọc đúng 6 sản phẩm trà C2, gộp theo siêu thị, quy đổi thùng.
- *   3. Trả lời lại đúng định dạng báo cáo.
+ *   3. Trả lời lại đúng định dạng báo cáo (dạng thẻ Flex Message đẹp).
  *
  * CẦN CHUẨN BỊ TRƯỚC KHI CHẠY (điền vào file .env cùng thư mục, hoặc biến
  * môi trường trên Render):
@@ -150,7 +150,7 @@ function docBan(rows) {
 }
 
 // ---------------------------------------------------------------------------
-// TÍNH TOÁN + FORMAT BÁO CÁO
+// TÍNH TOÁN
 // ---------------------------------------------------------------------------
 function tenNganSieuThi(tenDayDu) {
   if (!tenDayDu) return '';
@@ -194,37 +194,115 @@ function tinhDuLieu(ton, ban) {
   return { rows, tong: { ton: tongTon, ban: tongBan, tl: tongTl, soSieuThi: rows.length } };
 }
 
-function taoNoiDungBaoCao(ton, ban) {
+// ---------------------------------------------------------------------------
+// FLEX MESSAGE (thẻ đẹp giống ảnh mẫu) - dùng để gửi qua LINE
+// ---------------------------------------------------------------------------
+const MAU_XANH_HEADER = '#2C4A3B';
+const MAU_XANH_TOT = '#2ECC71';
+const MAU_DO_XAU = '#E74C3C';
+
+function dongBang(label, ton, ban, tl, dam) {
+  return {
+    type: 'box',
+    layout: 'horizontal',
+    contents: [
+      { type: 'text', text: label, size: 'sm', flex: 5, wrap: true, weight: dam ? 'bold' : 'regular', color: dam ? '#1a1a1a' : '#333333' },
+      { type: 'text', text: ton, size: 'sm', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
+      { type: 'text', text: ban, size: 'sm', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
+      { type: 'text', text: tl, size: 'sm', flex: 2, align: 'end', weight: 'bold', color: dam ? MAU_DO_XAU : undefined },
+    ],
+  };
+}
+
+function taoFlexBaoCao(ton, ban) {
   const { rows, tong } = tinhDuLieu(ton, ban);
   const now = new Date();
   const thoiGian = now.toLocaleString('vi-VN', {
     hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric',
   });
 
-  const lines = [];
-  lines.push('🍵 BÁO CÁO TRÀ');
-  Object.values(SAN_PHAM_TRA).forEach((ten) => lines.push(`• ${ten}`));
-  lines.push('');
-  lines.push(
-    `${Object.keys(SAN_PHAM_TRA).length} sản phẩm · cập nhật lúc ${thoiGian} · ` +
-    `${tong.soSieuThi} siêu thị · quy đổi 1 thùng = ${QUY_DOI_THUNG} chai`
-  );
-  lines.push('');
-  lines.push(
-    `TỔNG TẤT CẢ: Tồn ${fmtSo(tong.ton)} thùng | Bán ${fmtSo(tong.ban)} thùng | TL ${fmtPct(tong.tl)}`
-  );
-  lines.push('');
+  const headerContents = [
+    {
+      type: 'text',
+      text: '🍵 BÁO CÁO TRÀ',
+      color: '#FFFFFF',
+      weight: 'bold',
+      size: 'lg',
+    },
+    ...Object.values(SAN_PHAM_TRA).map((ten) => ({
+      type: 'text',
+      text: `• ${ten}`,
+      color: '#EAEAEA',
+      size: 'sm',
+      wrap: true,
+    })),
+    {
+      type: 'text',
+      text: `${Object.keys(SAN_PHAM_TRA).length} sản phẩm · cập nhật lúc ${thoiGian} · ${tong.soSieuThi} siêu thị · quy đổi 1 thùng = ${QUY_DOI_THUNG} chai`,
+      color: '#CFCFCF',
+      size: 'xs',
+      wrap: true,
+      margin: 'md',
+    },
+  ];
+
+  const bodyContents = [
+    dongBang('Siêu thị', 'Tồn', 'Bán', 'TL%', false),
+    { type: 'separator', margin: 'sm' },
+    dongBang('TỔNG TẤT CẢ', fmtSo(tong.ton), fmtSo(tong.ban), fmtPct(tong.tl), true),
+    { type: 'separator', margin: 'sm' },
+  ];
 
   rows.forEach((r) => {
-    const icon = r.tl >= 20 ? '🟢' : '🔴';
-    lines.push(`${icon} ${r.ten}: Tồn ${fmtSo(r.ton)} | Bán ${fmtSo(r.ban)} | TL ${fmtPct(r.tl)}`);
+    bodyContents.push({
+      type: 'box',
+      layout: 'horizontal',
+      margin: 'sm',
+      contents: [
+        { type: 'text', text: r.ten, size: 'sm', flex: 5, wrap: true, color: '#333333' },
+        { type: 'text', text: fmtSo(r.ton), size: 'sm', flex: 2, align: 'end', color: '#333333' },
+        { type: 'text', text: fmtSo(r.ban), size: 'sm', flex: 2, align: 'end', color: '#333333' },
+        {
+          type: 'text',
+          text: fmtPct(r.tl),
+          size: 'sm',
+          flex: 2,
+          align: 'end',
+          weight: 'bold',
+          color: r.tl >= 20 ? MAU_XANH_TOT : MAU_DO_XAU,
+        },
+      ],
+    });
   });
 
-  return lines.join('\n');
+  const altText = `Báo cáo trà: Tồn ${fmtSo(tong.ton)} thùng | Bán ${fmtSo(tong.ban)} thùng | TL ${fmtPct(tong.tl)} (${tong.soSieuThi} siêu thị)`;
+
+  return {
+    type: 'flex',
+    altText: altText.slice(0, 400),
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: MAU_XANH_HEADER,
+        paddingAll: '20px',
+        contents: headerContents,
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '16px',
+        spacing: 'sm',
+        contents: bodyContents,
+      },
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
-// TẠO BÁO CÁO ĐẦY ĐỦ: ĐỌC 2 TAB TRONG GOOGLE SHEET -> FORMAT
+// TẠO BÁO CÁO ĐẦY ĐỦ: ĐỌC 2 TAB TRONG GOOGLE SHEET -> FLEX MESSAGE
 // ---------------------------------------------------------------------------
 async function generateTraReport() {
   const sheets = getSheetsClient();
@@ -237,7 +315,7 @@ async function generateTraReport() {
   const ton = docTon(rowsTon);
   const ban = docBan(rowsDoanhThu);
 
-  return taoNoiDungBaoCao(ton, ban);
+  return taoFlexBaoCao(ton, ban);
 }
 
 // ---------------------------------------------------------------------------
@@ -270,9 +348,9 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
 
     console.log('[webhook] khớp trigger, đang tạo báo cáo...');
     try {
-      const noiDung = await generateTraReport();
+      const flexMessage = await generateTraReport();
       console.log('[webhook] tạo báo cáo thành công, đang reply...');
-      await client.replyMessage(event.replyToken, { type: 'text', text: noiDung });
+      await client.replyMessage(event.replyToken, flexMessage);
       console.log('[webhook] đã reply xong');
     } catch (err) {
       console.error('[webhook] Lỗi tạo báo cáo trà:', err);
