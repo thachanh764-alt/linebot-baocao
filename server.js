@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
+const XLSX = require('xlsx');
+const { google } = require('googleapis');
 const config = { channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN, channelSecret: process.env.LINE_CHANNEL_SECRET };
 if (!config.channelAccessToken || !config.channelSecret) { console.error('Thiếu token trong .env'); process.exit(1); }
 const client = new line.messagingApi.MessagingApiClient({ channelAccessToken: config.channelAccessToken });
@@ -17,6 +19,28 @@ const WEEKDAY_VN = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ
 function norm(s) { return (s == null ? '' : String(s)).normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase(); }
 const FRESH_CATEGORIES = ['Rau Củ Quả CL', 'Thịt', 'Cá (Hải sản)', 'Trái cây', 'Trứng'].map(norm);
 const isFresh = (cat) => FRESH_CATEGORIES.includes(norm(cat));
+
+let sheetsApiClient = null;
+function getSheetsApi() {
+  if (sheetsApiClient) return sheetsApiClient;
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (!raw) throw new Error('Thieu bien moi truong GOOGLE_SERVICE_ACCOUNT_JSON');
+  const credentials = JSON.parse(raw);
+  const auth = new google.auth.GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
+  sheetsApiClient = google.sheets({ version: 'v4', auth });
+  return sheetsApiClient;
+}
+async function writeSheetTab(sheetName, rows2D) {
+  const api = getSheetsApi();
+  const quoted = `'${sheetName}'`;
+  await api.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: quoted });
+  await api.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `${quoted}!A1`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: rows2D },
+  });
+}
 
 async function fetchSheetTable(sheetName) {
   const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}`;
@@ -50,7 +74,6 @@ function findColIndex(cols, target) {
 async function readAgg(sheetName, categoryCol, valueCol) {
   const { cols, rows } = await fetchSheetTable(sheetName);
   let idx = { date: findColIndex(cols, 'Ngày xuất'), category: findColIndex(cols, categoryCol), value: findColIndex(cols, valueCol) };
-
   if ((idx.date === -1 || idx.category === -1 || idx.value === -1) && rows.length) {
     for (let r = 0; r < Math.min(rows.length, 5); r++) {
       const h = rows[r];
@@ -71,7 +94,6 @@ async function readAgg(sheetName, categoryCol, valueCol) {
       }
     }
   }
-
   if (idx.date === -1 || idx.category === -1 || idx.value === -1) {
     throw new Error(`Thiếu cột trong tab "${sheetName}" (cần "Ngày xuất", "${categoryCol}", "${valueCol}"). Cột hiện có: ${cols.map((h) => `"${h}"`).join(', ')}`);
   }
@@ -428,6 +450,76 @@ async function buildBanGiaoCaMessages() {
   return [{ type: 'flex', altText: 'Báo cáo Bàn Giao Ca', contents: buildBanGiaoCaBubble(items, totalRow) }];
 }
 
+function hasHeader(headers, target) {
+  const t = norm(target);
+  return headers.some((h) => norm(h) === t);
+}
+function detectMonthFromRows(headers, rows) {
+  const dateIdx = headers.findIndex((h) => norm(h) === norm('Ngày xuất'));
+  if (dateIdx === -1) return null;
+  for (const row of rows) {
+    const v = row[dateIdx];
+    let d = null;
+    if (v instanceof Date) d = v;
+    else if (typeof v === 'string') {
+      const m = v.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (m) d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+    }
+    if (d && !isNaN(d.getTime())) return d.getMonth() + 1;
+  }
+  return null;
+}
+function detectTargetTab(headers, rows) {
+  if (hasHeader(headers, 'Mã đợt châm hàng') && hasHeader(headers, 'SL tồn trên kệ')) {
+    return { tab: BANGIAOCA_TAB, label: 'BC Bàn Giao Ca' };
+  }
+  if (hasHeader(headers, 'Doanh thu offline') && hasHeader(headers, 'Doanh thu Online')) {
+    return { tab: DAILY_TAB, label: 'Báo Cáo DT (theo ngày)' };
+  }
+  if (hasHeader(headers, 'Sản lượng bán') && hasHeader(headers, 'Ngành hàng BHX') && !hasHeader(headers, 'Doanh thu offline')) {
+    const month = detectMonthFromRows(headers, rows);
+    if (!month) return null;
+    return { tab: month === 7 ? SHEET_TABS.sanLuongT7 : SHEET_TABS.sanLuongT8, label: `Sản lượng tháng ${month}` };
+  }
+  if (hasHeader(headers, 'Doanh thu') && hasHeader(headers, 'Ngành hàng BHX')) {
+    const month = detectMonthFromRows(headers, rows);
+    if (!month) return null;
+    return { tab: month === 7 ? SHEET_TABS.doanhThuT7 : SHEET_TABS.doanhThuT8, label: `Doanh thu tháng ${month}` };
+  }
+  return null;
+}
+function cellToWritable(cell) {
+  if (cell instanceof Date && !isNaN(cell.getTime())) {
+    const d = String(cell.getDate()).padStart(2, '0');
+    const m = String(cell.getMonth() + 1).padStart(2, '0');
+    const y = cell.getFullYear();
+    return `${d}/${m}/${y}`;
+  }
+  return cell == null ? '' : cell;
+}
+async function handleFileMessage(event) {
+  const messageId = event.message.id;
+  const fileName = event.message.fileName || 'file';
+  const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
+    headers: { Authorization: `Bearer ${config.channelAccessToken}` },
+  });
+  if (!res.ok) throw new Error(`Không tải được file từ LINE (HTTP ${res.status})`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  const wb = XLSX.read(buf, { type: 'buffer', cellDates: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+  if (!rows.length) throw new Error(`File "${fileName}" trống, không có dữ liệu.`);
+  const headers = rows[0];
+  const dataRows = rows.slice(1).filter((r) => r && r.some((c) => c != null && c !== ''));
+  const target = detectTargetTab(headers, dataRows);
+  if (!target) {
+    throw new Error(`Không nhận diện được loại báo cáo từ file "${fileName}". Kiểm tra lại tiêu đề cột trong file có đúng mẫu không.`);
+  }
+  const writable = [headers, ...dataRows].map((row) => row.map(cellToWritable));
+  await writeSheetTab(target.tab, writable);
+  return { label: target.label, tab: target.tab, rowCount: dataRows.length };
+}
+
 app.get('/', (req, res) => res.send('Bot đang chạy'));
 app.post('/webhook', line.middleware(config), (req, res) => {
   res.sendStatus(200);
@@ -435,7 +527,19 @@ app.post('/webhook', line.middleware(config), (req, res) => {
   events.forEach((event) => { handleEvent(event).catch((e) => console.error('Loi xu ly event:', e)); });
 });
 async function handleEvent(event) {
-  if (event.type !== 'message' || event.message.type !== 'text') return;
+  if (event.type !== 'message') return;
+
+  if (event.message.type === 'file') {
+    try {
+      const result = await handleFileMessage(event);
+      await client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `✅ Đã nạp ${result.rowCount} dòng vào tab "${result.tab}" (${result.label}).\nGõ lệnh báo cáo tương ứng để xem kết quả mới.` }] });
+    } catch (e) {
+      await client.replyMessage({ replyToken: event.replyToken, messages: [{ type: 'text', text: `❌ Lỗi nạp file: ${e.message}`.slice(0, 800) }] });
+    }
+    return;
+  }
+
+  if (event.message.type !== 'text') return;
   const text = event.message.text.trim().toLowerCase();
 
   if (text === BANGIAOCA_KEYWORD || text === 'bc ban giao ca' || text === '/bcbangiaoca') {
