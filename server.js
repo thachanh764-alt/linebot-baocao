@@ -613,33 +613,121 @@ function dongThongTin(icon, nhan, giaTri, dam) {
   };
 }
 
-function taoTheBaoCaoNgay(cuaHang, ngayHienThi) {
-  const tongDoanhThu = cuaHang.dtOffline + cuaHang.dtOnline;
-  const giaTriBill = cuaHang.soBill > 0 ? tongDoanhThu / cuaHang.soBill : 0;
-
+// 1 dòng trong bảng: tên siêu thị bên trái (wrap được), 2-3 cột số bên phải
+function dongBangSieuThi(ten, cotGiaTri) {
   return {
-    type: 'bubble',
-    size: 'mega',
-    header: {
-      type: 'box', layout: 'vertical', backgroundColor: '#22A45D', paddingAll: '16px',
-      contents: [
-        { type: 'text', text: '📊 BÁO CÁO DOANH THU', color: '#FFFFFF', weight: 'bold', size: 'md' },
-        { type: 'text', text: `📅 ${ngayHienThi}`, color: '#E8F8EF', size: 'xs', margin: 'sm' },
+    type: 'box',
+    layout: 'horizontal',
+    margin: 'md',
+    contents: [
+      { type: 'text', text: ten, size: 'sm', flex: 5, wrap: true, color: '#333333' },
+      ...cotGiaTri.map((v) => ({ type: 'text', text: v, size: 'sm', flex: 2, align: 'end', color: '#333333' })),
+    ],
+  };
+}
+
+function taoBangDoanhThuNgay(cuaHangs, ngayHienThi) {
+  const bodyContents = [
+    {
+      type: 'box', layout: 'horizontal', contents: [
+        { type: 'text', text: 'Siêu thị', size: 'xs', color: '#888888', flex: 5 },
+        { type: 'text', text: 'Offline', size: 'xs', color: '#888888', flex: 2, align: 'end' },
+        { type: 'text', text: 'Online', size: 'xs', color: '#888888', flex: 2, align: 'end' },
+        { type: 'text', text: 'Tổng', size: 'xs', color: '#888888', flex: 2, align: 'end' },
       ],
     },
-    body: {
-      type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'sm',
-      contents: [
-        { type: 'text', text: `🏢 ${cuaHang.ten}`, weight: 'bold', size: 'sm', wrap: true, margin: 'none' },
-        { type: 'separator', margin: 'md' },
-        dongThongTin('🏬', 'Doanh thu offline', fmtSo(cuaHang.dtOffline) + ' đ', false),
-        dongThongTin('🛍️', 'Doanh thu online', fmtSo(cuaHang.dtOnline) + ' đ', false),
-        dongThongTin('📋', 'Số lượng bill', fmtSo(cuaHang.soBill), false),
-        dongThongTin('🧾', 'Bill online', fmtSo(cuaHang.soBillOnline), false),
-        dongThongTin('📈', 'Giá trị bill', fmtSo(giaTriBill) + ' đ', false),
-        { type: 'separator', margin: 'md' },
-        dongThongTin('💰', 'Tổng doanh thu', fmtSo(tongDoanhThu) + ' đ', true),
+    { type: 'separator', margin: 'sm' },
+  ];
+
+  cuaHangs.forEach((ch, idx) => {
+    const tong = ch.dtOffline + ch.dtOnline;
+    bodyContents.push(
+      dongBangSieuThi(ch.ten, [fmtSo(ch.dtOffline), fmtSo(ch.dtOnline), fmtSo(tong)])
+    );
+    if (idx < cuaHangs.length - 1) bodyContents.push({ type: 'separator', margin: 'md' });
+  });
+
+  const tongOffline = cuaHangs.reduce((s, c) => s + c.dtOffline, 0);
+  const tongOnline = cuaHangs.reduce((s, c) => s + c.dtOnline, 0);
+  const tongCong = tongOffline + tongOnline;
+  bodyContents.push({ type: 'separator', margin: 'lg' });
+  bodyContents.push({
+    type: 'box', layout: 'horizontal', margin: 'lg', contents: [
+      { type: 'text', text: 'TỔNG CỘNG', size: 'sm', weight: 'bold', flex: 5 },
+      { type: 'text', text: fmtSo(tongOffline), size: 'sm', weight: 'bold', flex: 2, align: 'end' },
+      { type: 'text', text: fmtSo(tongOnline), size: 'sm', weight: 'bold', flex: 2, align: 'end' },
+      { type: 'text', text: fmtSo(tongCong), size: 'sm', weight: 'bold', flex: 2, align: 'end', color: '#22A45D' },
+    ],
+  });
+
+  return {
+    type: 'flex',
+    altText: `Doanh thu ngày ${ngayHienThi}: ${cuaHangs.length} siêu thị, tổng ${fmtSo(tongCong)} đ`,
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#22A45D', paddingAll: '20px',
+        contents: [
+          { type: 'text', text: '💰 DOANH THU THEO SIÊU THỊ', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+          { type: 'text', text: `📅 ${ngayHienThi} · ${cuaHangs.length} siêu thị`, color: '#E8F8EF', size: 'sm', margin: 'sm' },
+        ],
+      },
+      body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
+    },
+  };
+}
+
+function taoBangBillNgay(cuaHangs, ngayHienThi) {
+  const bodyContents = [
+    {
+      type: 'box', layout: 'horizontal', contents: [
+        { type: 'text', text: 'Siêu thị', size: 'xs', color: '#888888', flex: 5 },
+        { type: 'text', text: 'SL bill', size: 'xs', color: '#888888', flex: 2, align: 'end' },
+        { type: 'text', text: 'Online', size: 'xs', color: '#888888', flex: 2, align: 'end' },
+        { type: 'text', text: 'GT bill', size: 'xs', color: '#888888', flex: 2, align: 'end' },
       ],
+    },
+    { type: 'separator', margin: 'sm' },
+  ];
+
+  cuaHangs.forEach((ch, idx) => {
+    const tong = ch.dtOffline + ch.dtOnline;
+    const giaTriBill = ch.soBill > 0 ? tong / ch.soBill : 0;
+    bodyContents.push(
+      dongBangSieuThi(ch.ten, [fmtSo(ch.soBill), fmtSo(ch.soBillOnline), fmtSo(giaTriBill)])
+    );
+    if (idx < cuaHangs.length - 1) bodyContents.push({ type: 'separator', margin: 'md' });
+  });
+
+  const tongSoBill = cuaHangs.reduce((s, c) => s + c.soBill, 0);
+  const tongSoBillOnline = cuaHangs.reduce((s, c) => s + c.soBillOnline, 0);
+  const tongDT = cuaHangs.reduce((s, c) => s + c.dtOffline + c.dtOnline, 0);
+  const giaTriBillTB = tongSoBill > 0 ? tongDT / tongSoBill : 0;
+  bodyContents.push({ type: 'separator', margin: 'lg' });
+  bodyContents.push({
+    type: 'box', layout: 'horizontal', margin: 'lg', contents: [
+      { type: 'text', text: 'TỔNG CỘNG', size: 'sm', weight: 'bold', flex: 5 },
+      { type: 'text', text: fmtSo(tongSoBill), size: 'sm', weight: 'bold', flex: 2, align: 'end' },
+      { type: 'text', text: fmtSo(tongSoBillOnline), size: 'sm', weight: 'bold', flex: 2, align: 'end' },
+      { type: 'text', text: fmtSo(giaTriBillTB), size: 'sm', weight: 'bold', flex: 2, align: 'end', color: '#2E86DE' },
+    ],
+  });
+
+  return {
+    type: 'flex',
+    altText: `Bill ngày ${ngayHienThi}: ${cuaHangs.length} siêu thị, ${fmtSo(tongSoBill)} bill`,
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#2E86DE', paddingAll: '20px',
+        contents: [
+          { type: 'text', text: '🧾 BILL THEO SIÊU THỊ', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+          { type: 'text', text: `📅 ${ngayHienThi} · ${cuaHangs.length} siêu thị`, color: '#E4F0FD', size: 'sm', margin: 'sm' },
+        ],
+      },
+      body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
     },
   };
 }
@@ -666,40 +754,45 @@ async function generateDailyStoreReport() {
     if (ngayMoiNhat === null || key > ngayMoiNhat) ngayMoiNhat = key;
   }
 
-  const cuaHangs = [];
+  // Gộp theo mã siêu thị (đề phòng 1 siêu thị có nhiều dòng cùng ngày mới nhất)
+  const theoMaSieuThi = {};
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row || row[colNgay] === undefined || row[colNgay] === '') continue;
     if (toDateKey(row[colNgay]) !== ngayMoiNhat) continue;
 
-    cuaHangs.push({
-      ma: row[colMaST],
-      ten: row[colTenST] || row[colMaST],
-      dtOffline: Number(row[colDTOffline]) || 0,
-      dtOnline: Number(row[colDTOnline]) || 0,
-      soBill: Number(row[colSoBill]) || 0,
-      soBillOnline: Number(row[colSoBillOnline]) || 0,
-    });
+    const ma = row[colMaST];
+    if (!theoMaSieuThi[ma]) {
+      theoMaSieuThi[ma] = {
+        ma,
+        ten: row[colTenST] || ma,
+        dtOffline: 0,
+        dtOnline: 0,
+        soBill: 0,
+        soBillOnline: 0,
+      };
+    }
+    const ch = theoMaSieuThi[ma];
+    ch.dtOffline += Number(row[colDTOffline]) || 0;
+    ch.dtOnline += Number(row[colDTOnline]) || 0;
+    ch.soBill += Number(row[colSoBill]) || 0;
+    ch.soBillOnline += Number(row[colSoBillOnline]) || 0;
   }
+
+  const cuaHangs = Object.values(theoMaSieuThi).sort(
+    (a, b) => (b.dtOffline + b.dtOnline) - (a.dtOffline + a.dtOnline)
+  );
 
   if (cuaHangs.length === 0) {
     throw new Error(`Tab "${GOOGLE_SHEET_TAB_BAOCAO_NGAY}" chưa có dữ liệu siêu thị nào`);
   }
 
   const ngayHienThi = fmtNgayVN(new Date());
-  const theTatCa = cuaHangs.map((ch) => taoTheBaoCaoNgay(ch, ngayHienThi));
 
-  const messages = [];
-  for (let i = 0; i < theTatCa.length && messages.length < SO_CAROUSEL_TOI_DA; i += SO_THE_MOI_CAROUSEL) {
-    const nhom = theTatCa.slice(i, i + SO_THE_MOI_CAROUSEL);
-    messages.push({
-      type: 'flex',
-      altText: `Báo cáo ngày: ${cuaHangs.length} siêu thị (${ngayHienThi})`,
-      contents: nhom.length === 1 ? nhom[0] : { type: 'carousel', contents: nhom },
-    });
-  }
-
-  return messages;
+  return [
+    taoBangDoanhThuNgay(cuaHangs, ngayHienThi),
+    taoBangBillNgay(cuaHangs, ngayHienThi),
+  ];
 }
 
 async function generateRevenueReport() {
