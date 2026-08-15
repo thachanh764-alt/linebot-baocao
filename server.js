@@ -1,11 +1,13 @@
 /**
  * server.js
  * =========
- * LINE Bot "Báo cáo trà" + "Báo cáo ngày"
+ * LINE Bot "Báo cáo trà" + "Báo cáo ngày" + nhận file tự động nạp
  * -----------------------
- * "Báo cáo trà": đọc 2 tab TON/DOANHTHU, lọc 6 sản phẩm trà C2.
- * "Báo cáo ngày": đọc 3 tab DOANHTHU_SIEUTHI / DOANHTHU_NGANHHANG / FRESH_NHAPXUAT,
- *   ra 1 thẻ tổng hợp doanh thu theo ngày + N thẻ Fresh (1 thẻ/siêu thị).
+ * "Báo cáo trà": nhắn "Báo cáo trà" -> đọc 2 tab TON/DOANHTHU, lọc 6 sản phẩm trà C2.
+ * "Báo cáo ngày": nhắn "Báo cáo ngày" -> đọc 3 tab DOANHTHU_SIEUTHI/DOANHTHU_NGANHHANG/
+ *   FRESH_NHAPXUAT, ra 1 thẻ tổng hợp + N thẻ Fresh (1 thẻ/siêu thị).
+ * Gửi file Excel trực tiếp vào group -> bot tự nhận diện loại file qua tiêu đề
+ *   cột, tự nạp (nối thêm) vào đúng tab, rồi tự trả báo cáo tương ứng.
  *
  * CẦN CHUẨN BỊ (biến môi trường trên Render, hoặc file .env khi chạy local):
  * ------------------------------------------------------------
@@ -20,19 +22,18 @@
  *   GOOGLE_SHEET_TAB_FRESH=FRESH_NHAPXUAT
  *   PORT=3000
  *
- * Phải SHARE Google Sheet cho email service account, quyền Viewer trở lên.
+ * Phải SHARE Google Sheet cho email service account, quyền EDITOR (không chỉ
+ * Viewer, vì bot cần ghi/nạp data từ file gửi vào).
  *
  * QUAN TRỌNG - Cần tạo đúng 5 tab trong Google Sheet với tên cột giữ NGUYÊN
  * như file gốc:
  *   - TON: "Mã Model", "Tên siêu thị", "Tồn kho siêu thị"
  *   - DOANHTHU: "Mã Model", "Tên siêu thị", "Tổng số lượng"
  *   - DOANHTHU_SIEUTHI: "Ngày", "Mã siêu thị", "Tên siêu thị", "Doanh thu offline",
- *     "Doanh thu Online", "Tổng số bill" (dán y hệt file "_Doanh_Thu_Theo_Sieu_Thi")
+ *     "Doanh thu Online", "Tổng số bill"
  *   - DOANHTHU_NGANHHANG: "Ngày xuất", "Ngành hàng BHX", "Doanh thu"
- *     (dán y hệt file "Bao_cao_doanh_thu_theo_nganh_hang_BHX")
  *   - FRESH_NHAPXUAT: "Ngày", "Mã siêu thị", "Tên siêu thị", "Ngành hàng - Phân tích",
  *     "Thành tiền phải thu khách hàng (chưa VAT)", "SL thực xuất"
- *     (dán y hệt file "BC_nhap_xuat_Rau_da_Lat_Trung")
  *
  * Chạy: npm start
  */
@@ -41,6 +42,7 @@ require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
 const { google } = require('googleapis');
+const XLSX = require('xlsx');
 
 // ---------------------------------------------------------------------------
 // CẤU HÌNH
@@ -75,7 +77,9 @@ const QUY_DOI_THUNG = 24; // 1 thùng = 24 chai
 // GOOGLE SHEETS: đọc trực tiếp các tab trong Sheet
 // ---------------------------------------------------------------------------
 function getSheetsClient() {
-  const scopes = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
+  // Cần quyền ghi (không phải readonly) vì bot còn phải nạp (append) dữ liệu
+  // từ file người dùng gửi vào group.
+  const scopes = ['https://www.googleapis.com/auth/spreadsheets'];
   let auth;
 
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
@@ -148,7 +152,7 @@ function docBan(rows) {
 }
 
 // ---------------------------------------------------------------------------
-// TÍNH TOÁN (báo cáo trà)
+// TÍNH TOÁN
 // ---------------------------------------------------------------------------
 function tenNganSieuThi(tenDayDu) {
   if (!tenDayDu) return '';
@@ -192,7 +196,7 @@ function tinhDuLieu(ton, ban) {
 }
 
 // ---------------------------------------------------------------------------
-// FLEX MESSAGE báo cáo trà
+// FLEX MESSAGE (thẻ đẹp) - dùng để gửi qua LINE
 // ---------------------------------------------------------------------------
 const MAU_XANH_HEADER = '#2C4A3B';
 const MAU_XANH_TOT = '#2ECC71';
@@ -272,20 +276,6 @@ function taoFlexBaoCao(ton, ban) {
       },
     },
   };
-}
-
-async function generateTraReport() {
-  const sheets = getSheetsClient();
-
-  const [rowsTon, rowsDoanhThu] = await Promise.all([
-    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_TON),
-    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_DOANHTHU),
-  ]);
-
-  const ton = docTon(rowsTon);
-  const ban = docBan(rowsDoanhThu);
-
-  return taoFlexBaoCao(ton, ban);
 }
 
 // ---------------------------------------------------------------------------
@@ -567,6 +557,98 @@ async function generateDailyReport() {
   return [card1, ...cardsFresh].slice(0, 5);
 }
 
+async function generateTraReport() {
+  const sheets = getSheetsClient();
+
+  const [rowsTon, rowsDoanhThu] = await Promise.all([
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_TON),
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_DOANHTHU),
+  ]);
+
+  const ton = docTon(rowsTon);
+  const ban = docBan(rowsDoanhThu);
+
+  return taoFlexBaoCao(ton, ban);
+}
+
+// ---------------------------------------------------------------------------
+// NẠP FILE NGƯỜI DÙNG GỬI TRỰC TIẾP VÀO GROUP (.xlsx/.xls)
+// - Tự nhận diện loại báo cáo qua tiêu đề cột, nối thêm data vào đúng tab
+//   (giữ nguyên data cũ), rồi tự trả báo cáo tương ứng.
+// ---------------------------------------------------------------------------
+
+// Tải nội dung file người dùng gửi trong LINE về dạng Buffer
+async function taiNoiDungFileLine(messageId) {
+  const stream = await client.getMessageContent(messageId);
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
+// Nhận diện loại file dựa theo tiêu đề cột -> trả về { loai, tenTab } hoặc null
+function nhanDangLoaiFile(header) {
+  const co = (ten) => header.includes(ten);
+
+  if (co('Mã Model') && co('Tồn kho siêu thị')) {
+    return { loai: 'ton', tenTab: GOOGLE_SHEET_TAB_TON };
+  }
+  if (co('Mã Model') && co('Tổng số lượng') && !co('Tồn kho siêu thị')) {
+    return { loai: 'tra_ban', tenTab: GOOGLE_SHEET_TAB_DOANHTHU };
+  }
+  if (co('Ngày') && co('Mã siêu thị') && co('Doanh thu offline')) {
+    return { loai: 'doanhthu_sieuthi', tenTab: GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI };
+  }
+  if (co('Ngày') && co('Mã siêu thị') && co('Ngành hàng - Phân tích') && co('Thành tiền phải thu khách hàng (chưa VAT)')) {
+    return { loai: 'fresh', tenTab: GOOGLE_SHEET_TAB_FRESH };
+  }
+  if (co('Ngày xuất') && co('Ngành hàng BHX') && co('Doanh thu')) {
+    return { loai: 'doanhthu_nganhhang', tenTab: GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG };
+  }
+  return null;
+}
+
+// Nạp data vào đúng tab (nối thêm, giữ nguyên data cũ), trả về { loai, tenTab, soDong }
+async function napFileVaoSheet(fileName, buffer) {
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  if (allRows.length < 2) throw new Error('File trống hoặc không đọc được dữ liệu');
+
+  const header = allRows[0].map((h) => (h || '').toString().trim());
+  const dataRows = allRows.slice(1).filter((r) => r && r.some((v) => v !== null && v !== ''));
+  if (dataRows.length === 0) throw new Error('File không có dòng dữ liệu nào');
+
+  const nhanDang = nhanDangLoaiFile(header);
+  if (!nhanDang) {
+    throw new Error(
+      `Không nhận diện được loại báo cáo từ file "${fileName || ''}". Kiểm tra lại tiêu đề cột trong file có đúng mẫu không.`
+    );
+  }
+
+  const sheets = getSheetsClient();
+  const destRows = await docTabThanhMangDong(sheets, nhanDang.tenTab);
+  const destHeader = destRows[0];
+
+  // Sắp lại cột theo đúng thứ tự cột của tab đích (khớp theo TÊN cột, không
+  // phụ thuộc thứ tự cột trong file người dùng gửi)
+  const rowsToAppend = dataRows.map((row) =>
+    destHeader.map((tenCot) => {
+      const idx = header.indexOf(tenCot);
+      return idx === -1 ? '' : row[idx] ?? '';
+    })
+  );
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: nhanDang.tenTab,
+    valueInputOption: 'USER_ENTERED',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: { values: rowsToAppend },
+  });
+
+  return { loai: nhanDang.loai, tenTab: nhanDang.tenTab, soDong: rowsToAppend.length };
+}
+
 // ---------------------------------------------------------------------------
 // LINE BOT
 // ---------------------------------------------------------------------------
@@ -593,7 +675,48 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
   console.log(`[webhook] nhận ${events.length} event(s)`);
 
   for (const event of events) {
-    if (event.type !== 'message' || event.message.type !== 'text') continue;
+    if (event.type !== 'message') continue;
+
+    // ---- Người dùng gửi FILE (.xlsx/.xls) vào group -> tự nạp + tự báo cáo ----
+    if (event.message.type === 'file') {
+      const fileName = event.message.fileName || '';
+      if (!/\.(xlsx|xls)$/i.test(fileName)) {
+        console.log(`[webhook] file "${fileName}" không phải Excel, bỏ qua`);
+        continue;
+      }
+      console.log(`[webhook] nhận file "${fileName}", đang tải + nạp vào Sheet...`);
+      try {
+        const buffer = await taiNoiDungFileLine(event.message.id);
+        const ketQua = await napFileVaoSheet(fileName, buffer);
+        console.log(`[webhook] đã nạp ${ketQua.soDong} dòng vào tab "${ketQua.tenTab}" (loại: ${ketQua.loai})`);
+
+        try {
+          let baoCao;
+          if (ketQua.loai === 'ton' || ketQua.loai === 'tra_ban') {
+            baoCao = await generateTraReport();
+          } else {
+            baoCao = await generateDailyReport();
+          }
+          await client.replyMessage(event.replyToken, baoCao);
+        } catch (loiBaoCao) {
+          console.error('[webhook] nạp file OK nhưng chưa tạo được báo cáo:', loiBaoCao.message);
+          await client.replyMessage(event.replyToken, {
+            type: 'text',
+            text: `✅ Đã nạp ${ketQua.soDong} dòng vào tab "${ketQua.tenTab}".\n⚠️ Chưa tạo được báo cáo ngay: ${loiBaoCao.message}`,
+          });
+        }
+      } catch (err) {
+        console.error('[webhook] Lỗi nạp file:', err);
+        try {
+          await client.replyMessage(event.replyToken, { type: 'text', text: `❌ Lỗi nạp file: ${err.message}` });
+        } catch (replyErr) {
+          console.error('[webhook] Lỗi luôn cả khi reply lỗi:', replyErr.message);
+        }
+      }
+      continue;
+    }
+
+    if (event.message.type !== 'text') continue;
     const text = event.message.text;
 
     if (laTrigger(text)) {
