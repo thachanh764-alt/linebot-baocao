@@ -1,29 +1,36 @@
 /**
  * server.js
  * =========
- * LINE Bot "Báo cáo trà" + "Báo cáo ngày" + nhận file tự động nạp
+ * LINE Bot "Báo cáo trà" (bản rút gọn - chỉ còn đúng 1 chức năng)
  * -----------------------
- * "Báo cáo trà": nhắn "Báo cáo trà" -> đọc 2 tab TON/DOANHTHU, lọc 6 sản phẩm trà C2,
- *   số bán = cột "Số lượng Online" + cột "Số lượng Offline".
- * "Báo cáo ngày": nhắn "Báo cáo ngày" -> đọc 3 tab DOANHTHU_SIEUTHI/DOANHTHU_NGANHHANG/
- *   FRESH_NHAPXUAT, ra 1 thẻ tổng hợp + N thẻ Fresh (1 thẻ/siêu thị).
- * Gửi file Excel trực tiếp vào group -> bot tự nhận diện loại file qua tiêu đề
- *   cột, GHI ĐÈ HOÀN TOÀN (KHÔNG cộng dồn) vào đúng tab, rồi tự trả báo cáo.
+ * Khi có người nhắn "Báo cáo trà" trong LINE OA, bot sẽ:
+ *   1. Đọc trực tiếp 2 TAB trong Google Sheet (bằng service account) -
+ *      1 tab chứa data TỒN, 1 tab chứa data DOANH THU (anh copy/dán
+ *      nguyên nội dung 2 file Excel vào 2 tab này, giữ nguyên hàng
+ *      tiêu đề cột giống file gốc).
+ *   2. Lọc đúng 6 sản phẩm trà C2, gộp theo siêu thị, quy đổi thùng.
+ *   3. Trả lời lại đúng định dạng báo cáo (thẻ Flex Message).
  *
- * CẦN CHUẨN BỊ (biến môi trường trên Render, hoặc file .env khi chạy local):
+ * CẦN CHUẨN BỊ TRƯỚC KHI CHẠY (điền vào file .env cùng thư mục, hoặc biến
+ * môi trường trên Render):
  * ------------------------------------------------------------
- *   LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET
- *   GOOGLE_SERVICE_ACCOUNT_JSON (nội dung json service account, dùng trên Render)
- *   HOẶC GOOGLE_SERVICE_ACCOUNT_KEY_PATH=./service-account.json (chạy local)
- *   GOOGLE_SHEET_ID
- *   GOOGLE_SHEET_TAB_TON=TON
- *   GOOGLE_SHEET_TAB_DOANHTHU=DOANHTHU
- *   GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI=DOANHTHU_SIEUTHI
- *   GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG=DOANHTHU_NGANHHANG
- *   GOOGLE_SHEET_TAB_FRESH=FRESH_NHAPXUAT
+ *   LINE_CHANNEL_ACCESS_TOKEN=...........(lấy trong LINE Developers Console)
+ *   LINE_CHANNEL_SECRET=..................(lấy trong LINE Developers Console)
+ *   GOOGLE_SERVICE_ACCOUNT_JSON=..........(nội dung file json service account,
+ *      dán nguyên cả JSON vào biến này - dùng khi deploy lên Render)
+ *   HOẶC GOOGLE_SERVICE_ACCOUNT_KEY_PATH=./service-account.json
+ *      (đường dẫn tới file json, chỉ dùng khi chạy local trên máy)
+ *   GOOGLE_SHEET_ID=..............(ID của Google Sheet)
+ *   GOOGLE_SHEET_TAB_TON=TON       (tên tab chứa data Tồn)
+ *   GOOGLE_SHEET_TAB_DOANHTHU=DOANHTHU  (tên tab chứa data Doanh thu)
  *   PORT=3000
  *
- * Phải SHARE Google Sheet cho email service account, quyền EDITOR.
+ * Và phải SHARE Google Sheet đó cho email của service account với quyền
+ * ít nhất là "Viewer" (Người xem).
+ *
+ * QUAN TRỌNG: 2 tab đó phải giữ nguyên tên cột giống file gốc ở hàng đầu
+ * tiên: tab TỒN cần có cột "Mã Model", "Tên siêu thị", "Tồn kho siêu thị";
+ * tab DOANH THU cần có cột "Mã Model", "Tên siêu thị", "Tổng số lượng".
  *
  * Chạy: npm start
  */
@@ -48,8 +55,10 @@ const GOOGLE_SHEET_TAB_TON = process.env.GOOGLE_SHEET_TAB_TON || 'TON';
 const GOOGLE_SHEET_TAB_DOANHTHU = process.env.GOOGLE_SHEET_TAB_DOANHTHU || 'DOANHTHU';
 const PORT = process.env.PORT || 3000;
 
+// Từ khoá kích hoạt bot (không phân biệt hoa/thường, dấu cách thừa)
 const TRIGGER_KEYWORDS = ['báo cáo trà', 'bao cao tra'];
 
+// 6 sản phẩm trà cần báo cáo, khoá theo Mã Model
 const SAN_PHAM_TRA = {
   '2601001494': 'Nước sâm C2 Cool',
   '2203000875': 'Trà đen dâu anh đào C2',
@@ -59,10 +68,10 @@ const SAN_PHAM_TRA = {
   '1607002174': 'Nước C2 trà xanh hương chanh 360ml',
 };
 
-const QUY_DOI_THUNG = 24;
+const QUY_DOI_THUNG = 24; // 1 thùng = 24 chai
 
 // ---------------------------------------------------------------------------
-// GOOGLE SHEETS
+// GOOGLE SHEETS: đọc trực tiếp 2 tab TON / DOANHTHU
 // ---------------------------------------------------------------------------
 function getSheetsClient() {
   const scopes = ['https://www.googleapis.com/auth/spreadsheets'];
@@ -185,7 +194,7 @@ function tinhDuLieu(ton, ban) {
 }
 
 // ---------------------------------------------------------------------------
-// FLEX MESSAGE báo cáo trà
+// FLEX MESSAGE (thẻ đẹp) - dùng để gửi qua LINE
 // ---------------------------------------------------------------------------
 const MAU_XANH_HEADER = '#2C4A3B';
 const MAU_XANH_TOT = '#2ECC71';
@@ -269,7 +278,8 @@ function taoFlexBaoCao(ton, ban) {
 }
 
 // ---------------------------------------------------------------------------
-// BÁO CÁO NGÀY
+// BÁO CÁO NGÀY (đọc 3 tab: doanh thu theo siêu thị, doanh thu theo ngành
+// hàng, và nhập-xuất Fresh) - kích hoạt khi nhắn "Báo cáo ngày"
 // ---------------------------------------------------------------------------
 const GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI = process.env.GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI || 'DOANHTHU_SIEUTHI';
 const GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG = process.env.GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG || 'DOANHTHU_NGANHHANG';
@@ -320,6 +330,7 @@ function toDateKey(value) {
 }
 
 function fmtNgayHienThi(dateKey) {
+  if (!dateKey) return 'N/A';
   const [y, m, d] = dateKey.split('-');
   return `${d}/${m}/${y}`;
 }
@@ -344,31 +355,56 @@ function dongThongTinNgay(icon, nhan, giaTri, dam) {
   };
 }
 
+const NGANH_FRESH_TRONG_CARD1 = ['Thịt', 'Rau Củ Quả CL', 'Trái cây', 'Cá (Hải sản)', 'Trứng'];
+
 function dongNganhHangDon(ten, giaTri) {
+  const isFresh = NGANH_FRESH_TRONG_CARD1.includes(ten);
   return {
     type: 'box', layout: 'horizontal', margin: 'sm', contents: [
-      { type: 'text', text: ten, size: 'sm', flex: 5, wrap: true, color: '#333333' },
+      { type: 'text', text: `${isFresh ? '🥬' : '🛒'} ${ten}`, size: 'sm', flex: 5, wrap: true, color: isFresh ? '#1F7A45' : '#333333' },
       { type: 'text', text: giaTri, size: 'sm', flex: 3, align: 'end', weight: 'bold', color: '#111111' },
     ],
   };
 }
 
-function taoCardBaoCaoTheoNgay(tong, ngayHienThi) {
+function oThongKe(icon, nhan, giaTri) {
+  return {
+    type: 'box', layout: 'vertical', flex: 1, backgroundColor: '#F7FAF8', cornerRadius: 'md',
+    paddingAll: '10px', spacing: 'xs',
+    contents: [
+      { type: 'text', text: icon, size: 'lg' },
+      { type: 'text', text: nhan, size: 'xxs', color: '#888888' },
+      { type: 'text', text: giaTri, size: 'sm', weight: 'bold', color: '#1a1a1a', wrap: true },
+    ],
+  };
+}
+
+function taoCardBaoCaoTheoNgay(maSieuThi, tenSieuThi, tong, ngayHienThi) {
   const bodyContents = [
+    { type: 'text', text: `🏢 ${tenSieuThi}`, weight: 'bold', size: 'md', wrap: true, color: '#1a1a1a' },
     {
-      type: 'box', layout: 'vertical', backgroundColor: '#F0F7F2', cornerRadius: 'md', paddingAll: '14px',
+      type: 'box', layout: 'vertical', backgroundColor: '#F0F7F2', cornerRadius: 'md', paddingAll: '14px', margin: 'md',
       contents: [
         { type: 'text', text: 'TỔNG DOANH THU', size: 'xs', color: '#888888' },
         { type: 'text', text: fmtSo(tong.tongDoanhThu) + ' đ', size: 'xxl', weight: 'bold', color: '#1a1a1a', margin: 'sm' },
       ],
     },
+    {
+      type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'md',
+      contents: [
+        oThongKe('🏬', 'DT Offline', fmtSo(tong.dtOffline) + ' đ'),
+        oThongKe('🌐', 'DT Online', fmtSo(tong.dtOnline) + ' đ'),
+      ],
+    },
+    {
+      type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'sm',
+      contents: [
+        oThongKe('🧾', 'Số bill', fmtSo(tong.soBill)),
+        oThongKe('💳', 'Giá trị TB', fmtSo(tong.giaTriBillTB) + ' đ'),
+      ],
+    },
     { type: 'separator', margin: 'lg' },
-    dongThongTinNgay('🏬', 'DT Offline', fmtSo(tong.dtOffline) + ' đ', false),
-    dongThongTinNgay('🌐', 'DT Online', fmtSo(tong.dtOnline) + ' đ', false),
-    dongThongTinNgay('🧾', 'Tổng số bill', fmtSo(tong.soBill), false),
-    dongThongTinNgay('💳', 'Giá trị Bill TB', fmtSo(tong.giaTriBillTB) + ' đ', false),
-    { type: 'separator', margin: 'lg' },
-    { type: 'text', text: '📦 THEO NGÀNH HÀNG', size: 'sm', weight: 'bold', color: '#333333', margin: 'lg' },
+    { type: 'text', text: '📦 CHI TIẾT NGÀNH HÀNG', size: 'sm', weight: 'bold', color: '#333333', margin: 'lg' },
   ];
 
   CARD1_CATEGORY_ORDER.forEach((ten) => {
@@ -377,15 +413,15 @@ function taoCardBaoCaoTheoNgay(tong, ngayHienThi) {
 
   return {
     type: 'flex',
-    altText: `Báo cáo theo ngày ${ngayHienThi}: Tổng doanh thu ${fmtSo(tong.tongDoanhThu)} đ`,
+    altText: `Báo cáo ngày ${ngayHienThi} - ${tenSieuThi}: Tổng doanh thu ${fmtSo(tong.tongDoanhThu)} đ`,
     contents: {
       type: 'bubble',
       size: 'giga',
       header: {
         type: 'box', layout: 'vertical', backgroundColor: '#2C4A3B', paddingAll: '20px',
         contents: [
-          { type: 'text', text: '📅 BÁO CÁO THEO NGÀY', color: '#FFFFFF', weight: 'bold', size: 'lg' },
-          { type: 'text', text: ngayHienThi, color: '#DCEAE1', size: 'sm', margin: 'sm' },
+          { type: 'text', text: '📅 BÁO CÁO NGÀY', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+          { type: 'text', text: `${maSieuThi} · ${ngayHienThi}`, color: '#DCEAE1', size: 'sm', margin: 'sm' },
         ],
       },
       body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
@@ -459,44 +495,55 @@ async function generateDailyReport() {
 
   const headerST = rowsST[0];
   const colNgayST = timCotTheoTen(headerST, 'Ngày');
+  const colMaST = timCotTheoTen(headerST, 'Mã siêu thị');
+  const colTenST = timCotTheoTen(headerST, 'Tên siêu thị');
   const colDTOffline = timCotTheoTen(headerST, 'Doanh thu offline');
   const colDTOnline = timCotTheoTen(headerST, 'Doanh thu Online');
   const colSoBill = timCotTheoTen(headerST, 'Tổng số bill');
 
   const ngayMoiNhatST = timNgayMoiNhat(rowsST, colNgayST);
-  let dtOffline = 0, dtOnline = 0, soBill = 0;
+  const theoSieuThiST = {};
   for (let i = 1; i < rowsST.length; i++) {
     const row = rowsST[i];
     if (!row || row[colNgayST] === undefined || row[colNgayST] === '') continue;
     if (toDateKey(row[colNgayST]) !== ngayMoiNhatST) continue;
-    dtOffline += Number(row[colDTOffline]) || 0;
-    dtOnline += Number(row[colDTOnline]) || 0;
-    soBill += Number(row[colSoBill]) || 0;
+    const ma = row[colMaST];
+    if (!theoSieuThiST[ma]) {
+      theoSieuThiST[ma] = { ma, ten: row[colTenST] || ma, dtOffline: 0, dtOnline: 0, soBill: 0 };
+    }
+    theoSieuThiST[ma].dtOffline += Number(row[colDTOffline]) || 0;
+    theoSieuThiST[ma].dtOnline += Number(row[colDTOnline]) || 0;
+    theoSieuThiST[ma].soBill += Number(row[colSoBill]) || 0;
   }
-  const tongDoanhThu = dtOffline + dtOnline;
-  const giaTriBillTB = soBill > 0 ? tongDoanhThu / soBill : 0;
 
   const headerNH = rowsNH[0];
   const colNgayNH = timCotTheoTen(headerNH, 'Ngày xuất');
+  const colMaNH = timCotTheoTen(headerNH, 'Mã siêu thị');
   const colNganhNH = timCotTheoTen(headerNH, 'Ngành hàng BHX');
   const colDoanhThuNH = timCotTheoTen(headerNH, 'Doanh thu');
 
   const ngayMoiNhatNH = timNgayMoiNhat(rowsNH, colNgayNH);
-  const byNganh = {};
+  const theoSieuThiNH = {};
   for (let i = 1; i < rowsNH.length; i++) {
     const row = rowsNH[i];
     if (!row || row[colNgayNH] === undefined || row[colNgayNH] === '') continue;
     if (toDateKey(row[colNgayNH]) !== ngayMoiNhatNH) continue;
+    const ma = row[colMaNH];
     const ten = (row[colNganhNH] || '').toString().trim();
     if (!ten) continue;
-    byNganh[ten] = (byNganh[ten] || 0) + (Number(row[colDoanhThuNH]) || 0);
+    if (!theoSieuThiNH[ma]) theoSieuThiNH[ma] = {};
+    theoSieuThiNH[ma][ten] = (theoSieuThiNH[ma][ten] || 0) + (Number(row[colDoanhThuNH]) || 0);
   }
 
   const ngayHienThi = fmtNgayHienThi(ngayMoiNhatST || ngayMoiNhatNH);
-  const card1 = taoCardBaoCaoTheoNgay(
-    { tongDoanhThu, dtOffline, dtOnline, soBill, giaTriBillTB, byNganh },
-    ngayHienThi
-  );
+  const tatCaMaSieuThi = new Set([...Object.keys(theoSieuThiST), ...Object.keys(theoSieuThiNH)]);
+  const cardsDoanhThu = Array.from(tatCaMaSieuThi).map((ma) => {
+    const st = theoSieuThiST[ma] || { ma, ten: ma, dtOffline: 0, dtOnline: 0, soBill: 0 };
+    const byNganh = theoSieuThiNH[ma] || {};
+    const tongDoanhThu = st.dtOffline + st.dtOnline;
+    const giaTriBillTB = st.soBill > 0 ? tongDoanhThu / st.soBill : 0;
+    return taoCardBaoCaoTheoNgay(st.ma, st.ten, { tongDoanhThu, dtOffline: st.dtOffline, dtOnline: st.dtOnline, soBill: st.soBill, giaTriBillTB, byNganh }, ngayHienThi);
+  });
 
   const headerFresh = rowsFresh[0];
   const colNgayFresh = timCotTheoTen(headerFresh, 'Ngày');
@@ -534,7 +581,7 @@ async function generateDailyReport() {
     taoCardFreshNgay(st.ma, st.ten, st, ngayHienThiFresh)
   );
 
-  return [card1, ...cardsFresh].slice(0, 5);
+  return [...cardsDoanhThu, ...cardsFresh].slice(0, 5);
 }
 
 async function generateTraReport() {
@@ -610,8 +657,6 @@ async function napFileVaoSheet(fileName, buffer) {
     })
   );
 
-  // GHI ĐÈ HOÀN TOÀN - xoá sạch data cũ (giữ hàng tiêu đề) rồi ghi data mới,
-  // KHÔNG cộng dồn/nối thêm bất kỳ loại file nào.
   await sheets.spreadsheets.values.clear({
     spreadsheetId: GOOGLE_SHEET_ID,
     range: `${nhanDang.tenTab}!A2:ZZ`,
