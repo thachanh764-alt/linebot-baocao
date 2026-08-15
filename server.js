@@ -335,6 +335,15 @@ function fmtNgayHienThi(dateKey) {
   return `${d}/${m}/${y}`;
 }
 
+// Chuẩn hoá "Mã siêu thị": có tab ghi trơn "8104", có tab ghi gộp cả tên
+// "8104 - BHX_STR_MTU - Thửa 165 Huỳnh Hữu Nghĩa" -> luôn cắt về đúng mã số
+// gốc để so khớp được giữa các tab với nhau.
+function chuanHoaMaSieuThi(value) {
+  const s = (value === undefined || value === null) ? '' : value.toString().trim();
+  const idx = s.indexOf(' - ');
+  return idx === -1 ? s : s.slice(0, idx).trim();
+}
+
 function timNgayMoiNhat(rows, colNgay) {
   let moiNhat = null;
   for (let i = 1; i < rows.length; i++) {
@@ -493,6 +502,7 @@ async function generateDailyReport() {
     docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_FRESH),
   ]);
 
+  // ---- Doanh thu theo NGÀY, tách riêng TỪNG SIÊU THỊ ----
   const headerST = rowsST[0];
   const colNgayST = timCotTheoTen(headerST, 'Ngày');
   const colMaST = timCotTheoTen(headerST, 'Mã siêu thị');
@@ -507,7 +517,7 @@ async function generateDailyReport() {
     const row = rowsST[i];
     if (!row || row[colNgayST] === undefined || row[colNgayST] === '') continue;
     if (toDateKey(row[colNgayST]) !== ngayMoiNhatST) continue;
-    const ma = row[colMaST];
+    const ma = chuanHoaMaSieuThi(row[colMaST]);
     if (!theoSieuThiST[ma]) {
       theoSieuThiST[ma] = { ma, ten: row[colTenST] || ma, dtOffline: 0, dtOnline: 0, soBill: 0 };
     }
@@ -528,7 +538,7 @@ async function generateDailyReport() {
     const row = rowsNH[i];
     if (!row || row[colNgayNH] === undefined || row[colNgayNH] === '') continue;
     if (toDateKey(row[colNgayNH]) !== ngayMoiNhatNH) continue;
-    const ma = row[colMaNH];
+    const ma = chuanHoaMaSieuThi(row[colMaNH]);
     const ten = (row[colNganhNH] || '').toString().trim();
     if (!ten) continue;
     if (!theoSieuThiNH[ma]) theoSieuThiNH[ma] = {};
@@ -545,6 +555,7 @@ async function generateDailyReport() {
     return taoCardBaoCaoTheoNgay(st.ma, st.ten, { tongDoanhThu, dtOffline: st.dtOffline, dtOnline: st.dtOnline, soBill: st.soBill, giaTriBillTB, byNganh }, ngayHienThi);
   });
 
+  // ---- Card 2: Fresh theo từng siêu thị ----
   const headerFresh = rowsFresh[0];
   const colNgayFresh = timCotTheoTen(headerFresh, 'Ngày');
   const colMaSTFresh = timCotTheoTen(headerFresh, 'Mã siêu thị');
@@ -560,7 +571,7 @@ async function generateDailyReport() {
     if (!row || row[colNgayFresh] === undefined || row[colNgayFresh] === '') continue;
     if (toDateKey(row[colNgayFresh]) !== ngayMoiNhatFresh) continue;
 
-    const ma = row[colMaSTFresh];
+    const ma = chuanHoaMaSieuThi(row[colMaSTFresh]);
     if (!theoSieuThi[ma]) {
       theoSieuThi[ma] = { ma, ten: row[colTenSTFresh] || ma, tongDT: 0, tongSL: 0, byNganh: {} };
     }
@@ -581,6 +592,7 @@ async function generateDailyReport() {
     taoCardFreshNgay(st.ma, st.ten, st, ngayHienThiFresh)
   );
 
+  // LINE giới hạn tối đa 5 tin nhắn / lần reply
   return [...cardsDoanhThu, ...cardsFresh].slice(0, 5);
 }
 
@@ -600,7 +612,11 @@ async function generateTraReport() {
 
 // ---------------------------------------------------------------------------
 // NẠP FILE NGƯỜI DÙNG GỬI TRỰC TIẾP VÀO GROUP (.xlsx/.xls)
+// - Tự nhận diện loại báo cáo qua tiêu đề cột, GHI ĐÈ hoàn toàn data cũ trong
+//   (giữ nguyên data cũ), rồi tự trả báo cáo tương ứng.
 // ---------------------------------------------------------------------------
+
+// Tải nội dung file người dùng gửi trong LINE về dạng Buffer
 async function taiNoiDungFileLine(messageId) {
   const stream = await client.getMessageContent(messageId);
   const chunks = [];
@@ -608,6 +624,7 @@ async function taiNoiDungFileLine(messageId) {
   return Buffer.concat(chunks);
 }
 
+// Nhận diện loại file dựa theo tiêu đề cột -> trả về { loai, tenTab } hoặc null
 function nhanDangLoaiFile(header) {
   const co = (ten) => header.includes(ten);
 
@@ -629,6 +646,7 @@ function nhanDangLoaiFile(header) {
   return null;
 }
 
+// Nạp data vào đúng tab (GHI ĐÈ hoàn toàn, không cộng dồn), trả về { loai, tenTab, soDong }
 async function napFileVaoSheet(fileName, buffer) {
   const wb = XLSX.read(buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
@@ -650,6 +668,8 @@ async function napFileVaoSheet(fileName, buffer) {
   const destRows = await docTabThanhMangDong(sheets, nhanDang.tenTab);
   const destHeader = destRows[0];
 
+  // Sắp lại cột theo đúng thứ tự cột của tab đích (khớp theo TÊN cột, không
+  // phụ thuộc thứ tự cột trong file người dùng gửi)
   const rowsToAppend = dataRows.map((row) =>
     destHeader.map((tenCot) => {
       const idx = header.indexOf(tenCot);
@@ -657,6 +677,8 @@ async function napFileVaoSheet(fileName, buffer) {
     })
   );
 
+  // Mọi loại file đều GHI ĐÈ hoàn toàn (xoá sạch data cũ rồi ghi data mới),
+  // KHÔNG cộng dồn/nối thêm - mỗi lần gửi file mới là thay thế toàn bộ số cũ.
   await sheets.spreadsheets.values.clear({
     spreadsheetId: GOOGLE_SHEET_ID,
     range: `${nhanDang.tenTab}!A2:ZZ`,
@@ -699,6 +721,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
   for (const event of events) {
     if (event.type !== 'message') continue;
 
+    // ---- Người dùng gửi FILE (.xlsx/.xls) vào group -> tự nạp + tự báo cáo ----
     if (event.message.type === 'file') {
       const fileName = event.message.fileName || '';
       if (!/\.(xlsx|xls)$/i.test(fileName)) {
