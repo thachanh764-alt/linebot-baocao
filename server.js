@@ -4,12 +4,11 @@
  * LINE Bot "Báo cáo trà" + "Báo cáo ngày" + nhận file tự động nạp
  * -----------------------
  * "Báo cáo trà": nhắn "Báo cáo trà" -> đọc 2 tab TON/DOANHTHU, lọc 6 sản phẩm trà C2,
- *   số bán = cột "Số lượng Online" + cột "Số lượng Offline" (không dùng cột
- *   "Tổng số lượng" vì bị lệch số).
+ *   số bán = cột "Số lượng Online" + cột "Số lượng Offline".
  * "Báo cáo ngày": nhắn "Báo cáo ngày" -> đọc 3 tab DOANHTHU_SIEUTHI/DOANHTHU_NGANHHANG/
  *   FRESH_NHAPXUAT, ra 1 thẻ tổng hợp + N thẻ Fresh (1 thẻ/siêu thị).
  * Gửi file Excel trực tiếp vào group -> bot tự nhận diện loại file qua tiêu đề
- *   cột, tự nạp (nối thêm) vào đúng tab, rồi tự trả báo cáo tương ứng.
+ *   cột, GHI ĐÈ HOÀN TOÀN (KHÔNG cộng dồn) vào đúng tab, rồi tự trả báo cáo.
  *
  * CẦN CHUẨN BỊ (biến môi trường trên Render, hoặc file .env khi chạy local):
  * ------------------------------------------------------------
@@ -24,8 +23,7 @@
  *   GOOGLE_SHEET_TAB_FRESH=FRESH_NHAPXUAT
  *   PORT=3000
  *
- * Phải SHARE Google Sheet cho email service account, quyền EDITOR (không chỉ
- * Viewer, vì bot cần ghi/nạp data từ file gửi vào).
+ * Phải SHARE Google Sheet cho email service account, quyền EDITOR.
  *
  * Chạy: npm start
  */
@@ -612,11 +610,16 @@ async function napFileVaoSheet(fileName, buffer) {
     })
   );
 
-  await sheets.spreadsheets.values.append({
+  // GHI ĐÈ HOÀN TOÀN - xoá sạch data cũ (giữ hàng tiêu đề) rồi ghi data mới,
+  // KHÔNG cộng dồn/nối thêm bất kỳ loại file nào.
+  await sheets.spreadsheets.values.clear({
     spreadsheetId: GOOGLE_SHEET_ID,
-    range: nhanDang.tenTab,
+    range: `${nhanDang.tenTab}!A2:ZZ`,
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: `${nhanDang.tenTab}!A2`,
     valueInputOption: 'USER_ENTERED',
-    insertDataOption: 'INSERT_ROWS',
     requestBody: { values: rowsToAppend },
   });
 
@@ -661,7 +664,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
       try {
         const buffer = await taiNoiDungFileLine(event.message.id);
         const ketQua = await napFileVaoSheet(fileName, buffer);
-        console.log(`[webhook] đã nạp ${ketQua.soDong} dòng vào tab "${ketQua.tenTab}" (loại: ${ketQua.loai})`);
+        console.log(`[webhook] đã GHI ĐÈ ${ketQua.soDong} dòng vào tab "${ketQua.tenTab}" (loại: ${ketQua.loai})`);
 
         try {
           let baoCao;
