@@ -3,7 +3,9 @@
  * =========
  * LINE Bot "Báo cáo trà" + "Báo cáo ngày" + nhận file tự động nạp
  * -----------------------
- * "Báo cáo trà": nhắn "Báo cáo trà" -> đọc 2 tab TON/DOANHTHU, lọc 6 sản phẩm trà C2.
+ * "Báo cáo trà": nhắn "Báo cáo trà" -> đọc 2 tab TON/DOANHTHU, lọc 6 sản phẩm trà C2,
+ *   số bán = cột "Số lượng Online" + cột "Số lượng Offline" (không dùng cột
+ *   "Tổng số lượng" vì bị lệch số).
  * "Báo cáo ngày": nhắn "Báo cáo ngày" -> đọc 3 tab DOANHTHU_SIEUTHI/DOANHTHU_NGANHHANG/
  *   FRESH_NHAPXUAT, ra 1 thẻ tổng hợp + N thẻ Fresh (1 thẻ/siêu thị).
  * Gửi file Excel trực tiếp vào group -> bot tự nhận diện loại file qua tiêu đề
@@ -24,16 +26,6 @@
  *
  * Phải SHARE Google Sheet cho email service account, quyền EDITOR (không chỉ
  * Viewer, vì bot cần ghi/nạp data từ file gửi vào).
- *
- * QUAN TRỌNG - Cần tạo đúng 5 tab trong Google Sheet với tên cột giữ NGUYÊN
- * như file gốc:
- *   - TON: "Mã Model", "Tên siêu thị", "Tồn kho siêu thị"
- *   - DOANHTHU: "Mã Model", "Tên siêu thị", "Tổng số lượng"
- *   - DOANHTHU_SIEUTHI: "Ngày", "Mã siêu thị", "Tên siêu thị", "Doanh thu offline",
- *     "Doanh thu Online", "Tổng số bill"
- *   - DOANHTHU_NGANHHANG: "Ngày xuất", "Ngành hàng BHX", "Doanh thu"
- *   - FRESH_NHAPXUAT: "Ngày", "Mã siêu thị", "Tên siêu thị", "Ngành hàng - Phân tích",
- *     "Thành tiền phải thu khách hàng (chưa VAT)", "SL thực xuất"
  *
  * Chạy: npm start
  */
@@ -58,10 +50,8 @@ const GOOGLE_SHEET_TAB_TON = process.env.GOOGLE_SHEET_TAB_TON || 'TON';
 const GOOGLE_SHEET_TAB_DOANHTHU = process.env.GOOGLE_SHEET_TAB_DOANHTHU || 'DOANHTHU';
 const PORT = process.env.PORT || 3000;
 
-// Từ khoá kích hoạt bot (không phân biệt hoa/thường, dấu cách thừa)
 const TRIGGER_KEYWORDS = ['báo cáo trà', 'bao cao tra'];
 
-// 6 sản phẩm trà cần báo cáo, khoá theo Mã Model
 const SAN_PHAM_TRA = {
   '2601001494': 'Nước sâm C2 Cool',
   '2203000875': 'Trà đen dâu anh đào C2',
@@ -71,14 +61,12 @@ const SAN_PHAM_TRA = {
   '1607002174': 'Nước C2 trà xanh hương chanh 360ml',
 };
 
-const QUY_DOI_THUNG = 24; // 1 thùng = 24 chai
+const QUY_DOI_THUNG = 24;
 
 // ---------------------------------------------------------------------------
-// GOOGLE SHEETS: đọc trực tiếp các tab trong Sheet
+// GOOGLE SHEETS
 // ---------------------------------------------------------------------------
 function getSheetsClient() {
-  // Cần quyền ghi (không phải readonly) vì bot còn phải nạp (append) dữ liệu
-  // từ file người dùng gửi vào group.
   const scopes = ['https://www.googleapis.com/auth/spreadsheets'];
   let auth;
 
@@ -136,7 +124,8 @@ function docBan(rows) {
   const header = rows[0];
   const colMa = timCotTheoTen(header, 'Mã Model');
   const colTenST = timCotTheoTen(header, 'Tên siêu thị');
-  const colSL = timCotTheoTen(header, 'Tổng số lượng');
+  const colSLOnline = timCotTheoTen(header, 'Số lượng Online');
+  const colSLOffline = timCotTheoTen(header, 'Số lượng Offline');
 
   const ban = {};
   for (let i = 1; i < rows.length; i++) {
@@ -145,7 +134,9 @@ function docBan(rows) {
     const ma = (row[colMa] || '').toString().trim();
     if (SAN_PHAM_TRA[ma]) {
       const st = row[colTenST];
-      ban[st] = (ban[st] || 0) + (Number(row[colSL]) || 0);
+      const slOnline = Number(row[colSLOnline]) || 0;
+      const slOffline = Number(row[colSLOffline]) || 0;
+      ban[st] = (ban[st] || 0) + slOnline + slOffline;
     }
   }
   return ban;
@@ -196,7 +187,7 @@ function tinhDuLieu(ton, ban) {
 }
 
 // ---------------------------------------------------------------------------
-// FLEX MESSAGE (thẻ đẹp) - dùng để gửi qua LINE
+// FLEX MESSAGE báo cáo trà
 // ---------------------------------------------------------------------------
 const MAU_XANH_HEADER = '#2C4A3B';
 const MAU_XANH_TOT = '#2ECC71';
@@ -279,14 +270,12 @@ function taoFlexBaoCao(ton, ban) {
 }
 
 // ---------------------------------------------------------------------------
-// BÁO CÁO NGÀY (đọc 3 tab: doanh thu theo siêu thị, doanh thu theo ngành
-// hàng, và nhập-xuất Fresh) - kích hoạt khi nhắn "Báo cáo ngày"
+// BÁO CÁO NGÀY
 // ---------------------------------------------------------------------------
 const GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI = process.env.GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI || 'DOANHTHU_SIEUTHI';
 const GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG = process.env.GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG || 'DOANHTHU_NGANHHANG';
 const GOOGLE_SHEET_TAB_FRESH = process.env.GOOGLE_SHEET_TAB_FRESH || 'FRESH_NHAPXUAT';
 
-// Đúng thứ tự hiển thị theo mẫu báo cáo (không sắp xếp theo giá trị)
 const CARD1_CATEGORY_ORDER = [
   'Bia Các Loại',
   'Thức uống giải khát các loại',
@@ -319,8 +308,6 @@ const FRESH_CATEGORY_ORDER = [
   'Trái Cây Nhập Khẩu',
 ];
 
-// Chuyển giá trị ngày (serial number của Google Sheets hoặc chuỗi dd/mm/yyyy)
-// về khoá "yyyy-mm-dd" thống nhất để so sánh/lọc ngày mới nhất.
 function toDateKey(value) {
   if (typeof value === 'number') {
     const epoch = Date.UTC(1899, 11, 30);
@@ -367,7 +354,6 @@ function dongNganhHangDon(ten, giaTri) {
   };
 }
 
-// ---- Card 1: BÁO CÁO THEO NGÀY (tổng hợp toàn hệ thống) ----
 function taoCardBaoCaoTheoNgay(tong, ngayHienThi) {
   const bodyContents = [
     {
@@ -408,7 +394,6 @@ function taoCardBaoCaoTheoNgay(tong, ngayHienThi) {
   };
 }
 
-// ---- Card 2: BÁO CÁO FRESH THEO NGÀY (1 thẻ / siêu thị) ----
 function taoCardFreshNgay(maSieuThi, tenSieuThi, freshData, ngayHienThi) {
   const bodyContents = [
     {
@@ -459,7 +444,6 @@ function taoCardFreshNgay(maSieuThi, tenSieuThi, freshData, ngayHienThi) {
   };
 }
 
-// Định dạng gọn "x tr" (làm tròn triệu) dùng cho thẻ Fresh, giống mẫu
 function fmtTrieuTron(n) {
   if (Math.abs(n) < 500000) return fmtSo(n) + ' đ';
   return `${Math.round(n / 1e6)} tr`;
@@ -474,7 +458,6 @@ async function generateDailyReport() {
     docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_FRESH),
   ]);
 
-  // ---- Card 1: tổng hợp DT Offline/Online/Bill + theo ngành hàng ----
   const headerST = rowsST[0];
   const colNgayST = timCotTheoTen(headerST, 'Ngày');
   const colDTOffline = timCotTheoTen(headerST, 'Doanh thu offline');
@@ -516,7 +499,6 @@ async function generateDailyReport() {
     ngayHienThi
   );
 
-  // ---- Card 2: Fresh theo từng siêu thị ----
   const headerFresh = rowsFresh[0];
   const colNgayFresh = timCotTheoTen(headerFresh, 'Ngày');
   const colMaSTFresh = timCotTheoTen(headerFresh, 'Mã siêu thị');
@@ -553,7 +535,6 @@ async function generateDailyReport() {
     taoCardFreshNgay(st.ma, st.ten, st, ngayHienThiFresh)
   );
 
-  // LINE giới hạn tối đa 5 tin nhắn / lần reply
   return [card1, ...cardsFresh].slice(0, 5);
 }
 
@@ -573,11 +554,7 @@ async function generateTraReport() {
 
 // ---------------------------------------------------------------------------
 // NẠP FILE NGƯỜI DÙNG GỬI TRỰC TIẾP VÀO GROUP (.xlsx/.xls)
-// - Tự nhận diện loại báo cáo qua tiêu đề cột, nối thêm data vào đúng tab
-//   (giữ nguyên data cũ), rồi tự trả báo cáo tương ứng.
 // ---------------------------------------------------------------------------
-
-// Tải nội dung file người dùng gửi trong LINE về dạng Buffer
 async function taiNoiDungFileLine(messageId) {
   const stream = await client.getMessageContent(messageId);
   const chunks = [];
@@ -585,7 +562,6 @@ async function taiNoiDungFileLine(messageId) {
   return Buffer.concat(chunks);
 }
 
-// Nhận diện loại file dựa theo tiêu đề cột -> trả về { loai, tenTab } hoặc null
 function nhanDangLoaiFile(header) {
   const co = (ten) => header.includes(ten);
 
@@ -607,7 +583,6 @@ function nhanDangLoaiFile(header) {
   return null;
 }
 
-// Nạp data vào đúng tab (nối thêm, giữ nguyên data cũ), trả về { loai, tenTab, soDong }
 async function napFileVaoSheet(fileName, buffer) {
   const wb = XLSX.read(buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
@@ -629,8 +604,6 @@ async function napFileVaoSheet(fileName, buffer) {
   const destRows = await docTabThanhMangDong(sheets, nhanDang.tenTab);
   const destHeader = destRows[0];
 
-  // Sắp lại cột theo đúng thứ tự cột của tab đích (khớp theo TÊN cột, không
-  // phụ thuộc thứ tự cột trong file người dùng gửi)
   const rowsToAppend = dataRows.map((row) =>
     destHeader.map((tenCot) => {
       const idx = header.indexOf(tenCot);
@@ -677,7 +650,6 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
   for (const event of events) {
     if (event.type !== 'message') continue;
 
-    // ---- Người dùng gửi FILE (.xlsx/.xls) vào group -> tự nạp + tự báo cáo ----
     if (event.message.type === 'file') {
       const fileName = event.message.fileName || '';
       if (!/\.(xlsx|xls)$/i.test(fileName)) {
