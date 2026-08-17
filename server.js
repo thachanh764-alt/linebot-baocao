@@ -1,36 +1,35 @@
 /**
  * server.js
  * =========
- * LINE Bot "Báo cáo trà" (bản rút gọn - chỉ còn đúng 1 chức năng)
+ * LINE Bot "Báo cáo trà" + "Báo cáo ngày" + "Bánh Trung Thu" + nhận file tự động nạp
  * -----------------------
- * Khi có người nhắn "Báo cáo trà" trong LINE OA, bot sẽ:
- *   1. Đọc trực tiếp 2 TAB trong Google Sheet (bằng service account) -
- *      1 tab chứa data TỒN, 1 tab chứa data DOANH THU (anh copy/dán
- *      nguyên nội dung 2 file Excel vào 2 tab này, giữ nguyên hàng
- *      tiêu đề cột giống file gốc).
- *   2. Lọc đúng 6 sản phẩm trà C2, gộp theo siêu thị, quy đổi thùng.
- *   3. Trả lời lại đúng định dạng báo cáo (thẻ Flex Message).
+ * "Báo cáo trà": nhắn "Báo cáo trà" -> đọc 2 tab TON/DOANHTHU, lọc 6 sản phẩm trà C2.
+ * "Báo cáo ngày": nhắn "Báo cáo ngày" -> đọc 3 tab DOANHTHU_SIEUTHI/DOANHTHU_NGANHHANG/
+ *   FRESH_NHAPXUAT, ra thẻ theo từng siêu thị.
+ * "Bánh Trung Thu": nhắn "Bánh Trung Thu" -> đọc 2 tab BANHTT_TON/BANHTT_DOANHTHU,
+ *   tự tính thưởng Cái 1.000đ / Hộp 4.000đ theo từng siêu thị.
+ * Gửi file Excel trực tiếp vào group -> bot tự nhận diện loại file (kể cả phân
+ *   biệt file trà và file Bánh Trung Thu dù CÙNG cấu trúc cột, dựa vào giá trị
+ *   cột "Nhóm hàng"), GHI ĐÈ hoàn toàn (không cộng dồn) vào đúng tab, tự báo cáo.
  *
- * CẦN CHUẨN BỊ TRƯỚC KHI CHẠY (điền vào file .env cùng thư mục, hoặc biến
- * môi trường trên Render):
+ * CẦN CHUẨN BỊ (biến môi trường trên Render, hoặc file .env khi chạy local):
  * ------------------------------------------------------------
- *   LINE_CHANNEL_ACCESS_TOKEN=...........(lấy trong LINE Developers Console)
- *   LINE_CHANNEL_SECRET=..................(lấy trong LINE Developers Console)
- *   GOOGLE_SERVICE_ACCOUNT_JSON=..........(nội dung file json service account,
- *      dán nguyên cả JSON vào biến này - dùng khi deploy lên Render)
- *   HOẶC GOOGLE_SERVICE_ACCOUNT_KEY_PATH=./service-account.json
- *      (đường dẫn tới file json, chỉ dùng khi chạy local trên máy)
- *   GOOGLE_SHEET_ID=..............(ID của Google Sheet)
- *   GOOGLE_SHEET_TAB_TON=TON       (tên tab chứa data Tồn)
- *   GOOGLE_SHEET_TAB_DOANHTHU=DOANHTHU  (tên tab chứa data Doanh thu)
+ *   LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET
+ *   GOOGLE_SERVICE_ACCOUNT_JSON (nội dung json service account, dùng trên Render)
+ *   HOẶC GOOGLE_SERVICE_ACCOUNT_KEY_PATH=./service-account.json (chạy local)
+ *   GOOGLE_SHEET_ID
+ *   GOOGLE_SHEET_TAB_TON=TON
+ *   GOOGLE_SHEET_TAB_DOANHTHU=DOANHTHU
+ *   GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI=DOANHTHU_SIEUTHI
+ *   GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG=DOANHTHU_NGANHHANG
+ *   GOOGLE_SHEET_TAB_FRESH=FRESH_NHAPXUAT
+ *   GOOGLE_SHEET_TAB_BANHTT_TON=BANHTT_TON
+ *   GOOGLE_SHEET_TAB_BANHTT_DOANHTHU=BANHTT_DOANHTHU
  *   PORT=3000
  *
- * Và phải SHARE Google Sheet đó cho email của service account với quyền
- * ít nhất là "Viewer" (Người xem).
- *
- * QUAN TRỌNG: 2 tab đó phải giữ nguyên tên cột giống file gốc ở hàng đầu
- * tiên: tab TỒN cần có cột "Mã Model", "Tên siêu thị", "Tồn kho siêu thị";
- * tab DOANH THU cần có cột "Mã Model", "Tên siêu thị", "Tổng số lượng".
+ * Phải SHARE Google Sheet cho email service account, quyền EDITOR.
+ * Cần tạo đủ 7 tab: TON, DOANHTHU, DOANHTHU_SIEUTHI, DOANHTHU_NGANHHANG,
+ * FRESH_NHAPXUAT, BANHTT_TON, BANHTT_DOANHTHU.
  *
  * Chạy: npm start
  */
@@ -55,10 +54,8 @@ const GOOGLE_SHEET_TAB_TON = process.env.GOOGLE_SHEET_TAB_TON || 'TON';
 const GOOGLE_SHEET_TAB_DOANHTHU = process.env.GOOGLE_SHEET_TAB_DOANHTHU || 'DOANHTHU';
 const PORT = process.env.PORT || 3000;
 
-// Từ khoá kích hoạt bot (không phân biệt hoa/thường, dấu cách thừa)
 const TRIGGER_KEYWORDS = ['báo cáo trà', 'bao cao tra'];
 
-// 6 sản phẩm trà cần báo cáo, khoá theo Mã Model
 const SAN_PHAM_TRA = {
   '2601001494': 'Nước sâm C2 Cool',
   '2203000875': 'Trà đen dâu anh đào C2',
@@ -68,10 +65,10 @@ const SAN_PHAM_TRA = {
   '1607002174': 'Nước C2 trà xanh hương chanh 360ml',
 };
 
-const QUY_DOI_THUNG = 24; // 1 thùng = 24 chai
+const QUY_DOI_THUNG = 24;
 
 // ---------------------------------------------------------------------------
-// GOOGLE SHEETS: đọc trực tiếp 2 tab TON / DOANHTHU
+// GOOGLE SHEETS
 // ---------------------------------------------------------------------------
 function getSheetsClient() {
   const scopes = ['https://www.googleapis.com/auth/spreadsheets'];
@@ -194,7 +191,7 @@ function tinhDuLieu(ton, ban) {
 }
 
 // ---------------------------------------------------------------------------
-// FLEX MESSAGE (thẻ đẹp) - dùng để gửi qua LINE
+// FLEX MESSAGE báo cáo trà
 // ---------------------------------------------------------------------------
 const MAU_XANH_HEADER = '#2C4A3B';
 const MAU_XANH_TOT = '#2ECC71';
@@ -278,8 +275,7 @@ function taoFlexBaoCao(ton, ban) {
 }
 
 // ---------------------------------------------------------------------------
-// BÁO CÁO NGÀY (đọc 3 tab: doanh thu theo siêu thị, doanh thu theo ngành
-// hàng, và nhập-xuất Fresh) - kích hoạt khi nhắn "Báo cáo ngày"
+// BÁO CÁO NGÀY
 // ---------------------------------------------------------------------------
 const GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI = process.env.GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI || 'DOANHTHU_SIEUTHI';
 const GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG = process.env.GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG || 'DOANHTHU_NGANHHANG';
@@ -335,9 +331,6 @@ function fmtNgayHienThi(dateKey) {
   return `${d}/${m}/${y}`;
 }
 
-// Chuẩn hoá "Mã siêu thị": có tab ghi trơn "8104", có tab ghi gộp cả tên
-// "8104 - BHX_STR_MTU - Thửa 165 Huỳnh Hữu Nghĩa" -> luôn cắt về đúng mã số
-// gốc để so khớp được giữa các tab với nhau.
 function chuanHoaMaSieuThi(value) {
   const s = (value === undefined || value === null) ? '' : value.toString().trim();
   const idx = s.indexOf(' - ');
@@ -502,7 +495,6 @@ async function generateDailyReport() {
     docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_FRESH),
   ]);
 
-  // ---- Doanh thu theo NGÀY, tách riêng TỪNG SIÊU THỊ ----
   const headerST = rowsST[0];
   const colNgayST = timCotTheoTen(headerST, 'Ngày');
   const colMaST = timCotTheoTen(headerST, 'Mã siêu thị');
@@ -555,7 +547,6 @@ async function generateDailyReport() {
     return taoCardBaoCaoTheoNgay(st.ma, st.ten, { tongDoanhThu, dtOffline: st.dtOffline, dtOnline: st.dtOnline, soBill: st.soBill, giaTriBillTB, byNganh }, ngayHienThi);
   });
 
-  // ---- Card 2: Fresh theo từng siêu thị ----
   const headerFresh = rowsFresh[0];
   const colNgayFresh = timCotTheoTen(headerFresh, 'Ngày');
   const colMaSTFresh = timCotTheoTen(headerFresh, 'Mã siêu thị');
@@ -592,7 +583,6 @@ async function generateDailyReport() {
     taoCardFreshNgay(st.ma, st.ten, st, ngayHienThiFresh)
   );
 
-  // LINE giới hạn tối đa 5 tin nhắn / lần reply
   return [...cardsDoanhThu, ...cardsFresh].slice(0, 5);
 }
 
@@ -611,12 +601,149 @@ async function generateTraReport() {
 }
 
 // ---------------------------------------------------------------------------
-// NẠP FILE NGƯỜI DÙNG GỬI TRỰC TIẾP VÀO GROUP (.xlsx/.xls)
-// - Tự nhận diện loại báo cáo qua tiêu đề cột, GHI ĐÈ hoàn toàn data cũ trong
-//   (giữ nguyên data cũ), rồi tự trả báo cáo tương ứng.
+// BÁO CÁO BÁNH TRUNG THU
 // ---------------------------------------------------------------------------
+const GOOGLE_SHEET_TAB_BANHTT_TON = process.env.GOOGLE_SHEET_TAB_BANHTT_TON || 'BANHTT_TON';
+const GOOGLE_SHEET_TAB_BANHTT_DOANHTHU = process.env.GOOGLE_SHEET_TAB_BANHTT_DOANHTHU || 'BANHTT_DOANHTHU';
 
-// Tải nội dung file người dùng gửi trong LINE về dạng Buffer
+const GIA_THUONG_CAI = 1000;
+const GIA_THUONG_HOP = 4000;
+
+function docTonBanhTT(rows) {
+  const header = rows[0];
+  const colTenST = timCotTheoTen(header, 'Tên siêu thị');
+  const colDonVi = timCotTheoTen(header, 'Đơn vị');
+  const colTon = timCotTheoTen(header, 'Tồn kho siêu thị');
+
+  const ton = {};
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const st = row[colTenST];
+    if (!st) continue;
+    const donVi = (row[colDonVi] || '').toString().trim();
+    const soLuong = Number(row[colTon]) || 0;
+    if (!ton[st]) ton[st] = { cai: 0, hop: 0 };
+    if (donVi === 'Hộp') ton[st].hop += soLuong;
+    else ton[st].cai += soLuong;
+  }
+  return ton;
+}
+
+function docBanBanhTT(rows) {
+  const header = rows[0];
+  const colTenST = timCotTheoTen(header, 'Tên siêu thị');
+  const colDonVi = timCotTheoTen(header, 'Đơn vị');
+  const colSLOnline = timCotTheoTen(header, 'Số lượng Online');
+  const colSLOffline = timCotTheoTen(header, 'Số lượng Offline');
+
+  const ban = {};
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const st = row[colTenST];
+    if (!st) continue;
+    const donVi = (row[colDonVi] || '').toString().trim();
+    const soLuong = (Number(row[colSLOnline]) || 0) + (Number(row[colSLOffline]) || 0);
+    if (!ban[st]) ban[st] = { cai: 0, hop: 0 };
+    if (donVi === 'Hộp') ban[st].hop += soLuong;
+    else ban[st].cai += soLuong;
+  }
+  return ban;
+}
+
+function dongBangBanhTT(label, tonCai, tonHop, banCai, banHop, thuong, dam) {
+  return {
+    type: 'box', layout: 'horizontal', margin: dam ? 'none' : 'sm',
+    contents: [
+      { type: 'text', text: label, size: 'xs', flex: 5, wrap: true, weight: dam ? 'bold' : 'regular', color: dam ? '#1a1a1a' : '#333333' },
+      { type: 'text', text: tonCai, size: 'xs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
+      { type: 'text', text: tonHop, size: 'xs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
+      { type: 'text', text: banCai, size: 'xs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
+      { type: 'text', text: banHop, size: 'xs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
+      { type: 'text', text: thuong, size: 'xs', flex: 3, align: 'end', weight: 'bold', color: dam ? '#B8860B' : '#D97706' },
+    ],
+  };
+}
+
+function taoFlexBanhTrungThu(ton, ban) {
+  const tatCaSieuThi = new Set([...Object.keys(ton), ...Object.keys(ban)]);
+  const rows = [];
+
+  for (const st of tatCaSieuThi) {
+    const t = ton[st] || { cai: 0, hop: 0 };
+    const b = ban[st] || { cai: 0, hop: 0 };
+    const thuong = b.cai * GIA_THUONG_CAI + b.hop * GIA_THUONG_HOP;
+    rows.push({ ten: tenNganSieuThi(st), tonCai: t.cai, tonHop: t.hop, banCai: b.cai, banHop: b.hop, thuong });
+  }
+  rows.sort((a, b) => b.thuong - a.thuong);
+
+  const tong = rows.reduce((acc, r) => ({
+    tonCai: acc.tonCai + r.tonCai, tonHop: acc.tonHop + r.tonHop,
+    banCai: acc.banCai + r.banCai, banHop: acc.banHop + r.banHop,
+    thuong: acc.thuong + r.thuong,
+  }), { tonCai: 0, tonHop: 0, banCai: 0, banHop: 0, thuong: 0 });
+
+  const now = new Date();
+  const thoiGian = now.toLocaleString('vi-VN', {
+    hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric',
+    timeZone: 'Asia/Ho_Chi_Minh',
+  });
+
+  const bodyContents = [
+    dongBangBanhTT('Siêu thị', 'Tồn C', 'Tồn H', 'Bán C', 'Bán H', 'Thưởng', false),
+    { type: 'separator', margin: 'sm' },
+    dongBangBanhTT('TỔNG TẤT CẢ', fmtSo(tong.tonCai), fmtSo(tong.tonHop), fmtSo(tong.banCai), fmtSo(tong.banHop), fmtSo(tong.thuong) + 'đ', true),
+    { type: 'separator', margin: 'sm' },
+  ];
+
+  rows.forEach((r) => {
+    bodyContents.push(
+      dongBangBanhTT(r.ten, fmtSo(r.tonCai), fmtSo(r.tonHop), fmtSo(r.banCai), fmtSo(r.banHop), fmtSo(r.thuong) + 'đ', false)
+    );
+  });
+
+  const altText = `Bánh Trung Thu: Bán ${fmtSo(tong.banCai)} cái + ${fmtSo(tong.banHop)} hộp, Thưởng ${fmtSo(tong.thuong)}đ (${rows.length} siêu thị)`;
+
+  return {
+    type: 'flex',
+    altText: altText.slice(0, 400),
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#8B4513', paddingAll: '20px',
+        contents: [
+          { type: 'text', text: '🥮 BÁO CÁO BÁNH TRUNG THU', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+          { type: 'text', text: `Đơn giá thưởng: Cái ${fmtSo(GIA_THUONG_CAI)}đ · Hộp ${fmtSo(GIA_THUONG_HOP)}đ`, color: '#F5E0C3', size: 'sm', margin: 'sm' },
+          { type: 'text', text: `Cập nhật lúc ${thoiGian} · ${rows.length} siêu thị`, color: '#F5E0C3', size: 'xs', margin: 'sm' },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'sm',
+        contents: bodyContents,
+      },
+    },
+  };
+}
+
+async function generateBanhTrungThuReport() {
+  const sheets = getSheetsClient();
+
+  const [rowsTon, rowsBan] = await Promise.all([
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_BANHTT_TON),
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_BANHTT_DOANHTHU),
+  ]);
+
+  const ton = docTonBanhTT(rowsTon);
+  const ban = docBanBanhTT(rowsBan);
+
+  return taoFlexBanhTrungThu(ton, ban);
+}
+
+// ---------------------------------------------------------------------------
+// NẠP FILE NGƯỜI DÙNG GỬI TRỰC TIẾP VÀO GROUP (.xlsx/.xls)
+// ---------------------------------------------------------------------------
 async function taiNoiDungFileLine(messageId) {
   const stream = await client.getMessageContent(messageId);
   const chunks = [];
@@ -624,14 +751,33 @@ async function taiNoiDungFileLine(messageId) {
   return Buffer.concat(chunks);
 }
 
-// Nhận diện loại file dựa theo tiêu đề cột -> trả về { loai, tenTab } hoặc null
-function nhanDangLoaiFile(header) {
+function nhomHangPhoBien(header, dataRows) {
+  const idx = header.indexOf('Nhóm hàng');
+  if (idx === -1) return null;
+  const dem = {};
+  for (const row of dataRows) {
+    const v = (row[idx] || '').toString().trim();
+    if (!v) continue;
+    dem[v] = (dem[v] || 0) + 1;
+  }
+  const entries = Object.entries(dem).sort((a, b) => b[1] - a[1]);
+  return entries.length ? entries[0][0] : null;
+}
+
+function nhanDangLoaiFile(header, dataRows) {
   const co = (ten) => header.includes(ten);
+  const nhomPhoBien = nhomHangPhoBien(header, dataRows || []);
 
   if (co('Mã Model') && co('Tồn kho siêu thị')) {
+    if (nhomPhoBien === 'Bánh Trung Thu') {
+      return { loai: 'banhtt_ton', tenTab: GOOGLE_SHEET_TAB_BANHTT_TON };
+    }
     return { loai: 'ton', tenTab: GOOGLE_SHEET_TAB_TON };
   }
   if (co('Mã Model') && co('Tổng số lượng') && !co('Tồn kho siêu thị')) {
+    if (nhomPhoBien === 'Bánh Trung Thu') {
+      return { loai: 'banhtt_ban', tenTab: GOOGLE_SHEET_TAB_BANHTT_DOANHTHU };
+    }
     return { loai: 'tra_ban', tenTab: GOOGLE_SHEET_TAB_DOANHTHU };
   }
   if (co('Ngày') && co('Mã siêu thị') && co('Doanh thu offline')) {
@@ -646,7 +792,6 @@ function nhanDangLoaiFile(header) {
   return null;
 }
 
-// Nạp data vào đúng tab (GHI ĐÈ hoàn toàn, không cộng dồn), trả về { loai, tenTab, soDong }
 async function napFileVaoSheet(fileName, buffer) {
   const wb = XLSX.read(buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
@@ -657,7 +802,7 @@ async function napFileVaoSheet(fileName, buffer) {
   const dataRows = allRows.slice(1).filter((r) => r && r.some((v) => v !== null && v !== ''));
   if (dataRows.length === 0) throw new Error('File không có dòng dữ liệu nào');
 
-  const nhanDang = nhanDangLoaiFile(header);
+  const nhanDang = nhanDangLoaiFile(header, dataRows);
   if (!nhanDang) {
     throw new Error(
       `Không nhận diện được loại báo cáo từ file "${fileName || ''}". Kiểm tra lại tiêu đề cột trong file có đúng mẫu không.`
@@ -668,8 +813,6 @@ async function napFileVaoSheet(fileName, buffer) {
   const destRows = await docTabThanhMangDong(sheets, nhanDang.tenTab);
   const destHeader = destRows[0];
 
-  // Sắp lại cột theo đúng thứ tự cột của tab đích (khớp theo TÊN cột, không
-  // phụ thuộc thứ tự cột trong file người dùng gửi)
   const rowsToAppend = dataRows.map((row) =>
     destHeader.map((tenCot) => {
       const idx = header.indexOf(tenCot);
@@ -677,8 +820,6 @@ async function napFileVaoSheet(fileName, buffer) {
     })
   );
 
-  // Mọi loại file đều GHI ĐÈ hoàn toàn (xoá sạch data cũ rồi ghi data mới),
-  // KHÔNG cộng dồn/nối thêm - mỗi lần gửi file mới là thay thế toàn bộ số cũ.
   await sheets.spreadsheets.values.clear({
     spreadsheetId: GOOGLE_SHEET_ID,
     range: `${nhanDang.tenTab}!A2:ZZ`,
@@ -712,6 +853,13 @@ function laTriggerNgay(text) {
   return TRIGGER_NGAY.some((kw) => t === kw || t.includes(kw));
 }
 
+const TRIGGER_BANHTT = ['bánh trung thu', 'banh trung thu'];
+function laTriggerBanhTT(text) {
+  if (!text) return false;
+  const t = text.trim().toLowerCase();
+  return TRIGGER_BANHTT.some((kw) => t === kw || t.includes(kw));
+}
+
 app.post('/webhook', line.middleware(config), async (req, res) => {
   res.status(200).end();
 
@@ -721,7 +869,6 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
   for (const event of events) {
     if (event.type !== 'message') continue;
 
-    // ---- Người dùng gửi FILE (.xlsx/.xls) vào group -> tự nạp + tự báo cáo ----
     if (event.message.type === 'file') {
       const fileName = event.message.fileName || '';
       if (!/\.(xlsx|xls)$/i.test(fileName)) {
@@ -738,6 +885,8 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           let baoCao;
           if (ketQua.loai === 'ton' || ketQua.loai === 'tra_ban') {
             baoCao = await generateTraReport();
+          } else if (ketQua.loai === 'banhtt_ton' || ketQua.loai === 'banhtt_ban') {
+            baoCao = await generateBanhTrungThuReport();
           } else {
             baoCao = await generateDailyReport();
           }
@@ -795,6 +944,26 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           await client.replyMessage(event.replyToken, {
             type: 'text',
             text: `⚠️ Không tạo được báo cáo ngày: ${err.message}`,
+          });
+        } catch (replyErr) {
+          console.error('[webhook] Lỗi luôn cả khi reply lỗi:', replyErr.message);
+        }
+      }
+      continue;
+    }
+
+    if (laTriggerBanhTT(text)) {
+      console.log('[webhook] khớp "Bánh Trung Thu", đang tạo báo cáo...');
+      try {
+        const flexMessage = await generateBanhTrungThuReport();
+        await client.replyMessage(event.replyToken, flexMessage);
+        console.log('[webhook] tạo báo cáo Bánh Trung Thu + reply thành công');
+      } catch (err) {
+        console.error('[webhook] Lỗi tạo báo cáo Bánh Trung Thu:', err);
+        try {
+          await client.replyMessage(event.replyToken, {
+            type: 'text',
+            text: `⚠️ Không tạo được báo cáo Bánh Trung Thu: ${err.message}`,
           });
         } catch (replyErr) {
           console.error('[webhook] Lỗi luôn cả khi reply lỗi:', replyErr.message);
