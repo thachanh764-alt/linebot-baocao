@@ -11,6 +11,7 @@
  * Gửi file Excel trực tiếp vào group -> bot tự nhận diện loại file (kể cả phân
  *   biệt file trà và file Bánh Trung Thu dù CÙNG cấu trúc cột, dựa vào giá trị
  *   cột "Nhóm hàng"), GHI ĐÈ hoàn toàn (không cộng dồn) vào đúng tab, tự báo cáo.
+ * Tên siêu thị dài được cắt gọn (…) để không xuống dòng vỡ layout.
  *
  * CẦN CHUẨN BỊ (biến môi trường trên Render, hoặc file .env khi chạy local):
  * ------------------------------------------------------------
@@ -155,6 +156,11 @@ function tenNganSieuThi(tenDayDu) {
   return idx === -1 ? tenDayDu.trim() : tenDayDu.slice(idx + 3).trim();
 }
 
+function rutGonTen(ten, maxLen) {
+  if (!ten) return '';
+  return ten.length > maxLen ? ten.slice(0, maxLen - 1).trim() + '…' : ten;
+}
+
 function fmtSo(n) {
   return Math.round(n)
     .toString()
@@ -243,7 +249,7 @@ function taoFlexBaoCao(ton, ban) {
       layout: 'horizontal',
       margin: 'sm',
       contents: [
-        { type: 'text', text: r.ten, size: 'sm', flex: 5, wrap: true, color: '#333333' },
+        { type: 'text', text: rutGonTen(r.ten, 22), size: 'sm', flex: 5, wrap: false, color: '#333333' },
         { type: 'text', text: fmtSo(r.ton), size: 'sm', flex: 2, align: 'end', color: '#333333' },
         { type: 'text', text: fmtSo(r.ban), size: 'sm', flex: 2, align: 'end', color: '#333333' },
         {
@@ -656,7 +662,7 @@ function dongBangBanhTT(label, tonCai, tonHop, banCai, banHop, thuong, dam) {
   return {
     type: 'box', layout: 'horizontal', margin: dam ? 'none' : 'sm',
     contents: [
-      { type: 'text', text: label, size: 'xs', flex: 5, wrap: true, weight: dam ? 'bold' : 'regular', color: dam ? '#1a1a1a' : '#333333' },
+      { type: 'text', text: label, size: 'xs', flex: 5, wrap: false, weight: dam ? 'bold' : 'regular', color: dam ? '#1a1a1a' : '#333333' },
       { type: 'text', text: tonCai, size: 'xs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
       { type: 'text', text: tonHop, size: 'xs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
       { type: 'text', text: banCai, size: 'xs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
@@ -699,7 +705,7 @@ function taoFlexBanhTrungThu(ton, ban) {
 
   rows.forEach((r) => {
     bodyContents.push(
-      dongBangBanhTT(r.ten, fmtSo(r.tonCai), fmtSo(r.tonHop), fmtSo(r.banCai), fmtSo(r.banHop), fmtSo(r.thuong) + 'đ', false)
+      dongBangBanhTT(rutGonTen(r.ten, 18), fmtSo(r.tonCai), fmtSo(r.tonHop), fmtSo(r.banCai), fmtSo(r.banHop), fmtSo(r.thuong) + 'đ', false)
     );
   });
 
