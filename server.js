@@ -1,17 +1,18 @@
 /**
  * server.js
  * =========
- * LINE Bot "Báo cáo trà" + "Báo cáo ngày" + "Bánh Trung Thu" + nhận file tự động nạp
+ * LINE Bot "Báo cáo trà" + "Báo cáo ngày" + "Bánh Trung Thu" + "BC Luỹ Kế DT"
+ * + nhận file tự động nạp
  * -----------------------
  * "Báo cáo trà": nhắn "Báo cáo trà" -> đọc 2 tab TON/DOANHTHU, lọc 6 sản phẩm trà C2.
  * "Báo cáo ngày": nhắn "Báo cáo ngày" -> đọc 3 tab DOANHTHU_SIEUTHI/DOANHTHU_NGANHHANG/
  *   FRESH_NHAPXUAT, ra thẻ theo từng siêu thị.
  * "Bánh Trung Thu": nhắn "Bánh Trung Thu" -> đọc 2 tab BANHTT_TON/BANHTT_DOANHTHU,
  *   tự tính thưởng Cái 1.000đ / Hộp 4.000đ theo từng siêu thị.
- * Gửi file Excel trực tiếp vào group -> bot tự nhận diện loại file (kể cả phân
- *   biệt file trà và file Bánh Trung Thu dù CÙNG cấu trúc cột, dựa vào giá trị
- *   cột "Nhóm hàng"), GHI ĐÈ hoàn toàn (không cộng dồn) vào đúng tab, tự báo cáo.
- * Tên siêu thị dài được cắt gọn (…) để không xuống dòng vỡ layout.
+ * "BC Luỹ Kế DT": nhắn "BC Luỹ Kế DT" -> đọc tab LUYKE_DT (nhiều ngày/tháng),
+ *   tính lũy kế + dự kiến hết tháng + so sánh MoM Doanh thu/Lượt bill/Giá trị bill.
+ * Gửi file Excel trực tiếp vào group -> bot tự nhận diện loại file, GHI ĐÈ
+ *   (hoặc gộp thông minh riêng cho Lũy Kế) vào đúng tab, tự trả báo cáo.
  *
  * CẦN CHUẨN BỊ (biến môi trường trên Render, hoặc file .env khi chạy local):
  * ------------------------------------------------------------
@@ -26,11 +27,12 @@
  *   GOOGLE_SHEET_TAB_FRESH=FRESH_NHAPXUAT
  *   GOOGLE_SHEET_TAB_BANHTT_TON=BANHTT_TON
  *   GOOGLE_SHEET_TAB_BANHTT_DOANHTHU=BANHTT_DOANHTHU
+ *   GOOGLE_SHEET_TAB_LUYKE_DT=LUYKE_DT
  *   PORT=3000
  *
  * Phải SHARE Google Sheet cho email service account, quyền EDITOR.
- * Cần tạo đủ 7 tab: TON, DOANHTHU, DOANHTHU_SIEUTHI, DOANHTHU_NGANHHANG,
- * FRESH_NHAPXUAT, BANHTT_TON, BANHTT_DOANHTHU.
+ * Cần tạo đủ 8 tab: TON, DOANHTHU, DOANHTHU_SIEUTHI, DOANHTHU_NGANHHANG,
+ * FRESH_NHAPXUAT, BANHTT_TON, BANHTT_DOANHTHU, LUYKE_DT.
  *
  * Chạy: npm start
  */
@@ -592,6 +594,198 @@ async function generateDailyReport() {
   return [...cardsDoanhThu, ...cardsFresh].slice(0, 5);
 }
 
+// ---------------------------------------------------------------------------
+// BC LŨY KẾ DOANH THU
+// ---------------------------------------------------------------------------
+const GOOGLE_SHEET_TAB_LUYKE_DT = process.env.GOOGLE_SHEET_TAB_LUYKE_DT || 'LUYKE_DT';
+
+function fmtNgayNgan(dateKey) {
+  const [, m, d] = dateKey.split('-');
+  return `${d}/${m}`;
+}
+
+function fmtPctCoDau(p) {
+  const r = Math.round(p * 10) / 10;
+  const mui = r >= 0 ? '▲' : '▼';
+  const dau = r >= 0 ? '+' : '';
+  return `${mui}${dau}${r.toFixed(1)}%`;
+}
+
+function mauTangGiamLuyKe(p) {
+  return p >= 0 ? '#27AE60' : '#E74C3C';
+}
+
+function oThongKeLuyKe(nhan, giaTri, mau) {
+  return {
+    type: 'box', layout: 'vertical', flex: 1, backgroundColor: '#F7FAF8', cornerRadius: 'md',
+    paddingAll: '10px', spacing: 'xs',
+    contents: [
+      { type: 'text', text: nhan, size: 'xxs', color: '#888888' },
+      { type: 'text', text: giaTri, size: 'sm', weight: 'bold', color: mau || '#1a1a1a', wrap: true },
+    ],
+  };
+}
+
+function dongSoSanhXuHuong(nhan, giaTriHienTai, phanTram, chenhLech) {
+  const mau = mauTangGiamLuyKe(phanTram);
+  return {
+    type: 'box', layout: 'horizontal', margin: 'sm', contents: [
+      { type: 'text', text: nhan, size: 'sm', flex: 4, color: '#555555' },
+      { type: 'text', text: giaTriHienTai, size: 'sm', flex: 4, align: 'end', weight: 'bold', color: '#1a1a1a' },
+      { type: 'text', text: fmtPctCoDau(phanTram), size: 'xs', flex: 3, align: 'end', weight: 'bold', color: mau },
+    ],
+  };
+}
+
+function taoCardLuyKeDT(maSieuThi, tenSieuThi, so) {
+  const mom = fmtPctCoDau(so.mom);
+  const mauMom = mauTangGiamLuyKe(so.mom);
+
+  const bodyContents = [
+    { type: 'text', text: `🏢 ${tenSieuThi}`, weight: 'bold', size: 'md', wrap: true, color: '#1a1a1a' },
+    {
+      type: 'box', layout: 'vertical', backgroundColor: '#F0F7F2', cornerRadius: 'md', paddingAll: '14px', margin: 'md',
+      contents: [
+        { type: 'text', text: `LŨY KẾ 01-${fmtNgayNgan(so.ngayCuoi)}`, size: 'xs', color: '#888888' },
+        { type: 'text', text: fmtSo(so.tongLuyKe) + ' đ', size: 'xxl', weight: 'bold', color: '#1a1a1a', margin: 'sm' },
+        { type: 'text', text: `Trung bình ${fmtSo(so.tongLuyKe / (so.soNgayCoData || 1))} đ/ngày`, size: 'xs', color: '#555555', margin: 'sm' },
+      ],
+    },
+    {
+      type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'md',
+      contents: [
+        oThongKeLuyKe('DỰ KIẾN HẾT THÁNG', fmtSo(so.duKienHetThang) + ' đ'),
+        oThongKeLuyKe('THỰC TẾ THÁNG TRƯỚC', fmtSo(so.thangTruoc) + ' đ'),
+      ],
+    },
+    {
+      type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'sm',
+      contents: [
+        oThongKeLuyKe('MoM', mom, mauMom),
+        oThongKeLuyKe('CHÊNH LỆCH', `${so.mom >= 0 ? '+' : ''}${fmtSo(so.duKienHetThang - so.thangTruoc)} đ`, mauMom),
+      ],
+    },
+    { type: 'separator', margin: 'lg' },
+    { type: 'text', text: '📊 XU HƯỚNG SO VỚI THÁNG TRƯỚC', size: 'sm', weight: 'bold', color: '#333333', margin: 'lg' },
+    {
+      type: 'box', layout: 'horizontal', margin: 'md', contents: [
+        { type: 'text', text: '', size: 'xs', flex: 4 },
+        { type: 'text', text: 'Dự kiến hết tháng', size: 'xs', flex: 4, align: 'end', color: '#888888' },
+        { type: 'text', text: 'MoM', size: 'xs', flex: 3, align: 'end', color: '#888888' },
+      ],
+    },
+    { type: 'separator', margin: 'sm' },
+    dongSoSanhXuHuong('💰 Doanh thu', fmtSo(so.duKienHetThang) + ' đ', so.mom),
+    dongSoSanhXuHuong('🧾 Lượt bill', fmtSo(so.billDuKienHetThang), so.billMom),
+    dongSoSanhXuHuong('💳 Giá trị bill', fmtSo(so.giaTriBillTB) + ' đ', so.giaTriBillMom),
+    { type: 'separator', margin: 'lg' },
+    dongThongTinNgay('🧾', 'Tổng số bill (lũy kế)', fmtSo(so.tongBill), false),
+    dongThongTinNgay('💳', 'Giá trị bill TB (lũy kế)', fmtSo(so.giaTriBillTB) + ' đ', false),
+    dongThongTinNgay('📅', 'Số ngày có dữ liệu', `${so.soNgayCoData} ngày`, false),
+  ];
+
+  return {
+    type: 'flex',
+    altText: `Lũy kế DT ${tenSieuThi}: ${fmtSo(so.tongLuyKe)} đ, dự kiến hết tháng ${fmtSo(so.duKienHetThang)} đ`,
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#1B4F72', paddingAll: '20px',
+        contents: [
+          { type: 'text', text: '📈 BC LŨY KẾ DOANH THU', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+          { type: 'text', text: `${maSieuThi} · Lũy kế 01-${fmtNgayNgan(so.ngayCuoi)}`, color: '#D6E4F0', size: 'sm', margin: 'sm' },
+        ],
+      },
+      body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
+    },
+  };
+}
+
+async function generateLuyKeReport() {
+  const sheets = getSheetsClient();
+  const rows = await docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_LUYKE_DT);
+
+  const header = rows[0];
+  const colNgay = timCotTheoTen(header, 'Ngày');
+  const colMa = timCotTheoTen(header, 'Mã siêu thị');
+  const colTen = timCotTheoTen(header, 'Tên siêu thị');
+  const colDTOffline = timCotTheoTen(header, 'Doanh thu offline');
+  const colDTOnline = timCotTheoTen(header, 'Doanh thu Online');
+  const colSoBill = timCotTheoTen(header, 'Tổng số bill');
+
+  const theoSieuThi = {};
+  let ngayMoiNhatChung = null;
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row[colNgay] === undefined || row[colNgay] === '') continue;
+    const dateKey = toDateKey(row[colNgay]);
+    if (!dateKey || dateKey.length !== 10) continue;
+    if (ngayMoiNhatChung === null || dateKey > ngayMoiNhatChung) ngayMoiNhatChung = dateKey;
+
+    const ma = chuanHoaMaSieuThi(row[colMa]);
+    const ten = row[colTen] || ma;
+    const ym = dateKey.slice(0, 7);
+    const dt = (Number(row[colDTOffline]) || 0) + (Number(row[colDTOnline]) || 0);
+    const bill = Number(row[colSoBill]) || 0;
+
+    if (!theoSieuThi[ma]) theoSieuThi[ma] = { ten, byThang: {} };
+    if (theoSieuThi[ma].ten === ma && ten !== ma) theoSieuThi[ma].ten = ten;
+    if (!theoSieuThi[ma].byThang[ym]) theoSieuThi[ma].byThang[ym] = { tongDT: 0, tongBill: 0, ngay: new Set() };
+    const o = theoSieuThi[ma].byThang[ym];
+    o.tongDT += dt;
+    o.tongBill += bill;
+    o.ngay.add(dateKey);
+  }
+
+  if (!ngayMoiNhatChung) {
+    throw new Error(`Tab "${GOOGLE_SHEET_TAB_LUYKE_DT}" chưa có dữ liệu ngày hợp lệ`);
+  }
+
+  const [namHienTai, thangHienTaiSo] = ngayMoiNhatChung.slice(0, 7).split('-').map(Number);
+  const ymHienTai = ngayMoiNhatChung.slice(0, 7);
+  const ymThangTruoc = thangHienTaiSo === 1
+    ? `${namHienTai - 1}-12`
+    : `${namHienTai}-${String(thangHienTaiSo - 1).padStart(2, '0')}`;
+  const soNgayTrongThangHienTai = new Date(namHienTai, thangHienTaiSo, 0).getDate();
+
+  const cards = Object.entries(theoSieuThi).map(([ma, data]) => {
+    const cur = data.byThang[ymHienTai] || { tongDT: 0, tongBill: 0, ngay: new Set() };
+    const prev = data.byThang[ymThangTruoc] || { tongDT: 0, tongBill: 0, ngay: new Set() };
+    const soNgayCoData = cur.ngay.size;
+    const duKienHetThang = soNgayCoData > 0 ? (cur.tongDT / soNgayCoData) * soNgayTrongThangHienTai : 0;
+    const mom = prev.tongDT > 0 ? ((duKienHetThang - prev.tongDT) / prev.tongDT) * 100 : 0;
+    const giaTriBillTB = cur.tongBill > 0 ? cur.tongDT / cur.tongBill : 0;
+
+    const billDuKienHetThang = soNgayCoData > 0 ? (cur.tongBill / soNgayCoData) * soNgayTrongThangHienTai : 0;
+    const billMom = prev.tongBill > 0 ? ((billDuKienHetThang - prev.tongBill) / prev.tongBill) * 100 : 0;
+
+    const giaTriBillThangTruoc = prev.tongBill > 0 ? prev.tongDT / prev.tongBill : 0;
+    const giaTriBillMom = giaTriBillThangTruoc > 0 ? ((giaTriBillTB - giaTriBillThangTruoc) / giaTriBillThangTruoc) * 100 : 0;
+
+    let ngayCuoiThangHienTai = ngayMoiNhatChung;
+    const ngayThangHienTaiSorted = Array.from(cur.ngay).sort();
+    if (ngayThangHienTaiSorted.length > 0) ngayCuoiThangHienTai = ngayThangHienTaiSorted[ngayThangHienTaiSorted.length - 1];
+
+    return taoCardLuyKeDT(ma, data.ten, {
+      tongLuyKe: cur.tongDT,
+      tongBill: cur.tongBill,
+      soNgayCoData,
+      duKienHetThang,
+      thangTruoc: prev.tongDT,
+      mom,
+      giaTriBillTB,
+      billDuKienHetThang,
+      billMom,
+      giaTriBillMom,
+      ngayCuoi: ngayCuoiThangHienTai,
+    });
+  });
+
+  return cards.slice(0, 5);
+}
+
 async function generateTraReport() {
   const sheets = getSheetsClient();
 
@@ -770,6 +964,18 @@ function nhomHangPhoBien(header, dataRows) {
   return entries.length ? entries[0][0] : null;
 }
 
+function soNgayPhanBiet(header, dataRows) {
+  const idx = header.indexOf('Ngày');
+  if (idx === -1) return 0;
+  const s = new Set();
+  for (const row of dataRows) {
+    const v = row[idx];
+    if (v === undefined || v === null || v === '') continue;
+    s.add(toDateKey(v));
+  }
+  return s.size;
+}
+
 function nhanDangLoaiFile(header, dataRows) {
   const co = (ten) => header.includes(ten);
   const nhomPhoBien = nhomHangPhoBien(header, dataRows || []);
@@ -787,6 +993,9 @@ function nhanDangLoaiFile(header, dataRows) {
     return { loai: 'tra_ban', tenTab: GOOGLE_SHEET_TAB_DOANHTHU };
   }
   if (co('Ngày') && co('Mã siêu thị') && co('Doanh thu offline')) {
+    if (soNgayPhanBiet(header, dataRows || []) > 1) {
+      return { loai: 'luyke_dt', tenTab: GOOGLE_SHEET_TAB_LUYKE_DT };
+    }
     return { loai: 'doanhthu_sieuthi', tenTab: GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI };
   }
   if (co('Ngày') && co('Mã siêu thị') && co('Ngành hàng - Phân tích') && co('Thành tiền phải thu khách hàng (chưa VAT)')) {
@@ -825,6 +1034,34 @@ async function napFileVaoSheet(fileName, buffer) {
       return idx === -1 ? '' : row[idx] ?? '';
     })
   );
+
+  if (nhanDang.loai === 'luyke_dt') {
+    const colNgayDest = timCotTheoTen(destHeader, 'Ngày');
+    const colMaDest = timCotTheoTen(destHeader, 'Mã siêu thị');
+
+    const keyMoi = new Set(
+      rowsToAppend.map((r) => `${toDateKey(r[colNgayDest])}|${chuanHoaMaSieuThi(r[colMaDest])}`)
+    );
+    const giuLai = destRows.slice(1).filter((row) => {
+      if (!row || row[colNgayDest] === undefined || row[colNgayDest] === '') return false;
+      const key = `${toDateKey(row[colNgayDest])}|${chuanHoaMaSieuThi(row[colMaDest])}`;
+      return !keyMoi.has(key);
+    });
+    const ketQua = [...giuLai, ...rowsToAppend];
+
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: `${nhanDang.tenTab}!A2:ZZ`,
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: `${nhanDang.tenTab}!A2`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: ketQua },
+    });
+
+    return { loai: nhanDang.loai, tenTab: nhanDang.tenTab, soDong: rowsToAppend.length };
+  }
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: GOOGLE_SHEET_ID,
@@ -866,6 +1103,13 @@ function laTriggerBanhTT(text) {
   return TRIGGER_BANHTT.some((kw) => t === kw || t.includes(kw));
 }
 
+const TRIGGER_LUYKE = ['bc luỹ kế dt', 'bc luy ke dt', 'bc lũy kế dt'];
+function laTriggerLuyKe(text) {
+  if (!text) return false;
+  const t = text.trim().toLowerCase();
+  return TRIGGER_LUYKE.some((kw) => t === kw || t.includes(kw));
+}
+
 app.post('/webhook', line.middleware(config), async (req, res) => {
   res.status(200).end();
 
@@ -893,6 +1137,8 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
             baoCao = await generateTraReport();
           } else if (ketQua.loai === 'banhtt_ton' || ketQua.loai === 'banhtt_ban') {
             baoCao = await generateBanhTrungThuReport();
+          } else if (ketQua.loai === 'luyke_dt') {
+            baoCao = await generateLuyKeReport();
           } else {
             baoCao = await generateDailyReport();
           }
@@ -970,6 +1216,26 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           await client.replyMessage(event.replyToken, {
             type: 'text',
             text: `⚠️ Không tạo được báo cáo Bánh Trung Thu: ${err.message}`,
+          });
+        } catch (replyErr) {
+          console.error('[webhook] Lỗi luôn cả khi reply lỗi:', replyErr.message);
+        }
+      }
+      continue;
+    }
+
+    if (laTriggerLuyKe(text)) {
+      console.log('[webhook] khớp "BC Luỹ Kế DT", đang tạo báo cáo...');
+      try {
+        const flexMessages = await generateLuyKeReport();
+        await client.replyMessage(event.replyToken, flexMessages);
+        console.log('[webhook] tạo báo cáo Lũy Kế + reply thành công');
+      } catch (err) {
+        console.error('[webhook] Lỗi tạo báo cáo Lũy Kế:', err);
+        try {
+          await client.replyMessage(event.replyToken, {
+            type: 'text',
+            text: `⚠️ Không tạo được báo cáo Lũy Kế: ${err.message}`,
           });
         } catch (replyErr) {
           console.error('[webhook] Lỗi luôn cả khi reply lỗi:', replyErr.message);
