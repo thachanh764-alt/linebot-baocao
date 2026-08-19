@@ -945,6 +945,7 @@ async function generateBanhTrungThuReport() {
 // NẠP FILE NGƯỜI DÙNG GỬI TRỰC TIẾP VÀO GROUP (.xlsx/.xls)
 // ---------------------------------------------------------------------------
 async function taiNoiDungFileLine(messageId) {
+  console.log('[DEBUG] messageId:', messageId);
   const stream = await blobClient.getMessageContent(messageId);
   const chunks = [];
   for await (const chunk of stream) chunks.push(chunk);
