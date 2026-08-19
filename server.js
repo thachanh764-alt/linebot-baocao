@@ -945,22 +945,27 @@ async function generateBanhTrungThuReport() {
 // NẠP FILE NGƯỜI DÙNG GỬI TRỰC TIẾP VÀO GROUP (.xlsx/.xls)
 // ---------------------------------------------------------------------------
 async function taiNoiDungFileLine(messageId) {
-  const token = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim();
-  console.log('[DEBUG2] messageId:', messageId, '- token length:', token.length, '- 6 ky tu cuoi:', token.slice(-6));
-  const badChars = [];
-  for (let i = 0; i < token.length; i++) {
-    const code = token.charCodeAt(i);
-    if (code < 32 || code > 126) badChars.push({ pos: i, code });
+  const rawToken = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
+  const token = rawToken.replace(/\s+/g, '').trim();
+
+  if (rawToken.length !== token.length) {
+    console.log(`[WARN] LINE_CHANNEL_ACCESS_TOKEN co ${rawToken.length - token.length} ky tu khoang trang/xuong dong thua, da tu dong loai bo.`);
   }
-  console.log('[DEBUG3] ky tu la trong token:', JSON.stringify(badChars));
   console.log('[DEBUG2] messageId:', messageId, '- token length:', token.length, '- 6 ky tu cuoi:', token.slice(-6));
+
+  if (!token) {
+    throw new Error('Tai file LINE that bai: LINE_CHANNEL_ACCESS_TOKEN dang rong tren server.');
+  }
+
   const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
     headers: { Authorization: `Bearer ${token}` },
   });
+
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`Tai file LINE that bai: ${res.status} ${body}`);
   }
+
   const arrayBuffer = await res.arrayBuffer();
   return Buffer.from(arrayBuffer);
 }
