@@ -947,6 +947,12 @@ async function generateBanhTrungThuReport() {
 async function taiNoiDungFileLine(messageId) {
   const token = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim();
   console.log('[DEBUG2] messageId:', messageId, '- token length:', token.length, '- 6 ky tu cuoi:', token.slice(-6));
+  const badChars = [];
+  for (let i = 0; i < token.length; i++) {
+    const code = token.charCodeAt(i);
+    if (code < 32 || code > 126) badChars.push({ pos: i, code });
+  }
+  console.log('[DEBUG3] ky tu la trong token:', JSON.stringify(badChars));
   console.log('[DEBUG2] messageId:', messageId, '- token length:', token.length, '- 6 ky tu cuoi:', token.slice(-6));
   const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
     headers: { Authorization: `Bearer ${token}` },
