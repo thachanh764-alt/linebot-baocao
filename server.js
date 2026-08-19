@@ -1105,7 +1105,7 @@ function laTriggerBanhTT(text) {
   return TRIGGER_BANHTT.some((kw) => t === kw || t.includes(kw));
 }
 
-const TRIGGER_LUYKE = ['bc luỹ kế dt', 'bc luy ke dt', 'bc lũy kế dt'];
+const TRIGGER_LUYKE = [];
 function laTriggerLuyKe(text) {
   if (!text) return false;
   const t = text.trim().toLowerCase();
@@ -1154,7 +1154,11 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         }
       } catch (err) {
         console.error('[webhook] Lỗi nạp file:', err);
-        // da tat reply loi khi nap file
+        try {
+        await client.replyMessage(event.replyToken, { type: 'text', text: `❌ Lỗi nạp file: ${err.message}` });
+      } catch (replyErr) {
+        console.error('[webhook] Lỗi luôn cả khi reply lỗi:', replyErr.message);
+      }
       }
       continue;
     }
