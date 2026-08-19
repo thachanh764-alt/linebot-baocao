@@ -1083,6 +1083,7 @@ async function napFileVaoSheet(fileName, buffer) {
 const app = express();
 const client = new line.Client(config);
 const blobClient = new line.messagingApi.MessagingApiBlobClient({ channelAccessToken: (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim() });
+console.log('[DEBUG] blobClient token length:', (process.env.LINE_CHANNEL_ACCESS_TOKEN||'').trim().length, '- 6 ky tu cuoi:', (process.env.LINE_CHANNEL_ACCESS_TOKEN||'').trim().slice(-6));
 
 function laTrigger(text) {
   if (!text) return false;
