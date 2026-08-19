@@ -1154,11 +1154,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         }
       } catch (err) {
         console.error('[webhook] Lỗi nạp file:', err);
-        try {
-          await client.replyMessage(event.replyToken, { type: 'text', text: `❌ Lỗi nạp file: ${err.message}` });
-        } catch (replyErr) {
-          console.error('[webhook] Lỗi luôn cả khi reply lỗi:', replyErr.message);
-        }
+        // da tat reply loi khi nap file
       }
       continue;
     }
