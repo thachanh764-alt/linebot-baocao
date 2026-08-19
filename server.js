@@ -946,6 +946,7 @@ async function generateBanhTrungThuReport() {
 // ---------------------------------------------------------------------------
 async function taiNoiDungFileLine(messageId) {
   const token = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim();
+  console.log('[DEBUG2] messageId:', messageId, '- token length:', token.length, '- 6 ky tu cuoi:', token.slice(-6));
   const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
     headers: { Authorization: `Bearer ${token}` },
   });
