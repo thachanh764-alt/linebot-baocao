@@ -945,7 +945,7 @@ async function generateBanhTrungThuReport() {
 // NẠP FILE NGƯỜI DÙNG GỬI TRỰC TIẾP VÀO GROUP (.xlsx/.xls)
 // ---------------------------------------------------------------------------
 async function taiNoiDungFileLine(messageId) {
-  const stream = await client.getMessageContent(messageId);
+  const stream = await blobClient.getMessageContent(messageId);
   const chunks = [];
   for await (const chunk of stream) chunks.push(chunk);
   return Buffer.concat(chunks);
@@ -1082,6 +1082,7 @@ async function napFileVaoSheet(fileName, buffer) {
 // ---------------------------------------------------------------------------
 const app = express();
 const client = new line.Client(config);
+const blobClient = new line.messagingApi.MessagingApiBlobClient({ channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN });
 
 function laTrigger(text) {
   if (!text) return false;
