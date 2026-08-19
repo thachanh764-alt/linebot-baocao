@@ -945,12 +945,18 @@ async function generateBanhTrungThuReport() {
 // NẠP FILE NGƯỜI DÙNG GỬI TRỰC TIẾP VÀO GROUP (.xlsx/.xls)
 // ---------------------------------------------------------------------------
 async function taiNoiDungFileLine(messageId) {
-  console.log('[DEBUG] messageId:', messageId);
-  const stream = await blobClient.getMessageContent(messageId);
-  const chunks = [];
-  for await (const chunk of stream) chunks.push(chunk);
-  return Buffer.concat(chunks);
+  const token = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim();
+  const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Tai file LINE that bai: ${res.status} ${body}`);
+  }
+  const arrayBuffer = await res.arrayBuffer();
+  return Buffer.from(arrayBuffer);
 }
+
 
 function nhomHangPhoBien(header, dataRows) {
   const idx = header.indexOf('Nhóm hàng');
