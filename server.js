@@ -32,15 +32,14 @@
  *   GOOGLE_SHEET_TAB_BANHTT_TON=BANHTT_TON
  *   GOOGLE_SHEET_TAB_BANHTT_DOANHTHU=BANHTT_DOANHTHU
  *   GOOGLE_SHEET_TAB_LUYKE_DT=LUYKE_DT
- *   GEMINI_API_KEY=xxxxxxxx   (MỚI — lấy MIỄN PHÍ tại https://aistudio.google.com/apikey,
- *                              chỉ cần đăng nhập Gmail, không cần thẻ ngân hàng)
+ *   ANTHROPIC_API_KEY=sk-ant-xxxxx   (lấy tại https://console.anthropic.com/settings/keys — cần nạp tối thiểu 5 USD)
  *   PORT=3000
  *
  * Phải SHARE Google Sheet cho email service account, quyền EDITOR.
  * Cần đủ 6 tab: DOANHTHU_SIEUTHI, DOANHTHU_NGANHHANG, FRESH_NHAPXUAT,
  * BANHTT_TON, BANHTT_DOANHTHU, LUYKE_DT.
  *
- * Cài thêm thư viện mới trước khi chạy: npm install @google/genai xlsx
+ * Cài thêm thư viện mới trước khi chạy: npm install @anthropic-ai/sdk xlsx
  * Chạy: npm start
  */
 
@@ -49,7 +48,7 @@ const express = require('express');
 const line = require('@line/bot-sdk');
 const { google } = require('googleapis');
 const XLSX = require('xlsx');
-const { GoogleGenAI } = require('@google/genai');
+const Anthropic = require('@anthropic-ai/sdk');
 
 // ---------------------------------------------------------------------------
 // CẤU HÌNH
@@ -63,9 +62,10 @@ const GOOGLE_SERVICE_ACCOUNT_KEY_PATH = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_P
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const PORT = process.env.PORT || 3000;
 
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-// Model miễn phí (Flash), đủ nhanh và đủ tốt cho nhu cầu phân tích số liệu của group.
-const AI_MODEL = 'gemini-2.5-flash';
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Cân bằng chất lượng/giá. Nếu group nhắn nhiều muốn tiết kiệm chi phí,
+// đổi thành: 'claude-haiku-4-5-20251001'
+const AI_MODEL = 'claude-sonnet-5';
 
 // ---------------------------------------------------------------------------
 // GOOGLE SHEETS
@@ -914,7 +914,7 @@ async function napFileVaoSheet(fileName, buffer) {
 }
 
 // ---------------------------------------------------------------------------
-// MỚI: AI (GOOGLE GEMINI — MIỄN PHÍ) — đoán tab liên quan + phân tích bảng dữ liệu / ảnh
+// AI (CLAUDE) — đoán tab liên quan + phân tích bảng dữ liệu / ảnh
 // ---------------------------------------------------------------------------
 
 // Danh sách tab hiện có để AI chọn khi trả lời câu hỏi tự do.
@@ -930,18 +930,21 @@ const KNOWN_TABS = [
 
 async function pickRelevantTab(question) {
   const tabList = KNOWN_TABS.map((t) => `- ${t.name}: ${t.desc}`).join('\n');
-
-  const result = await genAI.models.generateContent({
+  const msg = await anthropic.messages.create({
     model: AI_MODEL,
-    contents: `Danh sách tab hiện có:\n${tabList}\n\nCâu hỏi của quản lý: "${question}"\n\nChọn 1 tab phù hợp nhất. Nếu không tab nào phù hợp, trả "tab": null.`,
-    config: {
-      systemInstruction:
-        'Bạn là trợ lý chọn đúng tab Google Sheet để trả lời câu hỏi của quản lý cửa hàng. ' +
-        'CHỈ trả lời bằng JSON hợp lệ, không thêm chữ nào khác, không dùng markdown code block. ' +
-        'Định dạng bắt buộc: {"tab": "TEN_TAB_HOAC_null", "reason": "giải thích ngắn gọn"}',
-    },
+    max_tokens: 300,
+    system:
+      'Bạn là trợ lý chọn đúng tab Google Sheet để trả lời câu hỏi của quản lý cửa hàng. ' +
+      'CHỈ trả lời bằng JSON hợp lệ, không thêm chữ nào khác, không dùng markdown code block. ' +
+      'Định dạng bắt buộc: {"tab": "TEN_TAB_HOAC_null", "reason": "giải thích ngắn gọn"}',
+    messages: [
+      {
+        role: 'user',
+        content: `Danh sách tab hiện có:\n${tabList}\n\nCâu hỏi của quản lý: "${question}"\n\nChọn 1 tab phù hợp nhất. Nếu không tab nào phù hợp, trả "tab": null.`,
+      },
+    ],
   });
-  const text = result.text || '{}';
+  const text = msg.content.find((b) => b.type === 'text')?.text || '{}';
   try {
     return JSON.parse(text.replace(/```json|```/g, '').trim());
   } catch {
@@ -960,17 +963,21 @@ async function analyzeTableData(question, sourceLabel, rows, maxRows = 500) {
     .map((r) => r.map((c) => (c === undefined || c === null ? '' : c)).join(','))
     .join('\n');
 
-  const result = await genAI.models.generateContent({
+  const msg = await anthropic.messages.create({
     model: AI_MODEL,
-    contents: `Nguồn dữ liệu: ${sourceLabel}${truncatedNote}\n\nDữ liệu (CSV):\n${csvText}\n\nCâu hỏi: ${question}`,
-    config: {
-      systemInstruction:
-        'Bạn là trợ lý phân tích dữ liệu bán lẻ cho quản lý cửa hàng Bách Hoá Xanh. ' +
-        'Trả lời ngắn gọn, đi thẳng vào số liệu và nhận xét thực tế, dùng tiếng Việt, ' +
-        'dùng gạch đầu dòng cho dễ đọc trên LINE (không dùng bảng markdown).',
-    },
+    max_tokens: 1024,
+    system:
+      'Bạn là trợ lý phân tích dữ liệu bán lẻ cho quản lý cửa hàng Bách Hoá Xanh. ' +
+      'Trả lời ngắn gọn, đi thẳng vào số liệu và nhận xét thực tế, dùng tiếng Việt, ' +
+      'dùng gạch đầu dòng cho dễ đọc trên LINE (không dùng bảng markdown).',
+    messages: [
+      {
+        role: 'user',
+        content: `Nguồn dữ liệu: ${sourceLabel}${truncatedNote}\n\nDữ liệu (CSV):\n${csvText}\n\nCâu hỏi: ${question}`,
+      },
+    ],
   });
-  return result.text || 'Không có phản hồi từ AI.';
+  return msg.content.find((b) => b.type === 'text')?.text || 'Không có phản hồi từ AI.';
 }
 
 async function analyzeImage(question, imageBuffer, mimeType) {
@@ -980,23 +987,25 @@ async function analyzeImage(question, imageBuffer, mimeType) {
       ? question
       : 'Đọc và phân tích nội dung trong ảnh này giúp anh (số liệu, tình trạng hàng hoá, hoặc điểm bất thường nếu có).';
 
-  const result = await genAI.models.generateContent({
+  const msg = await anthropic.messages.create({
     model: AI_MODEL,
-    contents: [
+    max_tokens: 1024,
+    system:
+      'Bạn là trợ lý phân tích ảnh cho quản lý cửa hàng Bách Hoá Xanh. ' +
+      'Ảnh có thể là: (1) ảnh chụp bảng số liệu/báo cáo — hãy đọc số liệu và phân tích; ' +
+      'hoặc (2) ảnh hàng hoá/kệ hàng thực tế — hãy nhận xét tình trạng trưng bày, tồn kho, hoặc vấn đề quan sát được. ' +
+      'Trả lời ngắn gọn, thực tế, tiếng Việt.',
+    messages: [
       {
         role: 'user',
-        parts: [{ inlineData: { data: base64Image, mimeType } }, { text: userQuestion }],
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64Image } },
+          { type: 'text', text: userQuestion },
+        ],
       },
     ],
-    config: {
-      systemInstruction:
-        'Bạn là trợ lý phân tích ảnh cho quản lý cửa hàng Bách Hoá Xanh. ' +
-        'Ảnh có thể là: (1) ảnh chụp bảng số liệu/báo cáo — hãy đọc số liệu và phân tích; ' +
-        'hoặc (2) ảnh hàng hoá/kệ hàng thực tế — hãy nhận xét tình trạng trưng bày, tồn kho, hoặc vấn đề quan sát được. ' +
-        'Trả lời ngắn gọn, thực tế, tiếng Việt.',
-    },
   });
-  return result.text || 'Không có phản hồi từ AI.';
+  return msg.content.find((b) => b.type === 'text')?.text || 'Không có phản hồi từ AI.';
 }
 
 function readExcelBufferAsRows(fileBuffer, sheetName) {
