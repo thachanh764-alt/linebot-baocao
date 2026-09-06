@@ -1015,6 +1015,11 @@ function readExcelBufferAsRows(fileBuffer, sheetName) {
   return XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
 }
 
+// Bật/tắt toàn bộ tính năng AI (đoán tab, phân tích ảnh/file/câu hỏi tự do).
+// Tự động BẬT khi đã có ANTHROPIC_API_KEY trong biến môi trường — trước đó bot sẽ
+// im lặng bỏ qua (không trả lời) thay vì trả lời lỗi công khai trong group.
+const AI_ENABLED = !!process.env.ANTHROPIC_API_KEY;
+
 // ---------------------------------------------------------------------------
 // LINE BOT
 // ---------------------------------------------------------------------------
@@ -1106,6 +1111,10 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
     // nên không xung đột; LINE cũng không gắn kèm được @tag vào ảnh)
     // ------------------------------------------------------------------
     if (event.message.type === 'image') {
+      if (!AI_ENABLED) {
+        console.log('[webhook] nhận ảnh nhưng AI đang tắt (chưa có ANTHROPIC_API_KEY) -> bỏ qua, không trả lời');
+        continue;
+      }
       console.log('[webhook] nhận ảnh, đang phân tích bằng AI...');
       try {
         const buffer = await taiNoiDungFileLine(event.message.id);
@@ -1226,6 +1235,10 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
       }
 
       // Không khớp lệnh có sẵn -> coi là câu hỏi tự do, để AI tự đoán tab + phân tích
+      if (!AI_ENABLED) {
+        console.log('[webhook] @tag kèm câu hỏi tự do nhưng AI đang tắt -> bỏ qua, không trả lời');
+        continue;
+      }
       console.log('[webhook] @tag kèm câu hỏi tự do, đang nhờ AI tra cứu + phân tích...');
       try {
         await client.replyMessage(event.replyToken, { type: 'text', text: 'Anh chờ chút, em đang tra cứu và phân tích...' });
@@ -1276,6 +1289,10 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
     }
 
     // Không khớp lệnh nào -> AI tự đoán tab + phân tích (chat riêng không cần @tag)
+    if (!AI_ENABLED) {
+      console.log('[webhook] (1-1) không khớp lệnh và AI đang tắt -> bỏ qua, không trả lời');
+      continue;
+    }
     try {
       await client.replyMessage(event.replyToken, { type: 'text', text: 'Anh chờ chút, em đang tra cứu và phân tích...' });
       const picked = await pickRelevantTab(text);
