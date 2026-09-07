@@ -643,11 +643,20 @@ const GOOGLE_SHEET_TAB_BANHTT_DOANHTHU = process.env.GOOGLE_SHEET_TAB_BANHTT_DOA
 const GIA_THUONG_CAI = 1000;
 const GIA_THUONG_HOP = 4000;
 
+// Nhận diện 1 dòng là "Hộp" nếu cột Đơn vị ghi "Hộp", HOẶC tên sản phẩm (Model)
+// có chữ "HỘP" trong đó (một số SKU đóng gói theo hộp nhưng cột Đơn vị bị ghi sai/thiếu).
+function laHangHop(donVi, tenModel) {
+  if ((donVi || '').toString().trim() === 'Hộp') return true;
+  const ten = (tenModel || '').toString().toUpperCase();
+  return ten.includes('HỘP') || ten.includes('HOP ') || ten.startsWith('HOP');
+}
+
 function docTonBanhTT(rows) {
   const header = rows[0];
   const colTenST = timCotTheoTen(header, 'Tên siêu thị');
   const colDonVi = timCotTheoTen(header, 'Đơn vị');
   const colTon = timCotTheoTen(header, 'Tồn kho siêu thị');
+  const colModel = header.indexOf('Model'); // -1 nếu file không có cột này, vẫn chạy được
 
   const ton = {};
   for (let i = 1; i < rows.length; i++) {
@@ -655,10 +664,11 @@ function docTonBanhTT(rows) {
     if (!row) continue;
     const st = row[colTenST];
     if (!st) continue;
-    const donVi = (row[colDonVi] || '').toString().trim();
+    const donVi = row[colDonVi];
+    const tenModel = colModel === -1 ? '' : row[colModel];
     const soLuong = Number(row[colTon]) || 0;
     if (!ton[st]) ton[st] = { cai: 0, hop: 0 };
-    if (donVi === 'Hộp') ton[st].hop += soLuong;
+    if (laHangHop(donVi, tenModel)) ton[st].hop += soLuong;
     else ton[st].cai += soLuong;
   }
   return ton;
@@ -670,6 +680,7 @@ function docBanBanhTT(rows) {
   const colDonVi = timCotTheoTen(header, 'Đơn vị');
   const colSLOnline = timCotTheoTen(header, 'Số lượng Online');
   const colSLOffline = timCotTheoTen(header, 'Số lượng Offline');
+  const colModel = header.indexOf('Model');
 
   const ban = {};
   for (let i = 1; i < rows.length; i++) {
@@ -677,10 +688,11 @@ function docBanBanhTT(rows) {
     if (!row) continue;
     const st = row[colTenST];
     if (!st) continue;
-    const donVi = (row[colDonVi] || '').toString().trim();
+    const donVi = row[colDonVi];
+    const tenModel = colModel === -1 ? '' : row[colModel];
     const soLuong = (Number(row[colSLOnline]) || 0) + (Number(row[colSLOffline]) || 0);
     if (!ban[st]) ban[st] = { cai: 0, hop: 0 };
-    if (donVi === 'Hộp') ban[st].hop += soLuong;
+    if (laHangHop(donVi, tenModel)) ban[st].hop += soLuong;
     else ban[st].cai += soLuong;
   }
   return ban;
