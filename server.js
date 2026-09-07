@@ -54,7 +54,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 // CẤU HÌNH
 // ---------------------------------------------------------------------------
 const config = {
-  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
+  channelAccessToken: (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').replace(/\s+/g, ''),
   channelSecret: process.env.LINE_CHANNEL_SECRET,
 };
 
@@ -779,7 +779,7 @@ async function generateBanhTrungThuReport() {
 // NẠP FILE NGƯỜI DÙNG GỬI TRỰC TIẾP VÀO GROUP (.xlsx/.xls) — GHI ĐÈ VÀO SHEET
 // ---------------------------------------------------------------------------
 async function taiNoiDungFileLine(messageId) {
-  const token = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim();
+  const token = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').replace(/\s+/g, '');
   const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
     headers: { Authorization: `Bearer ${token}` },
   });
