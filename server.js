@@ -16,9 +16,9 @@
  *   tự tính thưởng Cái 1.000đ / Hộp 4.000đ theo từng siêu thị.
  * "BC Luỹ Kế DT": nhắn "BC Luỹ Kế DT" -> đọc tab LUYKE_DT (nhiều ngày/tháng),
  *   tính lũy kế + dự kiến hết tháng + so sánh MoM Doanh thu/Lượt bill/Giá trị bill.
- * "Giá Vốn": nhắn "Giá Vốn" -> đọc tab GIAVON, ra thẻ theo từng siêu thị với
- *   giá vốn/DT Fresh hôm nay, giá vốn lũy kế/tỉ lệ DT-giá vốn, LN lũy kế theo
- *   từng ngành hàng, so sánh với LN trung bình 3 tháng trước.
+ * "Giá Vốn": nhắn "Giá Vốn" -> đọc tab GIAVON (giá vốn hôm nay + lũy kế) VÀ tab
+ *   FRESH_NHAPXUAT (doanh thu bán thực tế hôm nay), ghép chung theo từng ngành hàng,
+ *   ra thẻ theo từng siêu thị.
  * Gửi file Excel trực tiếp vào group -> bot tự nhận diện loại file, GHI ĐÈ vào đúng
  *   tab, tự trả báo cáo — TRỪ khi anh vừa @tag bot hỏi gì đó trước (trong 3 phút),
  *   lúc đó file gửi tiếp theo sẽ được AI phân tích nhanh, KHÔNG ghi vào Sheet.
@@ -453,9 +453,21 @@ async function generateDailyReport() {
 }
 
 // ---------------------------------------------------------------------------
-// GIÁ VỐN
+// GIÁ VỐN — ghép giá vốn (tab GIAVON) + doanh thu bán thực tế hôm nay (tab FRESH_NHAPXUAT)
 // ---------------------------------------------------------------------------
 const GOOGLE_SHEET_TAB_GIAVON = process.env.GOOGLE_SHEET_TAB_GIAVON || 'GIAVON';
+
+// Ngành hàng bên tab GIAVON là gộp nhóm rộng hơn ngành hàng chi tiết bên FRESH_NHAPXUAT,
+// nên cần ánh xạ 1-nhiều để cộng đúng DT/SL bán hôm nay vào từng dòng GIAVON.
+const GIAVON_TO_FRESH_MAP = {
+  'Thịt gia cầm gia súc các loại': ['Thịt Địa Phương', 'Thịt Nhập Khẩu'],
+  'Thủy Hải Sản Các Loại': ['Thủy Hải Sản Tập Trung', 'Thủy Hải Sản Nhập Khẩu'],
+  'Rau Đà Lạt': ['Rau Đà Lạt'],
+  'Rau Địa Phương': ['Rau Địa Phương'],
+  'Trái cây ngoại CL': ['Trái Cây Nhập Khẩu'],
+  'Trái cây nội CL': ['Trái Cây Tập Trung'],
+  'Trứng gia cầm các loại': ['Trứng Các Loại'],
+};
 
 function chuyenTiLeThanhPhanTram(raw) {
   if (typeof raw === 'number') return raw > 3 ? raw : raw * 100; // đã là % (>3) hay dạng phân số (0.xx)
@@ -467,49 +479,55 @@ function dongNganhHangGiaVon(nganh) {
   const mauLN = nganh.lnLuyKe >= 0 ? '#27AE60' : '#E74C3C';
   const mauChenhLech = nganh.chenhLech >= 0 ? '#27AE60' : '#E74C3C';
   const muiChenhLech = nganh.chenhLech >= 0 ? '▲' : '▼';
+  const tiLeHomNay = nganh.giaVonHomNay > 0 ? (nganh.dtBanHomNay / nganh.giaVonHomNay) * 100 : 0;
+
   return {
     type: 'box', layout: 'vertical', margin: 'md', paddingAll: '10px',
     backgroundColor: '#FAF7F2', cornerRadius: 'md',
     contents: [
       { type: 'text', text: nganh.ten, size: 'sm', weight: 'bold', color: '#1a1a1a', wrap: true },
+
+      { type: 'text', text: 'HÔM NAY', size: 'xxs', color: '#B8860B', margin: 'sm' },
       {
-        type: 'box', layout: 'horizontal', margin: 'sm', contents: [
-          { type: 'text', text: 'Giá vốn hôm nay', size: 'xxs', color: '#888888', flex: 3 },
-          { type: 'text', text: fmtSo(nganh.giaVonHomNay) + ' đ', size: 'xs', flex: 3, align: 'end', weight: 'bold' },
+        type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+          { type: 'text', text: 'DT bán hôm nay', size: 'xxs', color: '#888888', flex: 3 },
+          { type: 'text', text: `${fmtSo(nganh.dtBanHomNay)} đ (SL ${fmtSo(nganh.slBanHomNay)})`, size: 'xs', flex: 4, align: 'end', weight: 'bold' },
         ],
       },
       {
         type: 'box', layout: 'horizontal', margin: 'xs', contents: [
-          { type: 'text', text: 'DT Fresh tính giá vốn', size: 'xxs', color: '#888888', flex: 3 },
-          { type: 'text', text: fmtSo(nganh.dtFresh) + ' đ', size: 'xs', flex: 3, align: 'end', weight: 'bold' },
+          { type: 'text', text: 'Giá vốn hôm nay / Tỉ lệ', size: 'xxs', color: '#888888', flex: 3 },
+          { type: 'text', text: `${fmtSo(nganh.giaVonHomNay)} đ · ${fmtPct(tiLeHomNay)}`, size: 'xs', flex: 4, align: 'end', weight: 'bold' },
         ],
       },
+
+      { type: 'separator', margin: 'sm' },
+      { type: 'text', text: 'LŨY KẾ', size: 'xxs', color: '#1B4F72', margin: 'sm' },
       {
         type: 'box', layout: 'horizontal', margin: 'xs', contents: [
           { type: 'text', text: 'Giá vốn lũy kế / Tỉ lệ DT', size: 'xxs', color: '#888888', flex: 3 },
-          { type: 'text', text: `${fmtSo(nganh.giaVonLuyKe)} đ · ${fmtPct(nganh.tiLeDTGiaVon)}`, size: 'xs', flex: 3, align: 'end', weight: 'bold' },
+          { type: 'text', text: `${fmtSo(nganh.giaVonLuyKe)} đ · ${fmtPct(nganh.tiLeDTGiaVon)}`, size: 'xs', flex: 4, align: 'end', weight: 'bold' },
         ],
       },
-      { type: 'separator', margin: 'sm' },
       {
         type: 'box', layout: 'horizontal', margin: 'sm', contents: [
           { type: 'text', text: 'LN lũy kế', size: 'xs', color: '#555555', flex: 3 },
-          { type: 'text', text: fmtSo(nganh.lnLuyKe) + ' đ', size: 'sm', flex: 3, align: 'end', weight: 'bold', color: mauLN },
+          { type: 'text', text: fmtSo(nganh.lnLuyKe) + ' đ', size: 'sm', flex: 4, align: 'end', weight: 'bold', color: mauLN },
         ],
       },
       {
         type: 'box', layout: 'horizontal', margin: 'xs', contents: [
           { type: 'text', text: 'So với TB 3 tháng trước', size: 'xxs', color: '#888888', flex: 3 },
-          { type: 'text', text: `${muiChenhLech} ${fmtSo(Math.abs(nganh.chenhLech))} đ`, size: 'xs', flex: 3, align: 'end', weight: 'bold', color: mauChenhLech },
+          { type: 'text', text: `${muiChenhLech} ${fmtSo(Math.abs(nganh.chenhLech))} đ`, size: 'xs', flex: 4, align: 'end', weight: 'bold', color: mauChenhLech },
         ],
       },
     ],
   };
 }
 
-function taoCardGiaVon(maSieuThi, tenSieuThi, thang, dsNganhHang) {
+function taoCardGiaVon(maSieuThi, tenSieuThi, thang, dsNganhHang, ngayBanHienThi) {
   const tongGiaVonHomNay = dsNganhHang.reduce((s, n) => s + n.giaVonHomNay, 0);
-  const tongDtFresh = dsNganhHang.reduce((s, n) => s + n.dtFresh, 0);
+  const tongDTBanHomNay = dsNganhHang.reduce((s, n) => s + (n.dtBanHomNay || 0), 0);
   const tongLNLuyKe = dsNganhHang.reduce((s, n) => s + n.lnLuyKe, 0);
   const mauTongLN = tongLNLuyKe >= 0 ? '#27AE60' : '#E74C3C';
 
@@ -525,8 +543,8 @@ function taoCardGiaVon(maSieuThi, tenSieuThi, thang, dsNganhHang) {
     {
       type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'md',
       contents: [
+        oThongKe('🛒', 'DT bán hôm nay', fmtSo(tongDTBanHomNay) + ' đ'),
         oThongKe('💰', 'Giá vốn hôm nay', fmtSo(tongGiaVonHomNay) + ' đ'),
-        oThongKe('📈', 'DT Fresh hôm nay', fmtSo(tongDtFresh) + ' đ'),
       ],
     },
     { type: 'separator', margin: 'lg' },
@@ -548,7 +566,7 @@ function taoCardGiaVon(maSieuThi, tenSieuThi, thang, dsNganhHang) {
         type: 'box', layout: 'vertical', backgroundColor: '#7B3F00', paddingAll: '20px',
         contents: [
           { type: 'text', text: '💰 BÁO CÁO GIÁ VỐN', color: '#FFFFFF', weight: 'bold', size: 'lg' },
-          { type: 'text', text: `${maSieuThi} · Tháng ${thang}`, color: '#F3DFC5', size: 'sm', margin: 'sm' },
+          { type: 'text', text: `${maSieuThi} · Tháng ${thang}${ngayBanHienThi ? ' · Bán ngày ' + fmtNgayHienThi(ngayBanHienThi) : ''}`, color: '#F3DFC5', size: 'sm', margin: 'sm', wrap: true },
         ],
       },
       body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
@@ -558,15 +576,18 @@ function taoCardGiaVon(maSieuThi, tenSieuThi, thang, dsNganhHang) {
 
 async function generateGiaVonReport() {
   const sheets = getSheetsClient();
-  const rows = await docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_GIAVON);
+  const [rows, rowsFresh] = await Promise.all([
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_GIAVON),
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_FRESH),
+  ]);
 
+  // --- đọc tab GIAVON (giá vốn hôm nay + lũy kế) ---
   const header = rows[0];
   const colThang = timCotTheoTen(header, 'Tháng');
   const colMaST = timCotTheoTen(header, 'Mã siêu thị');
   const colTenST = timCotTheoTen(header, 'Tên siêu thị');
   const colNganh = timCotTheoTen(header, 'Ngành hàng');
   const colGiaVonHomNay = timCotTheoTen(header, 'Giá vốn cơ bản hôm nay');
-  const colDTFresh = timCotTheoTen(header, 'DT FRESH tính giá vốn');
   const colGiaVonLuyKe = timCotTheoTen(header, 'Giá vốn cơ bản lũy kế đến ngày hôm qua');
   const colTiLe = timCotTheoTen(header, 'Tỉ lệ doanh thu trên giá vốn cơ bản');
   const colLNLuyKe = timCotTheoTen(header, 'LN lũy kế');
@@ -593,7 +614,6 @@ async function generateGiaVonReport() {
     theoSieuThi[ma].dsNganhHang.push({
       ten: (row[colNganh] || '').toString().trim(),
       giaVonHomNay: Number(row[colGiaVonHomNay]) || 0,
-      dtFresh: Number(row[colDTFresh]) || 0,
       giaVonLuyKe: Number(row[colGiaVonLuyKe]) || 0,
       tiLeDTGiaVon: chuyenTiLeThanhPhanTram(row[colTiLe]),
       lnLuyKe: Number(row[colLNLuyKe]) || 0,
@@ -601,9 +621,48 @@ async function generateGiaVonReport() {
     });
   }
 
-  const cards = Object.values(theoSieuThi).map((st) =>
-    taoCardGiaVon(st.ma, st.ten, thangMoiNhat, st.dsNganhHang)
-  );
+  // --- đọc tab FRESH_NHAPXUAT để lấy DT/SL BÁN THỰC TẾ hôm nay theo ngành hàng ---
+  const headerFresh = rowsFresh[0];
+  const colNgayFresh = timCotTheoTen(headerFresh, 'Ngày');
+  const colMaSTFresh = timCotTheoTen(headerFresh, 'Mã siêu thị');
+  const colNganhFresh = timCotTheoTen(headerFresh, 'Ngành hàng - Phân tích');
+  const colDoanhThuFresh = timCotTheoTen(headerFresh, 'Thành tiền phải thu khách hàng (chưa VAT)');
+  const colSLFresh = timCotTheoTen(headerFresh, 'SL thực xuất');
+
+  const ngayMoiNhatFresh = timNgayMoiNhat(rowsFresh, colNgayFresh);
+  const banHomNayTheoSieuThi = {};
+  for (let i = 1; i < rowsFresh.length; i++) {
+    const row = rowsFresh[i];
+    if (!row || row[colNgayFresh] === undefined || row[colNgayFresh] === '') continue;
+    if (toDateKey(row[colNgayFresh]) !== ngayMoiNhatFresh) continue;
+
+    const ma = chuanHoaMaSieuThi(row[colMaSTFresh]);
+    const ten = (row[colNganhFresh] || '').toString().trim();
+    if (!ten) continue;
+    if (!banHomNayTheoSieuThi[ma]) banHomNayTheoSieuThi[ma] = {};
+    if (!banHomNayTheoSieuThi[ma][ten]) banHomNayTheoSieuThi[ma][ten] = { dt: 0, sl: 0 };
+    banHomNayTheoSieuThi[ma][ten].dt += Number(row[colDoanhThuFresh]) || 0;
+    banHomNayTheoSieuThi[ma][ten].sl += Number(row[colSLFresh]) || 0;
+  }
+
+  // --- ghép: mỗi ngành hàng bên GIAVON cộng DT/SL bán hôm nay từ các ngành hàng con bên FRESH ---
+  const cards = Object.values(theoSieuThi).map((st) => {
+    const banHomNay = banHomNayTheoSieuThi[st.ma] || {};
+    const dsNganhHangDayDu = st.dsNganhHang.map((n) => {
+      const nhomFresh = GIAVON_TO_FRESH_MAP[n.ten] || [];
+      let dtBanHomNay = 0;
+      let slBanHomNay = 0;
+      nhomFresh.forEach((tenFresh) => {
+        const d = banHomNay[tenFresh];
+        if (d) {
+          dtBanHomNay += d.dt;
+          slBanHomNay += d.sl;
+        }
+      });
+      return { ...n, dtBanHomNay, slBanHomNay };
+    });
+    return taoCardGiaVon(st.ma, st.ten, thangMoiNhat, dsNganhHangDayDu, ngayMoiNhatFresh);
+  });
 
   return cards.slice(0, 5);
 }
@@ -1006,7 +1065,7 @@ function nhanDangLoaiFile(header, dataRows) {
   if (co('Mã Model') && co('Tổng số lượng') && !co('Tồn kho siêu thị') && nhomPhoBien === 'Bánh Trung Thu') {
     return { loai: 'banhtt_ban', tenTab: GOOGLE_SHEET_TAB_BANHTT_DOANHTHU };
   }
-  // MỚI: file "Giá Vốn" — nhận diện qua 2 cột đặc trưng chỉ file này mới có
+  // Đã có: file "Giá Vốn" — nhận diện qua 2 cột đặc trưng chỉ file này mới có
   if (co('Giá vốn cơ bản hôm nay') && co('DT FRESH tính giá vốn')) {
     return { loai: 'giavon', tenTab: GOOGLE_SHEET_TAB_GIAVON };
   }
@@ -1108,7 +1167,7 @@ const KNOWN_TABS = [
   { name: GOOGLE_SHEET_TAB_BANHTT_TON, desc: 'Tồn kho Bánh Trung Thu theo siêu thị' },
   { name: GOOGLE_SHEET_TAB_BANHTT_DOANHTHU, desc: 'Số lượng bán Bánh Trung Thu theo siêu thị' },
   { name: GOOGLE_SHEET_TAB_LUYKE_DT, desc: 'Doanh thu luỹ kế nhiều ngày/tháng để so sánh MoM' },
-  { name: GOOGLE_SHEET_TAB_GIAVON, desc: 'Giá vốn, DT Fresh tính giá vốn, lợi nhuận lũy kế theo ngành hàng, so với TB 3 tháng trước' },
+  { name: GOOGLE_SHEET_TAB_GIAVON, desc: 'Giá vốn, lợi nhuận lũy kế theo ngành hàng, so với TB 3 tháng trước' },
 ];
 
 async function pickRelevantTab(question) {
@@ -1234,7 +1293,7 @@ function laTriggerLuyKe(text) {
   return TRIGGER_LUYKE.some((kw) => t === kw || t.includes(kw));
 }
 
-// MỚI: lệnh "Giá Vốn"
+// Lệnh "Giá Vốn"
 const TRIGGER_GIAVON = ['giá vốn', 'gia von'];
 function laTriggerGiaVon(text) {
   if (!text) return false;
