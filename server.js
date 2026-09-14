@@ -672,6 +672,139 @@ async function generateGiaVonReport() {
 // ---------------------------------------------------------------------------
 const GOOGLE_SHEET_TAB_LUYKE_DT = process.env.GOOGLE_SHEET_TAB_LUYKE_DT || 'LUYKE_DT';
 
+// ---------------------------------------------------------------------------
+// MMKK HUỶ — Tổng SL bán / Doanh thu / SL giảm giá / Tiền giảm giá / SL mất mát KK — THEO NGÀNH HÀNG
+// ---------------------------------------------------------------------------
+const GOOGLE_SHEET_TAB_HUYMMKK = process.env.GOOGLE_SHEET_TAB_HUYMMKK || 'HUYMMKK';
+
+function taoCardHuyMmkk(maSieuThi, tenSieuThi, dsNganhHang, ngayHienThi) {
+  const tongDoanhThu = dsNganhHang.reduce((s, n) => s + n.doanhThu, 0);
+  const tongMMKK = dsNganhHang.reduce((s, n) => s + n.slMMKK, 0);
+  const tongSLBan = dsNganhHang.reduce((s, n) => s + n.slBan, 0);
+  const tongTienGiamGia = dsNganhHang.reduce((s, n) => s + n.tienGiamGia, 0);
+
+  const bodyContents = [
+    { type: 'text', text: '🏢 ' + tenSieuThi, weight: 'bold', size: 'md', wrap: true, color: '#1a1a1a' },
+    {
+      type: 'box', layout: 'vertical', backgroundColor: '#FBEAEA', cornerRadius: 'md', paddingAll: '14px', margin: 'md',
+      contents: [
+        { type: 'text', text: 'TỔNG SL MẤT MÁT KIỂM KÊ', size: 'xs', color: '#888888' },
+        { type: 'text', text: fmtSo(tongMMKK), size: 'xxl', weight: 'bold', color: '#C0392B', margin: 'sm' },
+      ],
+    },
+    {
+      type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'md',
+      contents: [
+        oThongKe('💰', 'Doanh thu', fmtSo(tongDoanhThu) + ' đ'),
+        oThongKe('🛒', 'SL bán', fmtSo(tongSLBan)),
+      ],
+    },
+    {
+      type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'sm',
+      contents: [
+        oThongKe('🏷️', 'Tiền giảm giá', fmtSo(tongTienGiamGia) + ' đ'),
+        oThongKe('🗑️', 'SL MMKK', fmtSo(tongMMKK)),
+      ],
+    },
+    { type: 'separator', margin: 'lg' },
+    { type: 'text', text: '📦 CHI TIẾT THEO NGÀNH HÀNG', size: 'sm', weight: 'bold', color: '#333333', margin: 'lg' },
+  ];
+
+  dsNganhHang
+    .slice()
+    .sort((a, b) => b.slMMKK - a.slMMKK)
+    .forEach((n) => {
+      bodyContents.push({
+        type: 'box', layout: 'vertical', margin: 'md', paddingAll: '10px',
+        backgroundColor: '#FAF7F2', cornerRadius: 'md',
+        contents: [
+          { type: 'text', text: n.ten, size: 'sm', weight: 'bold', color: '#1a1a1a', wrap: true },
+          {
+            type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+              { type: 'text', text: 'SL bán / Doanh thu', size: 'xxs', color: '#888888', flex: 3 },
+              { type: 'text', text: fmtSo(n.slBan) + ' · ' + fmtSo(n.doanhThu) + ' đ', size: 'xs', flex: 4, align: 'end', weight: 'bold' },
+            ],
+          },
+          {
+            type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+              { type: 'text', text: 'SL giảm giá / Tiền giảm giá', size: 'xxs', color: '#888888', flex: 3 },
+              { type: 'text', text: fmtSo(n.slGiamGia) + ' · ' + fmtSo(n.tienGiamGia) + ' đ', size: 'xs', flex: 4, align: 'end', weight: 'bold' },
+            ],
+          },
+          {
+            type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+              { type: 'text', text: 'SL mất mát kiểm kê', size: 'xxs', color: '#C0392B', flex: 3 },
+              { type: 'text', text: fmtSo(n.slMMKK), size: 'xs', flex: 4, align: 'end', weight: 'bold', color: '#C0392B' },
+            ],
+          },
+        ],
+      });
+    });
+
+  return {
+    type: 'flex',
+    altText: 'MMKK Huỷ ' + tenSieuThi + ' (' + ngayHienThi + '): SL mất mát kiểm kê ' + fmtSo(tongMMKK),
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#922B21', paddingAll: '20px',
+        contents: [
+          { type: 'text', text: '🗑️ BÁO CÁO MMKK HUỶ', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+          { type: 'text', text: maSieuThi + ' · ' + ngayHienThi, color: '#F5D5D0', size: 'sm', margin: 'sm' },
+        ],
+      },
+      body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
+    },
+  };
+}
+
+async function generateHuyMmkkReport() {
+  const sheets = getSheetsClient();
+  const rows = await docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_HUYMMKK);
+
+  const header = rows[0];
+  const colNgay = timCotTheoTen(header, 'Ngày');
+  const colMa = timCotTheoTen(header, 'Mã siêu thị');
+  const colTen = timCotTheoTen(header, 'Tên siêu thị');
+  const colNganh = timCotTheoTen(header, 'Ngành hàng');
+  const colSLBan = timCotTheoTen(header, 'Tổng SL bán');
+  const colDoanhThu = timCotTheoTen(header, 'Doanh thu');
+  const colSLGiamGia = timCotTheoTen(header, 'SL giảm giá');
+  const colTienGiamGia = timCotTheoTen(header, 'Tiền giảm giá');
+  const colSLMMKK = timCotTheoTen(header, 'SL mất mát kiểm kê');
+
+  const ngayMoiNhat = timNgayMoiNhat(rows, colNgay);
+  const theoSieuThi = {};
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row[colNgay] === undefined || row[colNgay] === '') continue;
+    if (toDateKey(row[colNgay]) !== ngayMoiNhat) continue;
+
+    const ma = chuanHoaMaSieuThi(row[colMa]);
+    if (!theoSieuThi[ma]) theoSieuThi[ma] = { ma, ten: row[colTen] || ma, byNganh: {} };
+    const ten = (row[colNganh] || '').toString().trim();
+    if (!ten) continue;
+    if (!theoSieuThi[ma].byNganh[ten]) {
+      theoSieuThi[ma].byNganh[ten] = { slBan: 0, doanhThu: 0, slGiamGia: 0, tienGiamGia: 0, slMMKK: 0 };
+    }
+    const d = theoSieuThi[ma].byNganh[ten];
+    d.slBan += Number(row[colSLBan]) || 0;
+    d.doanhThu += Number(row[colDoanhThu]) || 0;
+    d.slGiamGia += Number(row[colSLGiamGia]) || 0;
+    d.tienGiamGia += Number(row[colTienGiamGia]) || 0;
+    d.slMMKK += Number(row[colSLMMKK]) || 0;
+  }
+
+  const ngayHienThi = fmtNgayHienThi(ngayMoiNhat);
+  const cards = Object.values(theoSieuThi).map((st) => {
+    const dsNganhHang = Object.entries(st.byNganh).map(([ten, d]) => ({ ten, ...d }));
+    return taoCardHuyMmkk(st.ma, st.ten, dsNganhHang, ngayHienThi);
+  });
+
+  return cards.slice(0, 5);
+}
+
 function fmtNgayNgan(dateKey) {
   const [, m, d] = dateKey.split('-');
   return `${d}/${m}`;
@@ -1069,6 +1202,9 @@ function nhanDangLoaiFile(header, dataRows) {
   if (co('Giá vốn cơ bản hôm nay') && co('DT FRESH tính giá vốn')) {
     return { loai: 'giavon', tenTab: GOOGLE_SHEET_TAB_GIAVON };
   }
+  if (co('SL hủy tồn') && co('SL mất mát kiểm kê') && co('SL hủy hao hụt NCC')) {
+    return { loai: 'huymmkk', tenTab: GOOGLE_SHEET_TAB_HUYMMKK };
+  }
   if (co('Ngày') && co('Mã siêu thị') && co('Doanh thu offline')) {
     if (soNgayPhanBiet(header, dataRows || []) > 1) {
       return { loai: 'luyke_dt', tenTab: GOOGLE_SHEET_TAB_LUYKE_DT };
@@ -1102,6 +1238,54 @@ async function napFileVaoSheet(fileName, buffer) {
   }
 
   const sheets = getSheetsClient();
+
+  if (nhanDang.loai === 'huymmkk') {
+    const idxNgay = header.indexOf('Ngày xuất');
+    const idxMa = header.indexOf('Mã siêu thị');
+    const idxTen = header.indexOf('Tên siêu thị');
+    const idxNganh = header.indexOf('Ngành hàng');
+    const idxSLBan = header.indexOf('Tổng SL bán');
+    const idxDoanhThu = header.indexOf('Doanh thu');
+    const idxSLGiamGia = header.indexOf('SL s.thị bán giảm giá');
+    const idxTienGiamGia = header.indexOf('Tiền s.thị bán giảm giá(chưa VAT)');
+    const idxSLMMKK = header.indexOf('SL mất mát kiểm kê');
+
+    const gop = {};
+    for (const row of dataRows) {
+      const ngay = row[idxNgay];
+      const ma = row[idxMa];
+      const ten = row[idxTen];
+      const nganh = (row[idxNganh] || '').toString().trim();
+      if (ngay === undefined || ngay === null || ngay === '' || !nganh) continue;
+      const key = toDateKey(ngay) + '|' + ma + '|' + nganh;
+      if (!gop[key]) {
+        gop[key] = { ngay, ma, ten, nganh, slBan: 0, doanhThu: 0, slGiamGia: 0, tienGiamGia: 0, slMMKK: 0 };
+      }
+      gop[key].slBan += Number(row[idxSLBan]) || 0;
+      gop[key].doanhThu += Number(row[idxDoanhThu]) || 0;
+      gop[key].slGiamGia += Number(row[idxSLGiamGia]) || 0;
+      gop[key].tienGiamGia += Number(row[idxTienGiamGia]) || 0;
+      gop[key].slMMKK += Number(row[idxSLMMKK]) || 0;
+    }
+
+    const rowsGop = Object.values(gop).map((g) => [
+      g.ngay, g.ma, g.ten, g.nganh, g.slBan, g.doanhThu, g.slGiamGia, g.tienGiamGia, g.slMMKK,
+    ]);
+
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: nhanDang.tenTab + '!A2:ZZ',
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: nhanDang.tenTab + '!A2',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: rowsGop },
+    });
+
+    return { loai: nhanDang.loai, tenTab: nhanDang.tenTab, soDong: rowsGop.length };
+  }
+
   const destRows = await docTabThanhMangDong(sheets, nhanDang.tenTab);
   const destHeader = destRows[0];
 
@@ -1301,12 +1485,20 @@ function laTriggerGiaVon(text) {
   return TRIGGER_GIAVON.some((kw) => t === kw || t.includes(kw));
 }
 
+const TRIGGER_HUYMMKK = ['mmkk huỷ', 'mmkk huy', 'huỷ mmkk', 'huy mmkk', 'hủy mmkk'];
+function laTriggerHuyMmkk(text) {
+  if (!text) return false;
+  const t = text.trim().toLowerCase();
+  return TRIGGER_HUYMMKK.some((kw) => t === kw || t.includes(kw));
+}
+
 // Chạy đúng lệnh báo cáo cũ theo tên khớp được (dùng chung cho cả group lẫn chat riêng)
 async function chayLenhCu(text) {
   if (laTriggerNgay(text)) return { ten: 'ngày', ket: await generateDailyReport() };
   if (laTriggerBanhTT(text)) return { ten: 'Bánh Trung Thu', ket: await generateBanhTrungThuReport() };
   if (laTriggerLuyKe(text)) return { ten: 'Lũy Kế', ket: await generateLuyKeReport() };
   if (laTriggerGiaVon(text)) return { ten: 'Giá Vốn', ket: await generateGiaVonReport() };
+  if (laTriggerHuyMmkk(text)) return { ten: 'MMKK Huỷ', ket: await generateHuyMmkkReport() };
   return null;
 }
 
@@ -1430,6 +1622,8 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
             baoCao = await generateLuyKeReport();
           } else if (ketQua.loai === 'giavon') {
             baoCao = await generateGiaVonReport();
+          } else if (ketQua.loai === 'huymmkk') {
+            baoCao = await generateHuyMmkkReport();
           } else {
             baoCao = await generateDailyReport();
           }
