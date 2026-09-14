@@ -742,7 +742,7 @@ function taoCardLuyKeDT(maSieuThi, tenSieuThi, so) {
     { type: 'text', text: '📊 XU HƯỚNG SO VỚI THÁNG TRƯỚC', size: 'sm', weight: 'bold', color: '#333333', margin: 'lg' },
     {
       type: 'box', layout: 'horizontal', margin: 'md', contents: [
-        { type: 'text', text: '', size: 'xs', flex: 4 },
+        { type: 'text', text: ' ', size: 'xs', flex: 4 },
         { type: 'text', text: 'Dự kiến hết tháng', size: 'xs', flex: 4, align: 'end', color: '#888888' },
         { type: 'text', text: 'MoM', size: 'xs', flex: 3, align: 'end', color: '#888888' },
       ],
