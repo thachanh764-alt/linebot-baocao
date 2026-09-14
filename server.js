@@ -1286,7 +1286,7 @@ function laTriggerBanhTT(text) {
 
 // Đã sửa: trước đây mảng này rỗng nên lệnh "BC Luỹ Kế DT" không bao giờ khớp qua tin nhắn text
 // (chỉ chạy được khi tự động sau khi nạp file) — nay thêm từ khoá để gõ tay cũng dùng được.
-const TRIGGER_LUYKE = ['bc luỹ kế dt', 'bc luy ke dt', 'luỹ kế dt', 'luy ke dt', 'luỹ kế', 'luy ke'];
+const TRIGGER_LUYKE = ['bc luỹ kế dt', 'bc luy ke dt', 'luỹ kế dt', 'luy ke dt', 'luỹ kế', 'luy ke', 'dt dự kiến', 'dt du kien'];
 function laTriggerLuyKe(text) {
   if (!text) return false;
   const t = text.trim().toLowerCase();
