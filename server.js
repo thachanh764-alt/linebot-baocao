@@ -721,14 +721,26 @@ function taoCardHuyMmkk(maSieuThi, tenSieuThi, dsNganhHang, ngayHienThi) {
           { type: 'text', text: n.ten, size: 'sm', weight: 'bold', color: '#1a1a1a', wrap: true },
           {
             type: 'box', layout: 'horizontal', margin: 'xs', contents: [
-              { type: 'text', text: 'SL bán / Doanh thu', size: 'xxs', color: '#888888', flex: 3 },
-              { type: 'text', text: fmtSo(n.slBan) + ' · ' + fmtSo(n.doanhThu) + ' đ', size: 'xs', flex: 4, align: 'end', weight: 'bold' },
+              { type: 'text', text: 'SL bán', size: 'xxs', color: '#888888', flex: 3 },
+              { type: 'text', text: fmtSo(n.slBan), size: 'xs', flex: 4, align: 'end', weight: 'bold' },
             ],
           },
           {
             type: 'box', layout: 'horizontal', margin: 'xs', contents: [
-              { type: 'text', text: 'SL giảm giá / Tiền giảm giá', size: 'xxs', color: '#888888', flex: 3 },
-              { type: 'text', text: fmtSo(n.slGiamGia) + ' · ' + fmtSo(n.tienGiamGia) + ' đ', size: 'xs', flex: 4, align: 'end', weight: 'bold' },
+              { type: 'text', text: 'Doanh thu', size: 'xxs', color: '#888888', flex: 3 },
+              { type: 'text', text: fmtSo(n.doanhThu) + ' đ', size: 'xs', flex: 4, align: 'end', weight: 'bold' },
+            ],
+          },
+          {
+            type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+              { type: 'text', text: 'SL giảm giá', size: 'xxs', color: '#888888', flex: 3 },
+              { type: 'text', text: fmtSo(n.slGiamGia), size: 'xs', flex: 4, align: 'end', weight: 'bold' },
+            ],
+          },
+          {
+            type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+              { type: 'text', text: 'Tiền giảm giá', size: 'xxs', color: '#888888', flex: 3 },
+              { type: 'text', text: fmtSo(n.tienGiamGia) + ' đ', size: 'xs', flex: 4, align: 'end', weight: 'bold' },
             ],
           },
           {
