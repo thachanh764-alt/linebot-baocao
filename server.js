@@ -689,7 +689,7 @@ function taoCardHuyMmkk(maSieuThi, tenSieuThi, dsNganhHang, ngayHienThi) {
       type: 'box', layout: 'vertical', backgroundColor: '#FBEAEA', cornerRadius: 'md', paddingAll: '14px', margin: 'md',
       contents: [
         { type: 'text', text: 'TỔNG SL MẤT MÁT KIỂM KÊ', size: 'xs', color: '#888888' },
-        { type: 'text', text: fmtSo(tongMMKK), size: 'xxl', weight: 'bold', color: '#C0392B', margin: 'sm' },
+        { type: 'text', text: fmtSo(tongMMKK) + (tongMMKK < 0 ? ' (thừa)' : tongMMKK > 0 ? ' (thiếu)' : ''), size: 'xxl', weight: 'bold', color: '#C0392B', margin: 'sm' },
       ],
     },
     {
@@ -734,7 +734,7 @@ function taoCardHuyMmkk(maSieuThi, tenSieuThi, dsNganhHang, ngayHienThi) {
           {
             type: 'box', layout: 'horizontal', margin: 'xs', contents: [
               { type: 'text', text: 'SL mất mát kiểm kê', size: 'xxs', color: '#C0392B', flex: 3 },
-              { type: 'text', text: fmtSo(n.slMMKK), size: 'xs', flex: 4, align: 'end', weight: 'bold', color: '#C0392B' },
+              { type: 'text', text: fmtSo(n.slMMKK) + (n.slMMKK < 0 ? ' (thừa)' : n.slMMKK > 0 ? ' (thiếu)' : ''), size: 'xs', flex: 4, align: 'end', weight: 'bold', color: '#C0392B' },
             ],
           },
         ],
@@ -774,12 +774,16 @@ async function generateHuyMmkkReport() {
   const colTienGiamGia = timCotTheoTen(header, 'Tiền giảm giá');
   const colSLMMKK = timCotTheoTen(header, 'SL mất mát kiểm kê');
 
-  const ngayMoiNhat = timNgayMoiNhat(rows, colNgay);
   const theoSieuThi = {};
+  let ngayDauChung = null;
+  let ngayCuoiChung = null;
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row || row[colNgay] === undefined || row[colNgay] === '') continue;
-    if (toDateKey(row[colNgay]) !== ngayMoiNhat) continue;
+    const dateKey = toDateKey(row[colNgay]);
+    if (!dateKey || dateKey.length !== 10) continue;
+    if (ngayDauChung === null || dateKey < ngayDauChung) ngayDauChung = dateKey;
+    if (ngayCuoiChung === null || dateKey > ngayCuoiChung) ngayCuoiChung = dateKey;
 
     const ma = chuanHoaMaSieuThi(row[colMa]);
     if (!theoSieuThi[ma]) theoSieuThi[ma] = { ma, ten: row[colTen] || ma, byNganh: {} };
@@ -796,7 +800,11 @@ async function generateHuyMmkkReport() {
     d.slMMKK += Number(row[colSLMMKK]) || 0;
   }
 
-  const ngayHienThi = fmtNgayHienThi(ngayMoiNhat);
+  if (!ngayDauChung) {
+    throw new Error('Tab "' + GOOGLE_SHEET_TAB_HUYMMKK + '" chưa có dữ liệu ngày hợp lệ');
+  }
+
+  const ngayHienThi = 'Lũy kế ' + fmtNgayNgan(ngayDauChung) + '-' + fmtNgayNgan(ngayCuoiChung);
   const cards = Object.values(theoSieuThi).map((st) => {
     const dsNganhHang = Object.entries(st.byNganh).map(([ten, d]) => ({ ten, ...d }));
     return taoCardHuyMmkk(st.ma, st.ten, dsNganhHang, ngayHienThi);
