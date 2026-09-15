@@ -1691,7 +1691,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           await client.replyMessage(event.replyToken, ketQuaLenhCu.ket);
           console.log(`[webhook] @tag khớp lệnh "${ketQuaLenhCu.ten}", đã trả báo cáo`);
         } catch (err) {
-          console.error('[webhook] Lỗi reply báo cáo:', err);
+          console.error('[webhook] LOI_CHI_TIET: ' + JSON.stringify(err.response && err.response.data ? err.response.data : err.message));
         }
         continue;
       }
