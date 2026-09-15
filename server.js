@@ -713,6 +713,7 @@ function taoCardHuyMmkk(maSieuThi, tenSieuThi, dsNganhHang, ngayHienThi) {
   dsNganhHang
     .slice()
     .sort((a, b) => b.slMMKK - a.slMMKK)
+    .slice(0, 15)
     .forEach((n) => {
       bodyContents.push({
         type: 'box', layout: 'vertical', margin: 'md', paddingAll: '10px',
