@@ -1514,6 +1514,7 @@ function laTriggerHuyMmkk(text) {
 
 // Chạy đúng lệnh báo cáo cũ theo tên khớp được (dùng chung cho cả group lẫn chat riêng)
 async function chayLenhCu(text) {
+  text = (text || '').normalize('NFC');
   if (laTriggerNgay(text)) return { ten: 'ngày', ket: await generateDailyReport() };
   if (laTriggerBanhTT(text)) return { ten: 'Bánh Trung Thu', ket: await generateBanhTrungThuReport() };
   if (laTriggerLuyKe(text)) return { ten: 'Lũy Kế', ket: await generateLuyKeReport() };
