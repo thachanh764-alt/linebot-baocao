@@ -676,7 +676,6 @@ const GOOGLE_SHEET_TAB_LUYKE_DT = process.env.GOOGLE_SHEET_TAB_LUYKE_DT || 'LUYK
 // MMKK HUỶ — Tổng SL bán / Doanh thu / SL giảm giá / Tiền giảm giá / SL mất mát KK — THEO NGÀNH HÀNG
 // ---------------------------------------------------------------------------
 const GOOGLE_SHEET_TAB_HUYMMKK = process.env.GOOGLE_SHEET_TAB_HUYMMKK || 'HUYMMKK';
-const GOOGLE_SHEET_TAB_CHITIETXUAT = process.env.GOOGLE_SHEET_TAB_CHITIETXUAT || 'CHITIETXUAT';
 
 function taoCardHuyMmkk(maSieuThi, tenSieuThi, dsNganhHang, ngayHienThi) {
   const tongDoanhThu = dsNganhHang.reduce((s, n) => s + n.doanhThu, 0);
@@ -1239,9 +1238,6 @@ function nhanDangLoaiFile(header, dataRows) {
   if (co('Ngày xuất') && co('Ngành hàng BHX') && co('Doanh thu')) {
     return { loai: 'doanhthu_nganhhang', tenTab: GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG };
   }
-  if (co('Mã phiếu xuất') && co('Tên sản phẩm') && co('Số lượng') && co('Giá bán')) {
-    return { loai: 'chitietxuat', tenTab: GOOGLE_SHEET_TAB_CHITIETXUAT };
-  }
   return null;
 }
 
@@ -1263,27 +1259,6 @@ async function napFileVaoSheet(fileName, buffer) {
   }
 
   const sheets = getSheetsClient();
-
-  if (nhanDang.loai === 'chitietxuat') {
-    const idxTen = header.indexOf('Tên sản phẩm');
-    const idxSL = header.indexOf('Số lượng');
-    const idxGia = header.indexOf('Giá bán');
-
-    const rows = dataRows.map((row) => [row[idxTen], row[idxSL], row[idxGia]]);
-
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId: GOOGLE_SHEET_ID,
-      range: `${nhanDang.tenTab}!A2:ZZ`,
-    });
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: GOOGLE_SHEET_ID,
-      range: `${nhanDang.tenTab}!A2`,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: rows },
-    });
-
-    return { loai: nhanDang.loai, tenTab: nhanDang.tenTab, soDong: rows.length };
-  }
 
   if (nhanDang.loai === 'huymmkk') {
     const idxNgay = header.indexOf('Ngày xuất');
@@ -1538,48 +1513,6 @@ function laTriggerHuyMmkk(text) {
   return TRIGGER_HUYMMKK.some((kw) => t === kw || t.includes(kw));
 }
 
-const TRIGGER_SP1DONG = ['sp 1 đồng', 'sp 1 dong', 'sản phẩm 1 đồng', 'san pham 1 dong'];
-function laTriggerSp1Dong(text) {
-  if (!text) return false;
-  const t = text.trim().toLowerCase();
-  return TRIGGER_SP1DONG.some((kw) => t === kw || t.includes(kw));
-}
-
-async function generateSp1DongReport() {
-  const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: GOOGLE_SHEET_ID,
-    range: `${GOOGLE_SHEET_TAB_CHITIETXUAT}!A2:C`,
-  });
-
-  const rows = res.data.values || [];
-  const grouped = {};
-
-  for (const [tenSP, soLuong, giaBan] of rows) {
-    if (!tenSP) continue;
-    if (Number(giaBan) !== 1) continue;
-    if (tenSP.toUpperCase().includes('NẤM')) continue;
-
-    const sl = Number(soLuong) || 0;
-    grouped[tenSP] = (grouped[tenSP] || 0) + sl;
-  }
-
-  const sorted = Object.entries(grouped)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 15);
-
-  if (sorted.length === 0) {
-    return 'Không có sản phẩm giá bán 1 đồng nào (đã loại nấm) trong dữ liệu hiện tại.';
-  }
-
-  let message = '📋 BÁO CÁO SP GIÁ BÁN 1 ĐỒNG (đã loại nấm)\n\n';
-  sorted.forEach(([ten, sl], idx) => {
-    message += `${idx + 1}. ${ten}: ${sl}\n`;
-  });
-
-  return message;
-}
-
 // Chạy đúng lệnh báo cáo cũ theo tên khớp được (dùng chung cho cả group lẫn chat riêng)
 async function chayLenhCu(text) {
   text = (text || '').normalize('NFC');
@@ -1588,7 +1521,6 @@ async function chayLenhCu(text) {
   if (laTriggerLuyKe(text)) return { ten: 'Lũy Kế', ket: await generateLuyKeReport() };
   if (laTriggerGiaVon(text)) return { ten: 'Giá Vốn', ket: await generateGiaVonReport() };
   if (laTriggerHuyMmkk(text)) return { ten: 'MMKK Huỷ', ket: await generateHuyMmkkReport() };
-  if (laTriggerSp1Dong(text)) return { ten: 'SP 1 Đồng', ket: await generateSp1DongReport() };
   return null;
 }
 
@@ -1865,71 +1797,3 @@ app.get('/health', (req, res) => res.send('ok'));
     console.log(`LINE bot đang chạy ở port ${PORT}`);
   });
 })();
-
-// ================== SP 1 ĐỒNG (Chi Tiết Phiếu Xuất) ==================
-
-// ---- NHẬN DIỆN FILE "Chi Tiết Phiếu Xuất" ----
-function isChiTietPhieuXuatFile(headers) {
-  return headers.includes('Mã phiếu xuất') &&
-         headers.includes('Tên sản phẩm') &&
-         headers.includes('Số lượng') &&
-         headers.includes('Giá bán');
-}
-
-// ---- NẠP FILE VÀO TAB CHITIETXUAT (ghi đè toàn bộ) ----
-async function saveChiTietXuatToSheet(sheets, spreadsheetId, data) {
-  const rows = data.map(row => [
-    row['Tên sản phẩm'],
-    row['Số lượng'],
-    row['Giá bán']
-  ]);
-
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId,
-    range: 'CHITIETXUAT!A:C',
-  });
-
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: 'CHITIETXUAT!A1',
-    valueInputOption: 'RAW',
-    requestBody: {
-      values: [['Tên sản phẩm', 'Số lượng', 'Giá bán'], ...rows],
-    },
-  });
-}
-
-// ---- XỬ LÝ LỆNH "SP 1 ĐỒNG" ----
-async function handleSp1Dong(sheets, spreadsheetId) {
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: 'CHITIETXUAT!A2:C',
-  });
-
-  const rows = res.data.values || [];
-  const grouped = {};
-
-  for (const [tenSP, soLuong, giaBan] of rows) {
-    if (!tenSP) continue;
-    if (Number(giaBan) !== 1) continue;
-    if (tenSP.toUpperCase().includes('NẤM')) continue;
-
-    const sl = Number(soLuong) || 0;
-    grouped[tenSP] = (grouped[tenSP] || 0) + sl;
-  }
-
-  const sorted = Object.entries(grouped)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 15);
-
-  if (sorted.length === 0) {
-    return 'Không có sản phẩm giá bán 1 đồng nào (đã loại nấm) trong dữ liệu hiện tại.';
-  }
-
-  let message = '📋 BÁO CÁO SP GIÁ BÁN 1 ĐỒNG (đã loại nấm)\n\n';
-  sorted.forEach(([ten, sl], idx) => {
-    message += `${idx + 1}. ${ten}: ${sl}\n`;
-  });
-
-  return message;
-}
