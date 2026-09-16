@@ -1592,16 +1592,6 @@ function toDateTimeKeyForBucket(value) {
   return s;
 }
 
-function trichNgayTuCauLenh(text) {
-  if (!text) return null;
-  const m = text.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
-  if (!m) return null;
-  const d = m[1].padStart(2, '0');
-  const mo = m[2].padStart(2, '0');
-  const y = m[3] || new Date().getFullYear().toString();
-  return `${y}-${mo}-${d}`;
-}
-
 const TRIGGER_LUOTBILL = ['lượt bill', 'luot bill', 'lượt hóa đơn', 'luot hoa don'];
 function laTriggerLuotBill(text) {
   if (!text) return false;
@@ -1609,7 +1599,7 @@ function laTriggerLuotBill(text) {
   return TRIGGER_LUOTBILL.some((kw) => t === kw || t.includes(kw));
 }
 
-async function generateLuotBillReport(ngayYeuCau) {
+async function generateLuotBillReport() {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: GOOGLE_SHEET_ID,
@@ -1622,22 +1612,11 @@ async function generateLuotBillReport(ngayYeuCau) {
   }
 
   let ngayMoiNhat = null;
-  const cacNgayCoDuLieu = new Set();
   for (const [dt] of rows) {
     if (!dt) continue;
     const ngay = dt.toString().slice(0, 10);
-    cacNgayCoDuLieu.add(ngay);
     if (ngayMoiNhat === null || ngay > ngayMoiNhat) ngayMoiNhat = ngay;
   }
-
-  const ngayMucTieu = ngayYeuCau || ngayMoiNhat;
-  if (ngayYeuCau && !cacNgayCoDuLieu.has(ngayYeuCau)) {
-    return {
-      type: 'text',
-      text: `Không có dữ liệu Lượt Bill cho ngày ${fmtNgayHienThi(ngayYeuCau)}. Các ngày hiện có: ${[...cacNgayCoDuLieu].sort().map(fmtNgayHienThi).join(', ')}`,
-    };
-  }
-  ngayMoiNhat = ngayMucTieu;
 
   const BUCKET_ORDER = ['05:30-06:00'];
   for (let h = 6; h <= 20; h++) {
