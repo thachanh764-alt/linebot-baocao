@@ -149,14 +149,14 @@ function dongThongTinNgay(icon, nhan, giaTri, dam) {
   };
 }
 
-function oThongKe(icon, nhan, giaTri) {
+function oThongKe(icon, nhan, giaTri, mau) {
   return {
     type: 'box', layout: 'vertical', flex: 1, backgroundColor: '#F7FAF8', cornerRadius: 'md',
     paddingAll: '10px', spacing: 'xs',
     contents: [
       { type: 'text', text: icon, size: 'lg' },
       { type: 'text', text: nhan, size: 'xxs', color: '#888888' },
-      { type: 'text', text: giaTri, size: 'sm', weight: 'bold', color: '#1a1a1a', wrap: true },
+      { type: 'text', text: giaTri, size: 'sm', weight: 'bold', color: mau || '#1a1a1a', wrap: true },
     ],
   };
 }
@@ -482,6 +482,7 @@ function dongNganhHangGiaVon(nganh) {
   const mauChenhLech = nganh.chenhLech >= 0 ? '#27AE60' : '#E74C3C';
   const muiChenhLech = nganh.chenhLech >= 0 ? '▲' : '▼';
   const tiLeHomNay = nganh.giaVonHomNay > 0 ? (nganh.dtBanHomNay / nganh.giaVonHomNay) * 100 : 0;
+  const mauHomNay = nganh.dtBanHomNay > nganh.giaVonHomNay ? '#27AE60' : '#E74C3C';
 
   return {
     type: 'box', layout: 'vertical', margin: 'md', paddingAll: '10px',
@@ -493,13 +494,13 @@ function dongNganhHangGiaVon(nganh) {
       {
         type: 'box', layout: 'horizontal', margin: 'xs', contents: [
           { type: 'text', text: 'DT bán hôm nay', size: 'xxs', color: '#888888', flex: 3 },
-          { type: 'text', text: `${fmtSo(nganh.dtBanHomNay)} đ (SL ${fmtSo(nganh.slBanHomNay)})`, size: 'xs', flex: 4, align: 'end', weight: 'bold' },
+          { type: 'text', text: `${fmtSo(nganh.dtBanHomNay)} đ (SL ${fmtSo(nganh.slBanHomNay)})`, size: 'xs', flex: 4, align: 'end', weight: 'bold', color: mauHomNay },
         ],
       },
       {
         type: 'box', layout: 'horizontal', margin: 'xs', contents: [
           { type: 'text', text: 'Giá vốn hôm nay / Tỉ lệ', size: 'xxs', color: '#888888', flex: 3 },
-          { type: 'text', text: `${fmtSo(nganh.giaVonHomNay)} đ · ${fmtPct(tiLeHomNay)}`, size: 'xs', flex: 4, align: 'end', weight: 'bold' },
+          { type: 'text', text: `${fmtSo(nganh.giaVonHomNay)} đ · ${fmtPct(tiLeHomNay)}`, size: 'xs', flex: 4, align: 'end', weight: 'bold', color: mauHomNay },
         ],
       },
 
@@ -532,6 +533,7 @@ function taoCardGiaVon(maSieuThi, tenSieuThi, thang, dsNganhHang, ngayBanHienThi
   const tongDTBanHomNay = dsNganhHang.reduce((s, n) => s + (n.dtBanHomNay || 0), 0);
   const tongLNLuyKe = dsNganhHang.reduce((s, n) => s + n.lnLuyKe, 0);
   const mauTongLN = tongLNLuyKe >= 0 ? '#27AE60' : '#E74C3C';
+  const mauTongHomNay = tongDTBanHomNay > tongGiaVonHomNay ? '#27AE60' : '#E74C3C';
 
   const bodyContents = [
     { type: 'text', text: `🏢 ${tenSieuThi}`, weight: 'bold', size: 'md', wrap: true, color: '#1a1a1a' },
@@ -545,8 +547,8 @@ function taoCardGiaVon(maSieuThi, tenSieuThi, thang, dsNganhHang, ngayBanHienThi
     {
       type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'md',
       contents: [
-        oThongKe('🛒', 'DT bán hôm nay', fmtSo(tongDTBanHomNay) + ' đ'),
-        oThongKe('💰', 'Giá vốn hôm nay', fmtSo(tongGiaVonHomNay) + ' đ'),
+        oThongKe('🛒', 'DT bán hôm nay', fmtSo(tongDTBanHomNay) + ' đ', mauTongHomNay),
+        oThongKe('💰', 'Giá vốn hôm nay', fmtSo(tongGiaVonHomNay) + ' đ', mauTongHomNay),
       ],
     },
     { type: 'separator', margin: 'lg' },
