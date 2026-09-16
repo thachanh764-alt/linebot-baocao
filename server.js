@@ -1554,6 +1554,7 @@ async function generateSp1DongReport() {
 
   const rows = res.data.values || [];
   const grouped = {};
+  let tongSoLuong = 0;
 
   for (const [tenSP, soLuong, giaBan] of rows) {
     if (!tenSP) continue;
@@ -1562,22 +1563,27 @@ async function generateSp1DongReport() {
 
     const sl = Number(soLuong) || 0;
     grouped[tenSP] = (grouped[tenSP] || 0) + sl;
+    tongSoLuong += sl;
   }
 
-  const sorted = Object.entries(grouped)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 15);
+  const allSorted = Object.entries(grouped).sort((a, b) => b[1] - a[1]);
+  const soMatHang = allSorted.length;
+  const sorted = allSorted.slice(0, 15);
 
   if (sorted.length === 0) {
     return { type: 'text', text: 'Không có sản phẩm giá bán 1 đồng nào (đã loại nấm) trong dữ liệu hiện tại.' };
   }
 
-  let message = '📋 BÁO CÁO SP GIÁ BÁN 1 ĐỒNG (đã loại nấm)\n\n';
+  let message = '📦 BÁO CÁO SP GIÁ BÁN 1 ĐỒNG (đã loại nấm)\n';
+  message += '━━━━━━━━━━━━━━━━━━━\n';
+  message += `🔢 Tổng SL đã bán: ${tongSoLuong}\n`;
+  message += `📋 Số mặt hàng: ${soMatHang}\n`;
+  message += '━━━━━━━━━━━━━━━━━━━\n\n';
   sorted.forEach(([ten, sl], idx) => {
-    message += `${idx + 1}. ${ten}: ${sl}\n`;
+    message += `${idx + 1}. ${ten}\n    ↳ SL: ${sl}\n\n`;
   });
 
-  return { type: 'text', text: message };
+  return { type: 'text', text: message.trim() };
 }
 
 // Chạy đúng lệnh báo cáo cũ theo tên khớp được (dùng chung cho cả group lẫn chat riêng)
