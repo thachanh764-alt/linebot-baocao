@@ -1292,12 +1292,10 @@ async function napFileVaoSheet(fileName, buffer) {
   if (nhanDang.loai === 'luotbill') {
     const idxNgay = header.indexOf('Ngày xuất');
     const idxLuotBill = header.indexOf('Lượt Bill của Siêu Thị');
-    const idxTenST = header.indexOf('Tên siêu thị');
 
     const rowsLB = dataRows.map((row) => [
       toDateTimeKeyForBucket(row[idxNgay]),
       row[idxLuotBill],
-      idxTenST === -1 ? '' : row[idxTenST],
     ]);
 
     await sheets.spreadsheets.values.clear({
@@ -1615,7 +1613,7 @@ async function generateLuotBillReport(ngayYeuCau) {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: GOOGLE_SHEET_ID,
-    range: `${GOOGLE_SHEET_TAB_LUOTBILL}!A2:C`,
+    range: `${GOOGLE_SHEET_TAB_LUOTBILL}!A2:B`,
   });
 
   const rows = res.data.values || [];
@@ -1624,14 +1622,12 @@ async function generateLuotBillReport(ngayYeuCau) {
   }
 
   let ngayMoiNhat = null;
-  let tenSieuThi = '';
   const cacNgayCoDuLieu = new Set();
-  for (const [dt, , tenST] of rows) {
+  for (const [dt] of rows) {
     if (!dt) continue;
     const ngay = dt.toString().slice(0, 10);
     cacNgayCoDuLieu.add(ngay);
     if (ngayMoiNhat === null || ngay > ngayMoiNhat) ngayMoiNhat = ngay;
-    if (tenST) tenSieuThi = tenST;
   }
 
   const ngayMucTieu = ngayYeuCau || ngayMoiNhat;
@@ -1706,7 +1702,7 @@ async function generateLuotBillReport(ngayYeuCau) {
 
   return {
     type: 'flex',
-    altText: `Lượt Bill ${tenSieuThi} ngày ${fmtNgayHienThi(ngayMoiNhat)}: Tổng ${tongCong} lượt${khungMax ? ', cao nhất ' + khungMax : ''}`,
+    altText: `Lượt Bill ngày ${fmtNgayHienThi(ngayMoiNhat)}: Tổng ${tongCong} lượt${khungMax ? ', cao nhất ' + khungMax : ''}`,
     contents: {
       type: 'bubble',
       size: 'giga',
@@ -1717,8 +1713,7 @@ async function generateLuotBillReport(ngayYeuCau) {
         paddingAll: '20px',
         contents: [
           { type: 'text', text: '🧾 BÁO CÁO LƯỢT BILL THEO KHUNG GIỜ', color: '#FFFFFF', weight: 'bold', size: 'lg', wrap: true },
-          { type: 'text', text: tenSieuThi ? `${tenSieuThi}` : '', color: '#D6E4F5', size: 'sm', margin: 'sm', wrap: true },
-          { type: 'text', text: `Ngày ${fmtNgayHienThi(ngayMoiNhat)}`, color: '#D6E4F5', size: 'sm', margin: 'xs' },
+          { type: 'text', text: `Ngày ${fmtNgayHienThi(ngayMoiNhat)}`, color: '#D6E4F5', size: 'sm', margin: 'sm' },
         ],
       },
       body: {
@@ -1839,7 +1834,7 @@ async function chayLenhCu(text) {
   if (laTriggerGiaVon(text)) return { ten: 'Giá Vốn', ket: await generateGiaVonReport() };
   if (laTriggerHuyMmkk(text)) return { ten: 'MMKK Huỷ', ket: await generateHuyMmkkReport() };
   if (laTriggerSp1Dong(text)) return { ten: 'SP 1 Đồng', ket: await generateSp1DongReport() };
-  if (laTriggerLuotBill(text)) return { ten: 'Lượt Bill', ket: await generateLuotBillReport(trichNgayTuCauLenh(text)) };
+  if (laTriggerLuotBill(text)) return { ten: 'Lượt Bill', ket: await generateLuotBillReport() };
   return null;
 }
 
