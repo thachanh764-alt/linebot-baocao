@@ -1569,7 +1569,7 @@ async function generateSp1DongReport() {
     .slice(0, 15);
 
   if (sorted.length === 0) {
-    return 'Không có sản phẩm giá bán 1 đồng nào (đã loại nấm) trong dữ liệu hiện tại.';
+    return { type: 'text', text: 'Không có sản phẩm giá bán 1 đồng nào (đã loại nấm) trong dữ liệu hiện tại.' };
   }
 
   let message = '📋 BÁO CÁO SP GIÁ BÁN 1 ĐỒNG (đã loại nấm)\n\n';
@@ -1577,7 +1577,7 @@ async function generateSp1DongReport() {
     message += `${idx + 1}. ${ten}: ${sl}\n`;
   });
 
-  return message;
+  return { type: 'text', text: message };
 }
 
 // Chạy đúng lệnh báo cáo cũ theo tên khớp được (dùng chung cho cả group lẫn chat riêng)
