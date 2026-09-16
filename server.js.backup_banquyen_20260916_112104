@@ -290,7 +290,6 @@ function taoCardBaoCaoTheoNgay(maSieuThi, tenSieuThi, tong, ngayHienThi) {
         contents: [
           { type: 'text', text: '📅 BÁO CÁO NGÀY', color: '#FFFFFF', weight: 'bold', size: 'lg' },
           { type: 'text', text: `${maSieuThi} · ${ngayHienThi}`, color: '#DCEAE1', size: 'sm', margin: 'sm' },
-          { type: 'text', text: 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh -  197042', color: '#DCEAE1', size: 'xxs', margin: 'sm', wrap: true },
         ],
       },
       body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
@@ -341,7 +340,6 @@ function taoCardFreshNgay(maSieuThi, tenSieuThi, freshData, ngayHienThi) {
         contents: [
           { type: 'text', text: '🌱 BÁO CÁO FRESH THEO NGÀY', color: '#FFFFFF', weight: 'bold', size: 'lg' },
           { type: 'text', text: `${tenSieuThi} · ${ngayHienThi}`, color: '#DCEAE1', size: 'sm', margin: 'sm', wrap: true },
-          { type: 'text', text: 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh -  197042', color: '#DCEAE1', size: 'xxs', margin: 'sm', wrap: true },
         ],
       },
       body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
@@ -569,7 +567,6 @@ function taoCardGiaVon(maSieuThi, tenSieuThi, thang, dsNganhHang, ngayBanHienThi
         contents: [
           { type: 'text', text: '💰 BÁO CÁO GIÁ VỐN', color: '#FFFFFF', weight: 'bold', size: 'lg' },
           { type: 'text', text: `${maSieuThi} · Tháng ${thang}${ngayBanHienThi ? ' · Bán ngày ' + fmtNgayHienThi(ngayBanHienThi) : ''}`, color: '#F3DFC5', size: 'sm', margin: 'sm', wrap: true },
-          { type: 'text', text: 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh -  197042', color: '#F3DFC5', size: 'xxs', margin: 'sm', wrap: true },
         ],
       },
       body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
@@ -770,7 +767,6 @@ function taoCardHuyMmkk(maSieuThi, tenSieuThi, dsNganhHang, ngayHienThi) {
         contents: [
           { type: 'text', text: '🗑️ BÁO CÁO MMKK HUỶ', color: '#FFFFFF', weight: 'bold', size: 'lg' },
           { type: 'text', text: maSieuThi + ' · ' + ngayHienThi, color: '#F5D5D0', size: 'sm', margin: 'sm' },
-          { type: 'text', text: 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh -  197042', color: '#F5D5D0', size: 'xxs', margin: 'sm', wrap: true },
         ],
       },
       body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
@@ -928,7 +924,6 @@ function taoCardLuyKeDT(maSieuThi, tenSieuThi, so) {
         contents: [
           { type: 'text', text: '📈 BC LŨY KẾ DOANH THU', color: '#FFFFFF', weight: 'bold', size: 'lg' },
           { type: 'text', text: `${maSieuThi} · Lũy kế 01-${fmtNgayNgan(so.ngayCuoi)}`, color: '#D6E4F0', size: 'sm', margin: 'sm' },
-          { type: 'text', text: 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh -  197042', color: '#D6E4F0', size: 'xxs', margin: 'sm', wrap: true },
         ],
       },
       body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
@@ -1724,7 +1719,6 @@ async function generateLuotBillReport(ngayYeuCau) {
           { type: 'text', text: '🧾 BÁO CÁO LƯỢT BILL THEO KHUNG GIỜ', color: '#FFFFFF', weight: 'bold', size: 'lg', wrap: true },
           ...(tenSieuThi ? [{ type: 'text', text: tenSieuThi, color: '#D6E4F5', size: 'sm', margin: 'sm', wrap: true }] : []),
           { type: 'text', text: `Ngày ${fmtNgayHienThi(ngayMoiNhat)}`, color: '#D6E4F5', size: 'sm', margin: tenSieuThi ? 'xs' : 'sm' },
-          { type: 'text', text: 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh -  197042', color: '#FFFFFF', size: 'xxs', margin: 'sm', wrap: true },
         ],
       },
       body: {
@@ -1809,7 +1803,6 @@ async function generateSp1DongReport() {
         contents: [
           { type: 'text', text: '📦 BÁO CÁO SP GIÁ BÁN 1 ĐỒNG', color: '#FFFFFF', weight: 'bold', size: 'lg', wrap: true },
           { type: 'text', text: '(đã loại trừ sản phẩm nấm)', color: '#D6F5D6', size: 'sm', margin: 'sm' },
-          { type: 'text', text: 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh -  197042', color: '#FFFFFF', size: 'xxs', margin: 'sm', wrap: true },
         ],
       },
       body: {
