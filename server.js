@@ -1574,16 +1574,58 @@ async function generateSp1DongReport() {
     return { type: 'text', text: 'Không có sản phẩm giá bán 1 đồng nào (đã loại nấm) trong dữ liệu hiện tại.' };
   }
 
-  let message = '📦 BÁO CÁO SP GIÁ BÁN 1 ĐỒNG (đã loại nấm)\n';
-  message += '━━━━━━━━━━━━━━━━━━━\n';
-  message += `🔢 Tổng SL đã bán: ${tongSoLuong}\n`;
-  message += `📋 Số mặt hàng: ${soMatHang}\n`;
-  message += '━━━━━━━━━━━━━━━━━━━\n\n';
+  const danhSachContents = [];
   sorted.forEach(([ten, sl], idx) => {
-    message += `${idx + 1}. ${ten}\n    ↳ SL: ${sl}\n\n`;
+    danhSachContents.push({
+      type: 'box',
+      layout: 'horizontal',
+      margin: idx === 0 ? 'none' : 'md',
+      contents: [
+        { type: 'text', text: `${idx + 1}. ${ten}`, size: 'sm', color: '#333333', wrap: true, flex: 4 },
+        { type: 'text', text: `${sl}`, size: 'sm', color: '#2E7D32', weight: 'bold', align: 'end', flex: 1 },
+      ],
+    });
   });
 
-  return { type: 'text', text: message.trim() };
+  return {
+    type: 'flex',
+    altText: `Báo cáo SP 1 Đồng: Tổng SL ${tongSoLuong}, ${soMatHang} mặt hàng`,
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#2E7D32',
+        paddingAll: '20px',
+        contents: [
+          { type: 'text', text: '📦 BÁO CÁO SP GIÁ BÁN 1 ĐỒNG', color: '#FFFFFF', weight: 'bold', size: 'lg', wrap: true },
+          { type: 'text', text: '(đã loại trừ sản phẩm nấm)', color: '#D6F5D6', size: 'sm', margin: 'sm' },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '16px',
+        contents: [
+          {
+            type: 'box',
+            layout: 'vertical',
+            backgroundColor: '#F1F8E9',
+            cornerRadius: '8px',
+            paddingAll: '12px',
+            contents: [
+              { type: 'text', text: 'TỔNG SỐ LƯỢNG ĐÃ BÁN', size: 'xs', color: '#666666' },
+              { type: 'text', text: `${tongSoLuong}`, size: 'xxl', weight: 'bold', color: '#2E7D32' },
+              { type: 'text', text: `${soMatHang} mặt hàng khác nhau`, size: 'xs', color: '#888888', margin: 'sm' },
+            ],
+          },
+          { type: 'separator', margin: 'lg' },
+          { type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm', contents: danhSachContents },
+        ],
+      },
+    },
+  };
 }
 
 // Chạy đúng lệnh báo cáo cũ theo tên khớp được (dùng chung cho cả group lẫn chat riêng)
