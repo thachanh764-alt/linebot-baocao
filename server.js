@@ -1193,6 +1193,9 @@ function docBanBanhTT(rows) {
       if (st.includes('Phú Lộc')) {
         console.log('[DEBUG BanhTT PhuLoc]', maModel, '| SL Online=' + row[colSLOnline], '| SL Offline=' + row[colSLOffline], '| SL KM=' + slKM, '| Tính thưởng=' + soLuongTinhThuong, '| nhóm=' + skuInfo.nhom, '| loại=' + skuInfo.loai);
       }
+      if (st.includes('Thạnh Lợi')) {
+        console.log('[DEBUG BanhTT ThanhLoi]', maModel, row[colMaModel], '| Tên siêu thị raw=' + st, '| SL Online=' + row[colSLOnline], '| SL Offline=' + row[colSLOffline], '| Tổng SL cột=' + (colTongSL !== -1 ? row[colTongSL] : 'không có cột'), '| SL KM=' + slKM, '| soLuongBanRa=' + soLuongBanRa, '| Tính thưởng=' + soLuongTinhThuong, '| nhóm=' + skuInfo.nhom, '| loại=' + skuInfo.loai);
+      }
     }
   }
   return { ban };
