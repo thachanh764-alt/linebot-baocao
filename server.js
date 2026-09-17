@@ -1,37 +1,55 @@
 /**
  * server.js
  * =========
- * LINE Bot "Báo cáo trà"
+ * LINE Bot "Báo cáo ngày" + "Bánh Trung Thu" + "BC Luỹ Kế DT" + "Giá Vốn"
+ * + nhận file Excel tự động nạp (trừ khi đang trong luồng @tag AI phân tích)
+ * + MỚI: bot chỉ trả lời trong group khi được @tag; khi @tag kèm câu hỏi tự do
+ *   thì tự đoán tab Google Sheet liên quan rồi dùng AI (Claude) phân tích trả lời;
+ *   khi @tag kèm file Excel thì AI chỉ phân tích nhanh theo câu hỏi, KHÔNG lưu vào Sheet;
+ *   khi @tag kèm ảnh thì dùng AI vision đọc và phân tích.
  * -----------------------
- * Khi có người nhắn "Báo cáo trà" trong LINE OA, bot sẽ:
- *   1. Đọc trực tiếp 2 TAB trong Google Sheet (bằng service account) -
- *      1 tab chứa data TỒN, 1 tab chứa data DOANH THU (anh copy/dán
- *      nguyên nội dung 2 file Excel vào 2 tab này, giữ nguyên hàng
- *      tiêu đề cột giống file gốc).
- *   2. Lọc đúng 6 sản phẩm trà C2, gộp theo siêu thị, quy đổi thùng.
- *   3. Trả lời lại đúng định dạng báo cáo.
+ * ĐÃ XOÁ: "Báo cáo trà" (theo yêu cầu) — không còn đọc tab TON/DOANHTHU trà C2 nữa.
  *
- * CẦN CHUẨN BỊ TRƯỚC KHI CHẠY (điền vào file .env cùng thư mục):
+ * "Báo cáo ngày": nhắn "Báo cáo ngày" (trong group PHẢI @tag bot trước) -> đọc 3 tab
+ *   DOANHTHU_SIEUTHI/DOANHTHU_NGANHHANG/FRESH_NHAPXUAT, ra thẻ theo từng siêu thị.
+ * "Bánh Trung Thu": nhắn "Bánh Trung Thu" -> đọc 2 tab BANHTT_TON/BANHTT_DOANHTHU,
+ *   tự tính thưởng Cái 1.000đ / Hộp 4.000đ theo từng siêu thị.
+ * "BC Luỹ Kế DT": nhắn "BC Luỹ Kế DT" -> đọc tab LUYKE_DT (nhiều ngày/tháng),
+ *   tính lũy kế + dự kiến hết tháng + so sánh MoM Doanh thu/Lượt bill/Giá trị bill.
+ * "Giá Vốn": nhắn "Giá Vốn" -> đọc tab GIAVON (giá vốn hôm nay + lũy kế) VÀ tab
+ *   FRESH_NHAPXUAT (doanh thu bán thực tế hôm nay), ghép chung theo từng ngành hàng,
+ *   ra thẻ theo từng siêu thị.
+ * Gửi file Excel trực tiếp vào group -> bot tự nhận diện loại file, GHI ĐÈ vào đúng
+ *   tab, tự trả báo cáo — TRỪ khi anh vừa @tag bot hỏi gì đó trước (trong 3 phút),
+ *   lúc đó file gửi tiếp theo sẽ được AI phân tích nhanh, KHÔNG ghi vào Sheet.
+ *
+ * CẦN CHUẨN BỊ (biến môi trường trên Render, hoặc file .env khi chạy local):
  * ------------------------------------------------------------
- *   LINE_CHANNEL_ACCESS_TOKEN=...........(lấy trong LINE Developers Console)
- *   LINE_CHANNEL_SECRET=..................(lấy trong LINE Developers Console)
- *   GOOGLE_SERVICE_ACCOUNT_KEY_PATH=./service-account.json
- *      (đường dẫn tới file json service account anh đang có trên máy)
- *   GOOGLE_SHEET_ID=..............(ID của Google Sheet - lấy trong URL:
- *      docs.google.com/spreadsheets/d/<ID_Ở_ĐÂY>/edit)
- *   GOOGLE_SHEET_TAB_TON=TON       (tên tab chứa data Tồn - đổi cho khớp
- *      tên tab thật anh đặt)
- *   GOOGLE_SHEET_TAB_DOANHTHU=DOANHTHU  (tên tab chứa data Doanh thu)
+ *   LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET
+ *   GOOGLE_SERVICE_ACCOUNT_JSON (nội dung json service account, dùng trên Render)
+ *   HOẶC GOOGLE_SERVICE_ACCOUNT_KEY_PATH=./service-account.json (chạy local)
+ *   GOOGLE_SHEET_ID
+ *   GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI=DOANHTHU_SIEUTHI
+ *   GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG=DOANHTHU_NGANHHANG
+ *   GOOGLE_SHEET_TAB_FRESH=FRESH_NHAPXUAT
+ *   GOOGLE_SHEET_TAB_BANHTT_TON=BANHTT_TON
+ *   GOOGLE_SHEET_TAB_BANHTT_DOANHTHU=BANHTT_DOANHTHU
+ *   GOOGLE_SHEET_TAB_LUYKE_DT=LUYKE_DT
+ *   GOOGLE_SHEET_TAB_GIAVON=GIAVON
+ *   ANTHROPIC_API_KEY=sk-ant-xxxxx   (lấy tại https://console.anthropic.com/settings/keys — cần nạp tối thiểu 5 USD)
  *   PORT=3000
  *
- * Và phải SHARE Google Sheet đó cho email của service account
- * (vd: linebot-sheets@linebot-baocao.iam.gserviceaccount.com) với quyền
- * ít nhất là "Viewer" (Người xem), nếu không bot sẽ không đọc được data.
+ * Phải SHARE Google Sheet cho email service account, quyền EDITOR.
+ * Cần đủ 7 tab: DOANHTHU_SIEUTHI, DOANHTHU_NGANHHANG, FRESH_NHAPXUAT,
+ * BANHTT_TON, BANHTT_DOANHTHU, LUYKE_DT, GIAVON.
  *
- * QUAN TRỌNG: 2 tab đó phải giữ nguyên tên cột giống file gốc ở hàng đầu
- * tiên: tab TỒN cần có cột "Mã Model", "Tên siêu thị", "Tồn kho siêu thị";
- * tab DOANH THU cần có cột "Mã Model", "Tên siêu thị", "Tổng số lượng".
+ * Tab GIAVON cần đúng các cột (dòng 1, đúng tên như file Excel gửi vào group):
+ *   Tháng | Mã siêu thị | Tên siêu thị | Mã ngành hàng | Ngành hàng |
+ *   SL thực nhập hôm nay | Giá vốn cơ bản hôm nay | DT FRESH tính giá vốn |
+ *   Giá vốn cơ bản lũy kế đến ngày hôm qua | Tỉ lệ doanh thu trên giá vốn cơ bản |
+ *   LN lũy kế | LN TB 3 tháng trước | Chênh lệch LN so với 3 tháng trước
  *
+ * Cài thêm thư viện mới trước khi chạy: npm install @anthropic-ai/sdk xlsx
  * Chạy: npm start
  */
 
@@ -39,49 +57,37 @@ require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
 const { google } = require('googleapis');
+const XLSX = require('xlsx');
+const Anthropic = require('@anthropic-ai/sdk');
 
 // ---------------------------------------------------------------------------
 // CẤU HÌNH
 // ---------------------------------------------------------------------------
 const config = {
-  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
+  channelAccessToken: (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').replace(/\s+/g, ''),
   channelSecret: process.env.LINE_CHANNEL_SECRET,
 };
 
 const GOOGLE_SERVICE_ACCOUNT_KEY_PATH = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH;
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
-const GOOGLE_SHEET_TAB_TON = process.env.GOOGLE_SHEET_TAB_TON || 'TON';
-const GOOGLE_SHEET_TAB_DOANHTHU = process.env.GOOGLE_SHEET_TAB_DOANHTHU || 'DOANHTHU';
 const PORT = process.env.PORT || 3000;
 
-// Từ khoá kích hoạt bot (không phân biệt hoa/thường, dấu cách thừa)
-const TRIGGER_KEYWORDS = ['báo cáo trà', 'bao cao tra'];
-
-// 6 sản phẩm trà cần báo cáo, khoá theo Mã Model
-const SAN_PHAM_TRA = {
-  '2601001494': 'Nước sâm C2 Cool',
-  '2203000875': 'Trà đen dâu anh đào C2',
-  '2602001178': 'Trà đen tắc C2',
-  '2006000354': 'Trà hồng vải C2',
-  '2204000011': 'Trà xanh chanh bạc hà C2',
-  '1607002174': 'Nước C2 trà xanh hương chanh 360ml',
-};
-
-const QUY_DOI_THUNG = 24; // 1 thùng = 24 chai
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Cân bằng chất lượng/giá. Nếu group nhắn nhiều muốn tiết kiệm chi phí,
+// đổi thành: 'claude-haiku-4-5-20251001'
+const AI_MODEL = 'claude-sonnet-5';
 
 // ---------------------------------------------------------------------------
-// GOOGLE SHEETS: đọc trực tiếp 2 tab TON / DOANHTHU
+// GOOGLE SHEETS
 // ---------------------------------------------------------------------------
 function getSheetsClient() {
-  const scopes = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
+  const scopes = ['https://www.googleapis.com/auth/spreadsheets'];
   let auth;
 
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-    // Trên Render: credential được lưu thẳng dưới dạng nội dung JSON trong biến môi trường
     const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
     auth = new google.auth.GoogleAuth({ credentials, scopes });
   } else if (GOOGLE_SERVICE_ACCOUNT_KEY_PATH) {
-    // Chạy local: credential là 1 file .json nằm trên đĩa
     auth = new google.auth.GoogleAuth({ keyFile: GOOGLE_SERVICE_ACCOUNT_KEY_PATH, scopes });
   } else {
     throw new Error('Thiếu credential Google: cần GOOGLE_SERVICE_ACCOUNT_JSON hoặc GOOGLE_SERVICE_ACCOUNT_KEY_PATH');
@@ -93,7 +99,7 @@ function getSheetsClient() {
 async function docTabThanhMangDong(sheets, tenTab) {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: GOOGLE_SHEET_ID,
-    range: tenTab, // lấy toàn bộ tab
+    range: tenTab,
     valueRenderOption: 'UNFORMATTED_VALUE',
   });
   const rows = res.data.values || [];
@@ -109,51 +115,18 @@ function timCotTheoTen(headerRow, tenCot) {
   return idx;
 }
 
-function docTon(rows) {
-  const header = rows[0];
-  const colMa = timCotTheoTen(header, 'Mã Model');
-  const colTenST = timCotTheoTen(header, 'Tên siêu thị');
-  const colTon = timCotTheoTen(header, 'Tồn kho siêu thị');
-
-  const ton = {};
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row) continue;
-    const ma = (row[colMa] || '').toString().trim();
-    if (SAN_PHAM_TRA[ma]) {
-      const st = row[colTenST];
-      ton[st] = (ton[st] || 0) + (Number(row[colTon]) || 0);
-    }
-  }
-  return ton;
-}
-
-function docBan(rows) {
-  const header = rows[0];
-  const colMa = timCotTheoTen(header, 'Mã Model');
-  const colTenST = timCotTheoTen(header, 'Tên siêu thị');
-  const colSL = timCotTheoTen(header, 'Tổng số lượng');
-
-  const ban = {};
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row) continue;
-    const ma = (row[colMa] || '').toString().trim();
-    if (SAN_PHAM_TRA[ma]) {
-      const st = row[colTenST];
-      ban[st] = (ban[st] || 0) + (Number(row[colSL]) || 0);
-    }
-  }
-  return ban;
-}
-
 // ---------------------------------------------------------------------------
-// TÍNH TOÁN + FORMAT BÁO CÁO
+// TIỆN ÍCH DÙNG CHUNG
 // ---------------------------------------------------------------------------
 function tenNganSieuThi(tenDayDu) {
   if (!tenDayDu) return '';
   const idx = tenDayDu.indexOf(' - ');
   return idx === -1 ? tenDayDu.trim() : tenDayDu.slice(idx + 3).trim();
+}
+
+function rutGonTen(ten, maxLen) {
+  if (!ten) return '';
+  return ten.length > maxLen ? ten.slice(0, maxLen - 1).trim() + '…' : ten;
 }
 
 function fmtSo(n) {
@@ -167,187 +140,69 @@ function fmtPct(p) {
   return Number.isInteger(r) ? `${r}%` : `${r.toFixed(1)}%`;
 }
 
-function tinhDuLieu(ton, ban) {
-  const tatCaSieuThi = new Set([...Object.keys(ton), ...Object.keys(ban)]);
-  const rows = [];
-
-  for (const st of tatCaSieuThi) {
-    const tonUnits = ton[st] || 0;
-    const banUnits = ban[st] || 0;
-    const tonThung = tonUnits / QUY_DOI_THUNG;
-    const banThung = banUnits / QUY_DOI_THUNG;
-    const mauSo = tonThung + banThung;
-    // TL% = % đã bán so với tổng lượng có trong kỳ (tồn còn lại + đã bán)
-    const tl = mauSo > 0 ? (banThung / mauSo) * 100 : 0;
-    rows.push({ ten: tenNganSieuThi(st), ton: tonThung, ban: banThung, tl });
-  }
-
-  rows.sort((a, b) => b.ban - a.ban || b.ton - a.ton);
-
-  const tongTon = rows.reduce((s, r) => s + r.ton, 0);
-  const tongBan = rows.reduce((s, r) => s + r.ban, 0);
-  const tongMauSo = tongTon + tongBan;
-  const tongTl = tongMauSo > 0 ? (tongBan / tongMauSo) * 100 : 0;
-
-  return { rows, tong: { ton: tongTon, ban: tongBan, tl: tongTl, soSieuThi: rows.length } };
-}
-
-function taoNoiDungBaoCao(ton, ban) {
-  const { rows, tong } = tinhDuLieu(ton, ban);
-  const now = new Date();
-  const thoiGian = now.toLocaleString('vi-VN', {
-    hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric',
-  });
-
-  const lines = [];
-  lines.push('🍵 BÁO CÁO TRÀ');
-  Object.values(SAN_PHAM_TRA).forEach((ten) => lines.push(`• ${ten}`));
-  lines.push('');
-  lines.push(
-    `${Object.keys(SAN_PHAM_TRA).length} sản phẩm · cập nhật lúc ${thoiGian} · ` +
-    `${tong.soSieuThi} siêu thị · quy đổi 1 thùng = ${QUY_DOI_THUNG} chai`
-  );
-  lines.push('');
-  lines.push(
-    `TỔNG TẤT CẢ: Tồn ${fmtSo(tong.ton)} thùng | Bán ${fmtSo(tong.ban)} thùng | TL ${fmtPct(tong.tl)}`
-  );
-  lines.push('');
-
-  rows.forEach((r) => {
-    const icon = r.tl >= 20 ? '🟢' : '🔴';
-    lines.push(`${icon} ${r.ten}: Tồn ${fmtSo(r.ton)} | Bán ${fmtSo(r.ban)} | TL ${fmtPct(r.tl)}`);
-  });
-
-  return lines.join('\n');
-}
-
-// ---------------------------------------------------------------------------
-// FLEX MESSAGE (thẻ đẹp giống ảnh mẫu) - dùng để gửi qua LINE
-// ---------------------------------------------------------------------------
-const MAU_XANH_HEADER = '#2C4A3B';
-const MAU_XANH_TOT = '#2ECC71';
-const MAU_DO_XAU = '#E74C3C';
-
-function dongBang(label, ton, ban, tl, dam) {
+function dongThongTinNgay(icon, nhan, giaTri, dam) {
   return {
-    type: 'box',
-    layout: 'horizontal',
-    contents: [
-      { type: 'text', text: label, size: 'sm', flex: 5, wrap: true, weight: dam ? 'bold' : 'regular', color: dam ? '#1a1a1a' : '#333333' },
-      { type: 'text', text: ton, size: 'sm', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
-      { type: 'text', text: ban, size: 'sm', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
-      { type: 'text', text: tl, size: 'sm', flex: 2, align: 'end', weight: 'bold', color: dam ? MAU_DO_XAU : undefined },
+    type: 'box', layout: 'horizontal', contents: [
+      { type: 'text', text: `${icon} ${nhan}`, size: 'sm', flex: 3, color: '#555555' },
+      { type: 'text', text: giaTri, size: dam ? 'md' : 'sm', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular', color: dam ? '#22A45D' : '#111111' },
     ],
   };
 }
 
-function taoFlexBaoCao(ton, ban) {
-  const { rows, tong } = tinhDuLieu(ton, ban);
-  const now = new Date();
-  const thoiGian = now.toLocaleString('vi-VN', {
-    hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric',
-  });
-
-  const headerContents = [
-    {
-      type: 'text',
-      text: '🍵 BÁO CÁO TRÀ',
-      color: '#FFFFFF',
-      weight: 'bold',
-      size: 'lg',
-    },
-    ...Object.values(SAN_PHAM_TRA).map((ten) => ({
-      type: 'text',
-      text: `• ${ten}`,
-      color: '#EAEAEA',
-      size: 'sm',
-      wrap: true,
-    })),
-    {
-      type: 'text',
-      text: `${Object.keys(SAN_PHAM_TRA).length} sản phẩm · cập nhật lúc ${thoiGian} · ${tong.soSieuThi} siêu thị · quy đổi 1 thùng = ${QUY_DOI_THUNG} chai`,
-      color: '#CFCFCF',
-      size: 'xs',
-      wrap: true,
-      margin: 'md',
-    },
-  ];
-
-  const bodyContents = [
-    dongBang('Siêu thị', 'Tồn', 'Bán', 'TL%', false),
-    { type: 'separator', margin: 'sm' },
-    dongBang('TỔNG TẤT CẢ', fmtSo(tong.ton), fmtSo(tong.ban), fmtPct(tong.tl), true),
-    { type: 'separator', margin: 'sm' },
-  ];
-
-  rows.forEach((r) => {
-    bodyContents.push({
-      type: 'box',
-      layout: 'horizontal',
-      margin: 'sm',
-      contents: [
-        { type: 'text', text: r.ten, size: 'sm', flex: 5, wrap: true, color: '#333333' },
-        { type: 'text', text: fmtSo(r.ton), size: 'sm', flex: 2, align: 'end', color: '#333333' },
-        { type: 'text', text: fmtSo(r.ban), size: 'sm', flex: 2, align: 'end', color: '#333333' },
-        {
-          type: 'text',
-          text: fmtPct(r.tl),
-          size: 'sm',
-          flex: 2,
-          align: 'end',
-          weight: 'bold',
-          color: r.tl >= 20 ? MAU_XANH_TOT : MAU_DO_XAU,
-        },
-      ],
-    });
-  });
-
-  const altText = `Báo cáo trà: Tồn ${fmtSo(tong.ton)} thùng | Bán ${fmtSo(tong.ban)} thùng | TL ${fmtPct(tong.tl)} (${tong.soSieuThi} siêu thị)`;
-
+function oThongKe(icon, nhan, giaTri, mau) {
   return {
-    type: 'flex',
-    altText: altText.slice(0, 400),
-    contents: {
-      type: 'bubble',
-      size: 'giga',
-      header: {
-        type: 'box',
-        layout: 'vertical',
-        backgroundColor: MAU_XANH_HEADER,
-        paddingAll: '20px',
-        contents: headerContents,
-      },
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        paddingAll: '16px',
-        spacing: 'sm',
-        contents: bodyContents,
-      },
-    },
+    type: 'box', layout: 'vertical', flex: 1, backgroundColor: '#F7FAF8', cornerRadius: 'md',
+    paddingAll: '10px', spacing: 'xs',
+    contents: [
+      { type: 'text', text: icon, size: 'lg' },
+      { type: 'text', text: nhan, size: 'xxs', color: '#888888' },
+      { type: 'text', text: giaTri, size: 'sm', weight: 'bold', color: mau || '#1a1a1a', wrap: true },
+    ],
   };
 }
 
 // ---------------------------------------------------------------------------
-// BÁO CÁO DOANH THU / SẢN LƯỢNG (đọc 4 tab thang7_doanhthu, thang8_doanhthu,
-// thang7_sanluong, thang8_sanluong) - kích hoạt khi nhắn "Báo cáo" / "Báo cáo DT"
+// BÁO CÁO NGÀY
 // ---------------------------------------------------------------------------
-const GOOGLE_SHEET_TAB_T7_DOANHTHU = process.env.GOOGLE_SHEET_TAB_T7_DOANHTHU || 'thang7_doanhthu.xlsx';
-const GOOGLE_SHEET_TAB_T8_DOANHTHU = process.env.GOOGLE_SHEET_TAB_T8_DOANHTHU || 'thang8_doanhthu.xlsx';
-const GOOGLE_SHEET_TAB_T7_SANLUONG = process.env.GOOGLE_SHEET_TAB_T7_SANLUONG || 'thang7_sanluong.xlsx';
-const GOOGLE_SHEET_TAB_T8_SANLUONG = process.env.GOOGLE_SHEET_TAB_T8_SANLUONG || 'thang8_sanluong.xlsx';
+const GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI = process.env.GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI || 'DOANHTHU_SIEUTHI';
+const GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG = process.env.GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG || 'DOANHTHU_NGANHHANG';
+const GOOGLE_SHEET_TAB_FRESH = process.env.GOOGLE_SHEET_TAB_FRESH || 'FRESH_NHAPXUAT';
 
-// Nhóm ngành hàng FRESH - còn lại tất cả coi là FMCG
-const NGANH_FRESH = ['Thịt', 'Cá (Hải sản)', 'Rau Củ Quả CL', 'Trái cây', 'Trứng'];
-function laFresh(nganh) {
-  return NGANH_FRESH.includes((nganh || '').trim());
-}
+const CARD1_CATEGORY_ORDER = [
+  'Bia Các Loại',
+  'Thức uống giải khát các loại',
+  'Bánh kẹo - Trà - Cà phê - Bột Dinh Dưỡng các loại',
+  'Thực phẩm - Gia vị các loại',
+  'Sữa - Thức uống bổ dưỡng các loại',
+  'Chăm sóc nhà cửa',
+  'Chăm sóc cá nhân',
+  'Thực phẩm đông lạnh - Hàng mát các loại',
+  'Kem các loại',
+  'Sản Phẩm Từ Sữa - Bảo Quản Mát',
+  'Thịt',
+  'Rau Củ Quả CL',
+  'Trái cây',
+  'Cá (Hải sản)',
+  'Trứng',
+  'BHX - Hàng khuyến mãi',
+  'Khác',
+];
 
-// Chuyển giá trị "Ngày xuất" (có thể là serial number của Google Sheets hoặc
-// chuỗi dd/mm/yyyy) về 1 khoá ngày thống nhất "yyyy-mm-dd" để đếm số ngày.
+const FRESH_CATEGORY_ORDER = [
+  'Thịt Địa Phương',
+  'Rau Địa Phương',
+  'Trái Cây Tập Trung',
+  'Thủy Hải Sản Tập Trung',
+  'Trứng Các Loại',
+  'Thịt Nhập Khẩu',
+  'Rau Đà Lạt',
+  'Thủy Hải Sản Nhập Khẩu',
+  'Trái Cây Nhập Khẩu',
+];
+
 function toDateKey(value) {
   if (typeof value === 'number') {
-    const epoch = Date.UTC(1899, 11, 30); // mốc ngày 0 của Google Sheets
+    const epoch = Date.UTC(1899, 11, 30);
     const d = new Date(epoch + value * 86400000);
     return d.toISOString().slice(0, 10);
   }
@@ -357,278 +212,1321 @@ function toDateKey(value) {
   return s;
 }
 
-function soNgayTrongThang(thang, nam) {
-  return new Date(nam, thang, 0).getDate();
+function fmtNgayHienThi(dateKey) {
+  if (!dateKey) return 'N/A';
+  const [y, m, d] = dateKey.split('-');
+  return `${d}/${m}/${y}`;
 }
 
-// Gộp 1 tab (doanh thu hoặc sản lượng) theo Ngành hàng BHX, trả về tổng theo
-// từng ngành + tổng tất cả + số ngày có phát sinh dữ liệu trong tab.
-function gomTheoNganhHang(rows, tenCotGiaTri) {
-  const header = rows[0];
-  const colNgay = timCotTheoTen(header, 'Ngày xuất');
-  const colNganh = timCotTheoTen(header, 'Ngành hàng BHX');
-  const colGiaTri = timCotTheoTen(header, tenCotGiaTri);
+function chuanHoaMaSieuThi(value) {
+  const s = (value === undefined || value === null) ? '' : value.toString().trim();
+  const idx = s.indexOf(' - ');
+  return idx === -1 ? s : s.slice(0, idx).trim();
+}
 
-  const byNganh = {};
-  const ngayKeys = new Set();
-
+function timNgayMoiNhat(rows, colNgay) {
+  let moiNhat = null;
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (!row) continue;
-    const ngay = row[colNgay];
-    if (ngay === undefined || ngay === '') continue;
-    ngayKeys.add(toDateKey(ngay));
+    if (!row || row[colNgay] === undefined || row[colNgay] === '') continue;
+    const key = toDateKey(row[colNgay]);
+    if (moiNhat === null || key > moiNhat) moiNhat = key;
+  }
+  return moiNhat;
+}
 
-    const nganh = (row[colNganh] || '').toString().trim();
-    if (!nganh) continue;
-    const giaTri = Number(row[colGiaTri]) || 0;
-    byNganh[nganh] = (byNganh[nganh] || 0) + giaTri;
+const NGANH_FRESH_TRONG_CARD1 = ['Thịt', 'Rau Củ Quả CL', 'Trái cây', 'Cá (Hải sản)', 'Trứng'];
+
+function dongNganhHangDon(ten, giaTri) {
+  const isFresh = NGANH_FRESH_TRONG_CARD1.includes(ten);
+  return {
+    type: 'box', layout: 'horizontal', margin: 'sm', contents: [
+      { type: 'text', text: `${isFresh ? '🥬' : '🛒'} ${ten}`, size: 'sm', flex: 5, wrap: true, color: isFresh ? '#1F7A45' : '#333333' },
+      { type: 'text', text: giaTri, size: 'sm', flex: 3, align: 'end', weight: 'bold', color: '#111111' },
+    ],
+  };
+}
+
+function taoCardBaoCaoTheoNgay(maSieuThi, tenSieuThi, tong, ngayHienThi) {
+  const bodyContents = [
+    { type: 'text', text: `🏢 ${tenSieuThi}`, weight: 'bold', size: 'md', wrap: true, color: '#1a1a1a' },
+    {
+      type: 'box', layout: 'vertical', backgroundColor: '#F0F7F2', cornerRadius: 'md', paddingAll: '14px', margin: 'md',
+      contents: [
+        { type: 'text', text: 'TỔNG DOANH THU', size: 'xs', color: '#888888' },
+        { type: 'text', text: fmtSo(tong.tongDoanhThu) + ' đ', size: 'xxl', weight: 'bold', color: '#1a1a1a', margin: 'sm' },
+      ],
+    },
+    {
+      type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'md',
+      contents: [
+        oThongKe('🏬', 'DT Offline', fmtSo(tong.dtOffline) + ' đ'),
+        oThongKe('🌐', 'DT Online', fmtSo(tong.dtOnline) + ' đ'),
+      ],
+    },
+    {
+      type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'sm',
+      contents: [
+        oThongKe('🧾', 'Số bill', fmtSo(tong.soBill)),
+        oThongKe('💳', 'Giá trị TB', fmtSo(tong.giaTriBillTB) + ' đ'),
+      ],
+    },
+    { type: 'separator', margin: 'lg' },
+    { type: 'text', text: '📦 CHI TIẾT NGÀNH HÀNG', size: 'sm', weight: 'bold', color: '#333333', margin: 'lg' },
+  ];
+
+  CARD1_CATEGORY_ORDER.forEach((ten) => {
+    bodyContents.push(dongNganhHangDon(ten, fmtSo(tong.byNganh[ten] || 0) + ' đ'));
+  });
+
+  return {
+    type: 'flex',
+    altText: `Báo cáo ngày ${ngayHienThi} - ${tenSieuThi}: Tổng doanh thu ${fmtSo(tong.tongDoanhThu)} đ`,
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#2C4A3B', paddingAll: '20px',
+        contents: [
+          { type: 'text', text: '📅 BÁO CÁO NGÀY', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+          { type: 'text', text: `${maSieuThi} · ${ngayHienThi}`, color: '#DCEAE1', size: 'sm', margin: 'sm' },
+          { type: 'text', text: 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị\nThạch Phạm Hoàng Anh -  197042', color: '#DCEAE1', size: 'xxs', margin: 'sm', wrap: true },
+        ],
+      },
+      body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
+    },
+  };
+}
+
+function taoCardFreshNgay(maSieuThi, tenSieuThi, freshData, ngayHienThi) {
+  const bodyContents = [
+    {
+      type: 'box', layout: 'vertical', backgroundColor: '#F0F7F2', cornerRadius: 'md', paddingAll: '14px',
+      contents: [
+        { type: 'text', text: `TỔNG QUAN — DT FRESH (SIÊU THỊ ${maSieuThi})`, size: 'xs', color: '#888888', wrap: true },
+        { type: 'text', text: fmtTrieuTron(freshData.tongDT), size: 'xxl', weight: 'bold', color: '#1a1a1a', margin: 'sm' },
+        { type: 'text', text: `SL: ${fmtSo(freshData.tongSL)}`, size: 'sm', color: '#555555', margin: 'sm' },
+      ],
+    },
+    { type: 'separator', margin: 'lg' },
+    {
+      type: 'box', layout: 'horizontal', margin: 'lg', contents: [
+        { type: 'text', text: 'Ngành hàng', size: 'xs', color: '#888888', flex: 5 },
+        { type: 'text', text: 'DT', size: 'xs', color: '#888888', flex: 2, align: 'end' },
+        { type: 'text', text: 'SL', size: 'xs', color: '#888888', flex: 2, align: 'end' },
+      ],
+    },
+    { type: 'separator', margin: 'sm' },
+  ];
+
+  FRESH_CATEGORY_ORDER.forEach((ten) => {
+    const d = freshData.byNganh[ten] || { dt: 0, sl: 0 };
+    bodyContents.push({
+      type: 'box', layout: 'horizontal', margin: 'sm', contents: [
+        { type: 'text', text: ten, size: 'sm', flex: 5, wrap: true, color: '#333333' },
+        { type: 'text', text: fmtTrieuTron(d.dt), size: 'sm', flex: 2, align: 'end', weight: 'bold' },
+        { type: 'text', text: fmtSo(d.sl), size: 'sm', flex: 2, align: 'end' },
+      ],
+    });
+  });
+
+  return {
+    type: 'flex',
+    altText: `Fresh ngày ${ngayHienThi} - ${tenSieuThi}: ${fmtTrieuTron(freshData.tongDT)}`,
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#2C4A3B', paddingAll: '20px',
+        contents: [
+          { type: 'text', text: '🌱 BÁO CÁO FRESH THEO NGÀY', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+          { type: 'text', text: `${tenSieuThi} · ${ngayHienThi}`, color: '#DCEAE1', size: 'sm', margin: 'sm', wrap: true },
+          { type: 'text', text: 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị\nThạch Phạm Hoàng Anh -  197042', color: '#DCEAE1', size: 'xxs', margin: 'sm', wrap: true },
+        ],
+      },
+      body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
+    },
+  };
+}
+
+function fmtTrieuTron(n) {
+  if (Math.abs(n) < 500000) return fmtSo(n) + ' đ';
+  return `${Math.round(n / 1e6)} tr`;
+}
+
+async function generateDailyReport() {
+  const sheets = getSheetsClient();
+
+  const [rowsST, rowsNH, rowsFresh] = await Promise.all([
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI),
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG),
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_FRESH),
+  ]);
+
+  const headerST = rowsST[0];
+  const colNgayST = timCotTheoTen(headerST, 'Ngày');
+  const colMaST = timCotTheoTen(headerST, 'Mã siêu thị');
+  const colTenST = timCotTheoTen(headerST, 'Tên siêu thị');
+  const colDTOffline = timCotTheoTen(headerST, 'Doanh thu offline');
+  const colDTOnline = timCotTheoTen(headerST, 'Doanh thu Online');
+  const colSoBill = timCotTheoTen(headerST, 'Tổng số bill');
+
+  const ngayMoiNhatST = timNgayMoiNhat(rowsST, colNgayST);
+  const theoSieuThiST = {};
+  for (let i = 1; i < rowsST.length; i++) {
+    const row = rowsST[i];
+    if (!row || row[colNgayST] === undefined || row[colNgayST] === '') continue;
+    if (toDateKey(row[colNgayST]) !== ngayMoiNhatST) continue;
+    const ma = chuanHoaMaSieuThi(row[colMaST]);
+    if (!theoSieuThiST[ma]) {
+      theoSieuThiST[ma] = { ma, ten: row[colTenST] || ma, dtOffline: 0, dtOnline: 0, soBill: 0 };
+    }
+    theoSieuThiST[ma].dtOffline += Number(row[colDTOffline]) || 0;
+    theoSieuThiST[ma].dtOnline += Number(row[colDTOnline]) || 0;
+    theoSieuThiST[ma].soBill += Number(row[colSoBill]) || 0;
   }
 
-  const tong = Object.values(byNganh).reduce((s, v) => s + v, 0);
-  return { byNganh, tong, soNgay: ngayKeys.size };
+  const headerNH = rowsNH[0];
+  const colNgayNH = timCotTheoTen(headerNH, 'Ngày xuất');
+  const colMaNH = timCotTheoTen(headerNH, 'Mã siêu thị');
+  const colNganhNH = timCotTheoTen(headerNH, 'Ngành hàng BHX');
+  const colDoanhThuNH = timCotTheoTen(headerNH, 'Doanh thu');
+
+  const ngayMoiNhatNH = timNgayMoiNhat(rowsNH, colNgayNH);
+  const theoSieuThiNH = {};
+  for (let i = 1; i < rowsNH.length; i++) {
+    const row = rowsNH[i];
+    if (!row || row[colNgayNH] === undefined || row[colNgayNH] === '') continue;
+    if (toDateKey(row[colNgayNH]) !== ngayMoiNhatNH) continue;
+    const ma = chuanHoaMaSieuThi(row[colMaNH]);
+    const ten = (row[colNganhNH] || '').toString().trim();
+    if (!ten) continue;
+    if (!theoSieuThiNH[ma]) theoSieuThiNH[ma] = {};
+    theoSieuThiNH[ma][ten] = (theoSieuThiNH[ma][ten] || 0) + (Number(row[colDoanhThuNH]) || 0);
+  }
+
+  const ngayHienThi = fmtNgayHienThi(ngayMoiNhatST || ngayMoiNhatNH);
+  const tatCaMaSieuThi = new Set([...Object.keys(theoSieuThiST), ...Object.keys(theoSieuThiNH)]);
+  const cardsDoanhThu = Array.from(tatCaMaSieuThi).map((ma) => {
+    const st = theoSieuThiST[ma] || { ma, ten: ma, dtOffline: 0, dtOnline: 0, soBill: 0 };
+    const byNganh = theoSieuThiNH[ma] || {};
+    const tongDoanhThu = st.dtOffline + st.dtOnline;
+    const giaTriBillTB = st.soBill > 0 ? tongDoanhThu / st.soBill : 0;
+    return taoCardBaoCaoTheoNgay(st.ma, st.ten, { tongDoanhThu, dtOffline: st.dtOffline, dtOnline: st.dtOnline, soBill: st.soBill, giaTriBillTB, byNganh }, ngayHienThi);
+  });
+
+  const headerFresh = rowsFresh[0];
+  const colNgayFresh = timCotTheoTen(headerFresh, 'Ngày');
+  const colMaSTFresh = timCotTheoTen(headerFresh, 'Mã siêu thị');
+  const colTenSTFresh = timCotTheoTen(headerFresh, 'Tên siêu thị');
+  const colNganhFresh = timCotTheoTen(headerFresh, 'Ngành hàng - Phân tích');
+  const colDoanhThuFresh = timCotTheoTen(headerFresh, 'Thành tiền phải thu khách hàng (chưa VAT)');
+  const colSLFresh = timCotTheoTen(headerFresh, 'SL thực xuất');
+
+  const ngayMoiNhatFresh = timNgayMoiNhat(rowsFresh, colNgayFresh);
+  const theoSieuThi = {};
+  for (let i = 1; i < rowsFresh.length; i++) {
+    const row = rowsFresh[i];
+    if (!row || row[colNgayFresh] === undefined || row[colNgayFresh] === '') continue;
+    if (toDateKey(row[colNgayFresh]) !== ngayMoiNhatFresh) continue;
+
+    const ma = chuanHoaMaSieuThi(row[colMaSTFresh]);
+    if (!theoSieuThi[ma]) {
+      theoSieuThi[ma] = { ma, ten: row[colTenSTFresh] || ma, tongDT: 0, tongSL: 0, byNganh: {} };
+    }
+    const st = theoSieuThi[ma];
+    const ten = (row[colNganhFresh] || '').toString().trim();
+    const dt = Number(row[colDoanhThuFresh]) || 0;
+    const sl = Number(row[colSLFresh]) || 0;
+    if (!st.byNganh[ten]) st.byNganh[ten] = { dt: 0, sl: 0 };
+    st.byNganh[ten].dt += dt;
+    st.byNganh[ten].sl += sl;
+    st.tongDT += dt;
+    st.tongSL += sl;
+  }
+
+  const ngayHienThiFresh = fmtNgayHienThi(ngayMoiNhatFresh);
+  const danhSachSieuThi = Object.values(theoSieuThi);
+  const cardsFresh = danhSachSieuThi.map((st) =>
+    taoCardFreshNgay(st.ma, st.ten, st, ngayHienThiFresh)
+  );
+
+  return [...cardsDoanhThu, ...cardsFresh].slice(0, 5);
 }
 
-// Định dạng tiền kiểu VN: >=1 tỷ -> "x,xx tỷ", >=1 triệu -> "x,x triệu", còn lại -> "xxx.xxx đ"
-function fmtTien(n) {
-  const abs = Math.abs(n);
-  if (abs >= 1e9) return (n / 1e9).toFixed(2).replace('.', ',') + ' tỷ';
-  if (abs >= 1e6) return (n / 1e6).toFixed(1).replace('.', ',') + ' triệu';
-  return fmtSo(n) + ' đ';
+// ---------------------------------------------------------------------------
+// GIÁ VỐN — ghép giá vốn (tab GIAVON) + doanh thu bán thực tế hôm nay (tab FRESH_NHAPXUAT)
+// ---------------------------------------------------------------------------
+const GOOGLE_SHEET_TAB_GIAVON = process.env.GOOGLE_SHEET_TAB_GIAVON || 'GIAVON';
+
+// Ngành hàng bên tab GIAVON là gộp nhóm rộng hơn ngành hàng chi tiết bên FRESH_NHAPXUAT,
+// nên cần ánh xạ 1-nhiều để cộng đúng DT/SL bán hôm nay vào từng dòng GIAVON.
+const GIAVON_TO_FRESH_MAP = {
+  'Thịt gia cầm gia súc các loại': ['Thịt Địa Phương', 'Thịt Nhập Khẩu'],
+  'Thủy Hải Sản Các Loại': ['Thủy Hải Sản Tập Trung', 'Thủy Hải Sản Nhập Khẩu'],
+  'Rau Đà Lạt': ['Rau Đà Lạt'],
+  'Rau Địa Phương': ['Rau Địa Phương'],
+  'Trái cây ngoại CL': ['Trái Cây Nhập Khẩu'],
+  'Trái cây nội CL': ['Trái Cây Tập Trung'],
+  'Trứng gia cầm các loại': ['Trứng Các Loại'],
+};
+
+function chuyenTiLeThanhPhanTram(raw) {
+  if (typeof raw === 'number') return raw > 3 ? raw : raw * 100; // đã là % (>3) hay dạng phân số (0.xx)
+  const s = (raw || '').toString().replace('%', '').replace(',', '.').trim();
+  return parseFloat(s) || 0;
 }
 
-// Định dạng số lượng kiểu VN 1 chữ số thập phân: 19416.4 -> "19.416,4"
-function fmtSoLuongVN(n) {
-  const rounded = Math.round(n * 10) / 10;
-  const parts = rounded.toFixed(1).split('.');
-  const nguyen = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  return `${nguyen},${parts[1]}`;
+function dongNganhHangGiaVon(nganh) {
+  const mauLN = nganh.lnLuyKe >= 0 ? '#27AE60' : '#E74C3C';
+  const mauChenhLech = nganh.chenhLech >= 0 ? '#27AE60' : '#E74C3C';
+  const muiChenhLech = nganh.chenhLech >= 0 ? '▲' : '▼';
+  const tiLeHomNay = nganh.giaVonHomNay > 0 ? (nganh.dtBanHomNay / nganh.giaVonHomNay) * 100 : 0;
+  const mauHomNay = nganh.dtBanHomNay > nganh.giaVonHomNay ? '#27AE60' : '#E74C3C';
+
+  return {
+    type: 'box', layout: 'vertical', margin: 'md', paddingAll: '10px',
+    backgroundColor: '#FAF7F2', cornerRadius: 'md',
+    contents: [
+      { type: 'text', text: nganh.ten, size: 'sm', weight: 'bold', color: '#1a1a1a', wrap: true },
+
+      { type: 'text', text: 'HÔM NAY', size: 'xxs', color: '#B8860B', margin: 'sm' },
+      {
+        type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+          { type: 'text', text: 'DT bán hôm nay', size: 'xxs', color: '#888888', flex: 3 },
+          { type: 'text', text: `${fmtSo(nganh.dtBanHomNay)} đ (SL ${fmtSo(nganh.slBanHomNay)})`, size: 'xs', flex: 4, align: 'end', weight: 'bold', color: mauHomNay },
+        ],
+      },
+      {
+        type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+          { type: 'text', text: 'Giá vốn hôm nay / Tỉ lệ', size: 'xxs', color: '#888888', flex: 3 },
+          { type: 'text', text: `${fmtSo(nganh.giaVonHomNay)} đ · ${fmtPct(tiLeHomNay)}`, size: 'xs', flex: 4, align: 'end', weight: 'bold', color: mauHomNay },
+        ],
+      },
+
+      { type: 'separator', margin: 'sm' },
+      { type: 'text', text: 'LŨY KẾ', size: 'xxs', color: '#1B4F72', margin: 'sm' },
+      {
+        type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+          { type: 'text', text: 'Giá vốn lũy kế / Tỉ lệ DT', size: 'xxs', color: '#888888', flex: 3 },
+          { type: 'text', text: `${fmtSo(nganh.giaVonLuyKe)} đ · ${fmtPct(nganh.tiLeDTGiaVon)}`, size: 'xs', flex: 4, align: 'end', weight: 'bold' },
+        ],
+      },
+      {
+        type: 'box', layout: 'horizontal', margin: 'sm', contents: [
+          { type: 'text', text: 'LN lũy kế', size: 'xs', color: '#555555', flex: 3 },
+          { type: 'text', text: fmtSo(nganh.lnLuyKe) + ' đ', size: 'sm', flex: 4, align: 'end', weight: 'bold', color: mauLN },
+        ],
+      },
+      {
+        type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+          { type: 'text', text: 'So với TB 3 tháng trước', size: 'xxs', color: '#888888', flex: 3 },
+          { type: 'text', text: `${muiChenhLech} ${fmtSo(Math.abs(nganh.chenhLech))} đ`, size: 'xs', flex: 4, align: 'end', weight: 'bold', color: mauChenhLech },
+        ],
+      },
+    ],
+  };
 }
 
-// "+12.3%" hoặc "-5.0%" kèm mũi tên
-function tinhPhanTramTangGiam(giaTriMoi, giaTriCu) {
-  if (!giaTriCu) return 0;
-  return ((giaTriMoi - giaTriCu) / giaTriCu) * 100;
+function taoCardGiaVon(maSieuThi, tenSieuThi, thang, dsNganhHang, ngayBanHienThi) {
+  const tongGiaVonHomNay = dsNganhHang.reduce((s, n) => s + n.giaVonHomNay, 0);
+  const tongDTBanHomNay = dsNganhHang.reduce((s, n) => s + (n.dtBanHomNay || 0), 0);
+  const tongLNLuyKe = dsNganhHang.reduce((s, n) => s + n.lnLuyKe, 0);
+  const mauTongLN = tongLNLuyKe >= 0 ? '#27AE60' : '#E74C3C';
+  const mauTongHomNay = tongDTBanHomNay > tongGiaVonHomNay ? '#27AE60' : '#E74C3C';
+
+  const bodyContents = [
+    { type: 'text', text: `🏢 ${tenSieuThi}`, weight: 'bold', size: 'md', wrap: true, color: '#1a1a1a' },
+    {
+      type: 'box', layout: 'vertical', backgroundColor: '#FBF3E7', cornerRadius: 'md', paddingAll: '14px', margin: 'md',
+      contents: [
+        { type: 'text', text: 'TỔNG LN LŨY KẾ', size: 'xs', color: '#888888' },
+        { type: 'text', text: fmtSo(tongLNLuyKe) + ' đ', size: 'xxl', weight: 'bold', color: mauTongLN, margin: 'sm' },
+      ],
+    },
+    {
+      type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'md',
+      contents: [
+        oThongKe('🛒', 'DT bán hôm nay', fmtSo(tongDTBanHomNay) + ' đ', mauTongHomNay),
+        oThongKe('💰', 'Giá vốn hôm nay', fmtSo(tongGiaVonHomNay) + ' đ', mauTongHomNay),
+      ],
+    },
+    { type: 'separator', margin: 'lg' },
+    { type: 'text', text: '📦 CHI TIẾT THEO NGÀNH HÀNG', size: 'sm', weight: 'bold', color: '#333333', margin: 'lg' },
+  ];
+
+  dsNganhHang
+    .slice()
+    .sort((a, b) => b.lnLuyKe - a.lnLuyKe)
+    .forEach((n) => bodyContents.push(dongNganhHangGiaVon(n)));
+
+  return {
+    type: 'flex',
+    altText: `Báo cáo giá vốn ${tenSieuThi}: LN lũy kế ${fmtSo(tongLNLuyKe)} đ`,
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#7B3F00', paddingAll: '20px',
+        contents: [
+          { type: 'text', text: '💰 BÁO CÁO GIÁ VỐN', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+          { type: 'text', text: `${maSieuThi} · Tháng ${thang}${ngayBanHienThi ? ' · Bán ngày ' + fmtNgayHienThi(ngayBanHienThi) : ''}`, color: '#F3DFC5', size: 'sm', margin: 'sm', wrap: true },
+          { type: 'text', text: 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị\nThạch Phạm Hoàng Anh -  197042', color: '#F3DFC5', size: 'xxs', margin: 'sm', wrap: true },
+        ],
+      },
+      body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
+    },
+  };
 }
-function fmtPctMuiTen(p) {
+
+async function generateGiaVonReport() {
+  const sheets = getSheetsClient();
+  const [rows, rowsFresh] = await Promise.all([
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_GIAVON),
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_FRESH),
+  ]);
+
+  // --- đọc tab GIAVON (giá vốn hôm nay + lũy kế) ---
+  const header = rows[0];
+  const colThang = timCotTheoTen(header, 'Tháng');
+  const colMaST = timCotTheoTen(header, 'Mã siêu thị');
+  const colTenST = timCotTheoTen(header, 'Tên siêu thị');
+  const colNganh = timCotTheoTen(header, 'Ngành hàng');
+  const colGiaVonHomNay = timCotTheoTen(header, 'Giá vốn cơ bản hôm nay');
+  const colGiaVonLuyKe = timCotTheoTen(header, 'Giá vốn cơ bản lũy kế đến ngày hôm qua');
+  const colTiLe = timCotTheoTen(header, 'Tỉ lệ doanh thu trên giá vốn cơ bản');
+  const colLNLuyKe = timCotTheoTen(header, 'LN lũy kế');
+  const colChenhLech = timCotTheoTen(header, 'Chênh lệch LN so với 3 tháng trước');
+
+  let thangMoiNhat = null;
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row[colThang] === undefined || row[colThang] === '') continue;
+    const t = row[colThang].toString().trim();
+    if (thangMoiNhat === null || t > thangMoiNhat) thangMoiNhat = t;
+  }
+
+  const theoSieuThi = {};
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row[colThang] === undefined || row[colThang] === '') continue;
+    if (row[colThang].toString().trim() !== thangMoiNhat) continue;
+
+    const ma = chuanHoaMaSieuThi(row[colMaST]);
+    if (!theoSieuThi[ma]) {
+      theoSieuThi[ma] = { ma, ten: row[colTenST] || ma, dsNganhHang: [] };
+    }
+    theoSieuThi[ma].dsNganhHang.push({
+      ten: (row[colNganh] || '').toString().trim(),
+      giaVonHomNay: Number(row[colGiaVonHomNay]) || 0,
+      giaVonLuyKe: Number(row[colGiaVonLuyKe]) || 0,
+      tiLeDTGiaVon: chuyenTiLeThanhPhanTram(row[colTiLe]),
+      lnLuyKe: Number(row[colLNLuyKe]) || 0,
+      chenhLech: Number(row[colChenhLech]) || 0,
+    });
+  }
+
+  // --- đọc tab FRESH_NHAPXUAT để lấy DT/SL BÁN THỰC TẾ hôm nay theo ngành hàng ---
+  const headerFresh = rowsFresh[0];
+  const colNgayFresh = timCotTheoTen(headerFresh, 'Ngày');
+  const colMaSTFresh = timCotTheoTen(headerFresh, 'Mã siêu thị');
+  const colNganhFresh = timCotTheoTen(headerFresh, 'Ngành hàng - Phân tích');
+  const colDoanhThuFresh = timCotTheoTen(headerFresh, 'Thành tiền phải thu khách hàng (chưa VAT)');
+  const colSLFresh = timCotTheoTen(headerFresh, 'SL thực xuất');
+
+  const ngayMoiNhatFresh = timNgayMoiNhat(rowsFresh, colNgayFresh);
+  const banHomNayTheoSieuThi = {};
+  for (let i = 1; i < rowsFresh.length; i++) {
+    const row = rowsFresh[i];
+    if (!row || row[colNgayFresh] === undefined || row[colNgayFresh] === '') continue;
+    if (toDateKey(row[colNgayFresh]) !== ngayMoiNhatFresh) continue;
+
+    const ma = chuanHoaMaSieuThi(row[colMaSTFresh]);
+    const ten = (row[colNganhFresh] || '').toString().trim();
+    if (!ten) continue;
+    if (!banHomNayTheoSieuThi[ma]) banHomNayTheoSieuThi[ma] = {};
+    if (!banHomNayTheoSieuThi[ma][ten]) banHomNayTheoSieuThi[ma][ten] = { dt: 0, sl: 0 };
+    banHomNayTheoSieuThi[ma][ten].dt += Number(row[colDoanhThuFresh]) || 0;
+    banHomNayTheoSieuThi[ma][ten].sl += Number(row[colSLFresh]) || 0;
+  }
+
+  // --- ghép: mỗi ngành hàng bên GIAVON cộng DT/SL bán hôm nay từ các ngành hàng con bên FRESH ---
+  const cards = Object.values(theoSieuThi).map((st) => {
+    const banHomNay = banHomNayTheoSieuThi[st.ma] || {};
+    const dsNganhHangDayDu = st.dsNganhHang.map((n) => {
+      const nhomFresh = GIAVON_TO_FRESH_MAP[n.ten] || [];
+      let dtBanHomNay = 0;
+      let slBanHomNay = 0;
+      nhomFresh.forEach((tenFresh) => {
+        const d = banHomNay[tenFresh];
+        if (d) {
+          dtBanHomNay += d.dt;
+          slBanHomNay += d.sl;
+        }
+      });
+      return { ...n, dtBanHomNay, slBanHomNay };
+    });
+    return taoCardGiaVon(st.ma, st.ten, thangMoiNhat, dsNganhHangDayDu, ngayMoiNhatFresh);
+  });
+
+  return cards.slice(0, 5);
+}
+
+// ---------------------------------------------------------------------------
+// BC LŨY KẾ DOANH THU
+// ---------------------------------------------------------------------------
+const GOOGLE_SHEET_TAB_LUYKE_DT = process.env.GOOGLE_SHEET_TAB_LUYKE_DT || 'LUYKE_DT';
+
+// ---------------------------------------------------------------------------
+// MMKK HUỶ — Tổng SL bán / Doanh thu / SL giảm giá / Tiền giảm giá / SL mất mát KK — THEO NGÀNH HÀNG
+// ---------------------------------------------------------------------------
+const GOOGLE_SHEET_TAB_HUYMMKK = process.env.GOOGLE_SHEET_TAB_HUYMMKK || 'HUYMMKK';
+const GOOGLE_SHEET_TAB_CHITIETXUAT = process.env.GOOGLE_SHEET_TAB_CHITIETXUAT || 'CHITIETXUAT';
+const GOOGLE_SHEET_TAB_LUOTBILL = process.env.GOOGLE_SHEET_TAB_LUOTBILL || 'LUOTBILL';
+
+function taoCardHuyMmkk(maSieuThi, tenSieuThi, dsNganhHang, ngayHienThi) {
+  const tongDoanhThu = dsNganhHang.reduce((s, n) => s + n.doanhThu, 0);
+  const tongMMKK = dsNganhHang.reduce((s, n) => s + n.slMMKK, 0);
+  const tongSLBan = dsNganhHang.reduce((s, n) => s + n.slBan, 0);
+  const tongTienGiamGia = dsNganhHang.reduce((s, n) => s + n.tienGiamGia, 0);
+
+  const bodyContents = [
+    { type: 'text', text: '🏢 ' + tenSieuThi, weight: 'bold', size: 'md', wrap: true, color: '#1a1a1a' },
+    {
+      type: 'box', layout: 'vertical', backgroundColor: '#FBEAEA', cornerRadius: 'md', paddingAll: '14px', margin: 'md',
+      contents: [
+        { type: 'text', text: 'TỔNG SL MẤT MÁT KIỂM KÊ', size: 'xs', color: '#888888' },
+        { type: 'text', text: fmtSo(tongMMKK) + (tongMMKK < 0 ? ' (thừa)' : tongMMKK > 0 ? ' (thiếu)' : ''), size: 'xxl', weight: 'bold', color: '#C0392B', margin: 'sm' },
+      ],
+    },
+    {
+      type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'md',
+      contents: [
+        oThongKe('💰', 'Doanh thu', fmtSo(tongDoanhThu) + ' đ'),
+        oThongKe('🛒', 'SL bán', fmtSo(tongSLBan)),
+      ],
+    },
+    {
+      type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'sm',
+      contents: [
+        oThongKe('🏷️', 'Tiền giảm giá', fmtSo(tongTienGiamGia) + ' đ'),
+        oThongKe('🗑️', 'SL MMKK', fmtSo(tongMMKK)),
+      ],
+    },
+    { type: 'separator', margin: 'lg' },
+    { type: 'text', text: '📦 CHI TIẾT THEO NGÀNH HÀNG', size: 'sm', weight: 'bold', color: '#333333', margin: 'lg' },
+  ];
+
+  dsNganhHang
+    .slice()
+    .sort((a, b) => b.slMMKK - a.slMMKK)
+    .slice(0, 15)
+    .forEach((n) => {
+      bodyContents.push({
+        type: 'box', layout: 'vertical', margin: 'md', paddingAll: '10px',
+        backgroundColor: '#FAF7F2', cornerRadius: 'md',
+        contents: [
+          { type: 'text', text: n.ten, size: 'sm', weight: 'bold', color: '#1a1a1a', wrap: true },
+          {
+            type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+              { type: 'text', text: 'SL bán', size: 'xxs', color: '#888888', flex: 3 },
+              { type: 'text', text: fmtSo(n.slBan), size: 'xs', flex: 4, align: 'end', weight: 'bold' },
+            ],
+          },
+          {
+            type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+              { type: 'text', text: 'Doanh thu', size: 'xxs', color: '#888888', flex: 3 },
+              { type: 'text', text: fmtSo(n.doanhThu) + ' đ', size: 'xs', flex: 4, align: 'end', weight: 'bold' },
+            ],
+          },
+          {
+            type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+              { type: 'text', text: 'SL giảm giá', size: 'xxs', color: '#888888', flex: 3 },
+              { type: 'text', text: fmtSo(n.slGiamGia), size: 'xs', flex: 4, align: 'end', weight: 'bold' },
+            ],
+          },
+          {
+            type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+              { type: 'text', text: 'Tiền giảm giá', size: 'xxs', color: '#888888', flex: 3 },
+              { type: 'text', text: fmtSo(n.tienGiamGia) + ' đ', size: 'xs', flex: 4, align: 'end', weight: 'bold' },
+            ],
+          },
+          {
+            type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+              { type: 'text', text: 'SL mất mát kiểm kê', size: 'xxs', color: '#C0392B', flex: 3 },
+              { type: 'text', text: fmtSo(n.slMMKK) + (n.slMMKK < 0 ? ' (thừa)' : n.slMMKK > 0 ? ' (thiếu)' : ''), size: 'xs', flex: 4, align: 'end', weight: 'bold', color: '#C0392B' },
+            ],
+          },
+        ],
+      });
+    });
+
+  return {
+    type: 'flex',
+    altText: 'MMKK Huỷ ' + tenSieuThi + ' (' + ngayHienThi + '): SL mất mát kiểm kê ' + fmtSo(tongMMKK),
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#922B21', paddingAll: '20px',
+        contents: [
+          { type: 'text', text: '🗑️ BÁO CÁO MMKK HUỶ', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+          { type: 'text', text: maSieuThi + ' · ' + ngayHienThi, color: '#F5D5D0', size: 'sm', margin: 'sm' },
+          { type: 'text', text: 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị\nThạch Phạm Hoàng Anh -  197042', color: '#F5D5D0', size: 'xxs', margin: 'sm', wrap: true },
+        ],
+      },
+      body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
+    },
+  };
+}
+
+async function generateHuyMmkkReport() {
+  const sheets = getSheetsClient();
+  const rows = await docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_HUYMMKK);
+
+  const header = rows[0];
+  const colNgay = timCotTheoTen(header, 'Ngày');
+  const colMa = timCotTheoTen(header, 'Mã siêu thị');
+  const colTen = timCotTheoTen(header, 'Tên siêu thị');
+  const colNganh = timCotTheoTen(header, 'Ngành hàng');
+  const colSLBan = timCotTheoTen(header, 'Tổng SL bán');
+  const colDoanhThu = timCotTheoTen(header, 'Doanh thu');
+  const colSLGiamGia = timCotTheoTen(header, 'SL giảm giá');
+  const colTienGiamGia = timCotTheoTen(header, 'Tiền giảm giá');
+  const colSLMMKK = timCotTheoTen(header, 'SL mất mát kiểm kê');
+
+  const theoSieuThi = {};
+  let ngayDauChung = null;
+  let ngayCuoiChung = null;
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row[colNgay] === undefined || row[colNgay] === '') continue;
+    const dateKey = toDateKey(row[colNgay]);
+    if (!dateKey || dateKey.length !== 10) continue;
+    if (ngayDauChung === null || dateKey < ngayDauChung) ngayDauChung = dateKey;
+    if (ngayCuoiChung === null || dateKey > ngayCuoiChung) ngayCuoiChung = dateKey;
+
+    const ma = chuanHoaMaSieuThi(row[colMa]);
+    if (!theoSieuThi[ma]) theoSieuThi[ma] = { ma, ten: row[colTen] || ma, byNganh: {} };
+    const ten = (row[colNganh] || '').toString().trim();
+    if (!ten) continue;
+    if (!theoSieuThi[ma].byNganh[ten]) {
+      theoSieuThi[ma].byNganh[ten] = { slBan: 0, doanhThu: 0, slGiamGia: 0, tienGiamGia: 0, slMMKK: 0 };
+    }
+    const d = theoSieuThi[ma].byNganh[ten];
+    d.slBan += Number(row[colSLBan]) || 0;
+    d.doanhThu += Number(row[colDoanhThu]) || 0;
+    d.slGiamGia += Number(row[colSLGiamGia]) || 0;
+    d.tienGiamGia += Number(row[colTienGiamGia]) || 0;
+    d.slMMKK += Number(row[colSLMMKK]) || 0;
+  }
+
+  if (!ngayDauChung) {
+    throw new Error('Tab "' + GOOGLE_SHEET_TAB_HUYMMKK + '" chưa có dữ liệu ngày hợp lệ');
+  }
+
+  const ngayHienThi = 'Lũy kế ' + fmtNgayNgan(ngayDauChung) + '-' + fmtNgayNgan(ngayCuoiChung);
+  const cards = Object.values(theoSieuThi).map((st) => {
+    const dsNganhHang = Object.entries(st.byNganh).map(([ten, d]) => ({ ten, ...d }));
+    return taoCardHuyMmkk(st.ma, st.ten, dsNganhHang, ngayHienThi);
+  });
+
+  return cards.slice(0, 5);
+}
+
+function fmtNgayNgan(dateKey) {
+  const [, m, d] = dateKey.split('-');
+  return `${d}/${m}`;
+}
+
+function fmtPctCoDau(p) {
   const r = Math.round(p * 10) / 10;
   const mui = r >= 0 ? '▲' : '▼';
   const dau = r >= 0 ? '+' : '';
   return `${mui}${dau}${r.toFixed(1)}%`;
 }
-function mauTangGiam(p) {
+
+function mauTangGiamLuyKe(p) {
   return p >= 0 ? '#27AE60' : '#E74C3C';
 }
 
-function taoFlexBaoCaoDoanhThu(t7, t8) {
-  const nam = new Date().getFullYear();
-  const soNgayThang8 = soNgayTrongThang(8, nam);
-  const heSoQuyDoi = t8.soNgay > 0 ? soNgayThang8 / t8.soNgay : 0;
-
-  const duKienT8Tong = t8.tong * heSoQuyDoi;
-  const thucTeT7Tong = t7.tong;
-  const momTong = tinhPhanTramTangGiam(duKienT8Tong, thucTeT7Tong);
-
-  const tatCaNganh = new Set([...Object.keys(t7.byNganh), ...Object.keys(t8.byNganh)]);
-  let freshT8 = 0, freshT7 = 0, fmcgT8 = 0, fmcgT7 = 0;
-  const chiTiet = [];
-  tatCaNganh.forEach((nganh) => {
-    const t7v = t7.byNganh[nganh] || 0;
-    const t8vDuKien = (t8.byNganh[nganh] || 0) * heSoQuyDoi;
-    if (laFresh(nganh)) { freshT8 += t8vDuKien; freshT7 += t7v; }
-    else { fmcgT8 += t8vDuKien; fmcgT7 += t7v; }
-    chiTiet.push({ nganh, duKienT8: t8vDuKien, thucTeT7: t7v, mom: tinhPhanTramTangGiam(t8vDuKien, t7v) });
-  });
-
-  const momFresh = tinhPhanTramTangGiam(freshT8, freshT7);
-  const momFmcg = tinhPhanTramTangGiam(fmcgT8, fmcgT7);
-
-  const card1 = {
-    type: 'bubble',
-    size: 'giga',
-    header: {
-      type: 'box', layout: 'vertical', backgroundColor: '#22A45D', paddingAll: '20px',
-      contents: [
-        { type: 'text', text: '📊 BÁO CÁO DOANH THU', color: '#FFFFFF', weight: 'bold', size: 'lg' },
-        { type: 'text', text: `Dự kiến T8 (${t8.soNgay}/${soNgayThang8} ngày) so với T7`, color: '#E8F8EF', size: 'sm', margin: 'sm' },
-      ],
-    },
-    body: {
-      type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'md',
-      contents: [
-        {
-          type: 'box', layout: 'horizontal', contents: [
-            { type: 'box', layout: 'vertical', flex: 1, contents: [
-              { type: 'text', text: 'DỰ KIẾN T8', size: 'xs', color: '#888888' },
-              { type: 'text', text: fmtTien(duKienT8Tong), size: 'md', weight: 'bold' },
-            ]},
-            { type: 'box', layout: 'vertical', flex: 1, contents: [
-              { type: 'text', text: 'THỰC TẾ T7', size: 'xs', color: '#888888' },
-              { type: 'text', text: fmtTien(thucTeT7Tong), size: 'md', weight: 'bold' },
-            ]},
-            { type: 'box', layout: 'vertical', flex: 1, contents: [
-              { type: 'text', text: 'MoM T8 - T7', size: 'xs', color: '#888888' },
-              { type: 'text', text: fmtPctMuiTen(momTong), size: 'md', weight: 'bold', color: mauTangGiam(momTong) },
-              { type: 'text', text: `${momTong >= 0 ? '▲' : '▼'} ${fmtTien(Math.abs(duKienT8Tong - thucTeT7Tong))}`, size: 'xs', color: mauTangGiam(momTong) },
-            ]},
-          ],
-        },
-        { type: 'separator' },
-        { type: 'text', text: 'DOANH THU THEO NGÀNH HÀNG (DỰ KIẾN T8)', size: 'xs', color: '#888888', weight: 'bold' },
-        {
-          type: 'box', layout: 'horizontal', contents: [
-            { type: 'text', text: '🥬 FRESH', size: 'sm', weight: 'bold', flex: 3 },
-            { type: 'text', text: fmtTien(freshT8), size: 'sm', flex: 2, align: 'end' },
-            { type: 'text', text: fmtPctMuiTen(momFresh), size: 'sm', flex: 2, align: 'end', color: mauTangGiam(momFresh), weight: 'bold' },
-          ],
-        },
-        {
-          type: 'box', layout: 'horizontal', contents: [
-            { type: 'text', text: '🛒 FMCG', size: 'sm', weight: 'bold', flex: 3 },
-            { type: 'text', text: fmtTien(fmcgT8), size: 'sm', flex: 2, align: 'end' },
-            { type: 'text', text: fmtPctMuiTen(momFmcg), size: 'sm', flex: 2, align: 'end', color: mauTangGiam(momFmcg), weight: 'bold' },
-          ],
-        },
-        { type: 'text', text: '* Số liệu T8 là dự kiến, chiếu từ dữ liệu thực tế các ngày đã phát sinh', size: 'xxs', color: '#AAAAAA', wrap: true, margin: 'md' },
-      ],
-    },
+function oThongKeLuyKe(nhan, giaTri, mau) {
+  return {
+    type: 'box', layout: 'vertical', flex: 1, backgroundColor: '#F7FAF8', cornerRadius: 'md',
+    paddingAll: '10px', spacing: 'xs',
+    contents: [
+      { type: 'text', text: nhan, size: 'xxs', color: '#888888' },
+      { type: 'text', text: giaTri, size: 'sm', weight: 'bold', color: mau || '#1a1a1a', wrap: true },
+    ],
   };
-
-  const freshRows = chiTiet.filter((c) => laFresh(c.nganh)).sort((a, b) => b.duKienT8 - a.duKienT8);
-  const fmcgRows = chiTiet.filter((c) => !laFresh(c.nganh)).sort((a, b) => b.duKienT8 - a.duKienT8);
-
-  function dongNganhHang(c) {
-    return {
-      type: 'box', layout: 'horizontal', margin: 'sm', contents: [
-        { type: 'text', text: c.nganh, size: 'sm', flex: 5, wrap: true },
-        { type: 'text', text: fmtTien(c.duKienT8), size: 'sm', flex: 3, align: 'end' },
-        { type: 'text', text: fmtPctMuiTen(c.mom), size: 'sm', flex: 2, align: 'end', color: mauTangGiam(c.mom), weight: 'bold' },
-      ],
-    };
-  }
-
-  const card2 = {
-    type: 'bubble',
-    size: 'giga',
-    header: {
-      type: 'box', layout: 'vertical', backgroundColor: '#2E86DE', paddingAll: '20px',
-      contents: [
-        { type: 'text', text: '📋 CHI TIẾT NGÀNH HÀNG', color: '#FFFFFF', weight: 'bold', size: 'lg' },
-        { type: 'text', text: 'Tăng/giảm doanh thu dự kiến T8 so với T7', color: '#E4F0FD', size: 'sm', margin: 'sm' },
-      ],
-    },
-    body: {
-      type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'sm',
-      contents: [
-        {
-          type: 'box', layout: 'horizontal', contents: [
-            { type: 'text', text: '🥬 Ngành FRESH', size: 'sm', weight: 'bold', flex: 5 },
-            { type: 'text', text: `${momFresh >= 0 ? '▲' : '▼'}${fmtTien(Math.abs(freshT8 - freshT7))} (${fmtPctMuiTen(momFresh).slice(1)})`, size: 'xs', flex: 5, align: 'end', color: mauTangGiam(momFresh), weight: 'bold' },
-          ],
-        },
-        { type: 'separator', margin: 'sm' },
-        ...freshRows.map(dongNganhHang),
-        { type: 'separator', margin: 'md' },
-        {
-          type: 'box', layout: 'horizontal', margin: 'md', contents: [
-            { type: 'text', text: '🛒 Ngành FMCG', size: 'sm', weight: 'bold', flex: 5 },
-            { type: 'text', text: `${momFmcg >= 0 ? '▲' : '▼'}${fmtTien(Math.abs(fmcgT8 - fmcgT7))} (${fmtPctMuiTen(momFmcg).slice(1)})`, size: 'xs', flex: 5, align: 'end', color: mauTangGiam(momFmcg), weight: 'bold' },
-          ],
-        },
-        { type: 'separator', margin: 'sm' },
-        ...fmcgRows.map(dongNganhHang),
-      ],
-    },
-  };
-
-  return { card1, card2, altText: `Báo cáo doanh thu: Dự kiến T8 ${fmtTien(duKienT8Tong)}, MoM ${fmtPctMuiTen(momTong)}` };
 }
 
-function taoFlexSanLuong(t7, t8) {
-  const nam = new Date().getFullYear();
-  const soNgayThang8 = soNgayTrongThang(8, nam);
-  const heSoQuyDoi = t8.soNgay > 0 ? soNgayThang8 / t8.soNgay : 0;
+function dongSoSanhXuHuong(nhan, giaTriHienTai, phanTram) {
+  const mau = mauTangGiamLuyKe(phanTram);
+  return {
+    type: 'box', layout: 'horizontal', margin: 'sm', contents: [
+      { type: 'text', text: nhan, size: 'sm', flex: 4, color: '#555555' },
+      { type: 'text', text: giaTriHienTai, size: 'sm', flex: 4, align: 'end', weight: 'bold', color: '#1a1a1a' },
+      { type: 'text', text: fmtPctCoDau(phanTram), size: 'xs', flex: 3, align: 'end', weight: 'bold', color: mau },
+    ],
+  };
+}
 
-  const duKienT8 = t8.tong * heSoQuyDoi;
-  const thucTeT7 = t7.tong;
-  const mom = tinhPhanTramTangGiam(duKienT8, thucTeT7);
+function taoCardLuyKeDT(maSieuThi, tenSieuThi, so) {
+  const mom = fmtPctCoDau(so.mom);
+  const mauMom = mauTangGiamLuyKe(so.mom);
+
+  const bodyContents = [
+    { type: 'text', text: `🏢 ${tenSieuThi}`, weight: 'bold', size: 'md', wrap: true, color: '#1a1a1a' },
+    {
+      type: 'box', layout: 'vertical', backgroundColor: '#F0F7F2', cornerRadius: 'md', paddingAll: '14px', margin: 'md',
+      contents: [
+        { type: 'text', text: `LŨY KẾ 01-${fmtNgayNgan(so.ngayCuoi)}`, size: 'xs', color: '#888888' },
+        { type: 'text', text: fmtSo(so.tongLuyKe) + ' đ', size: 'xxl', weight: 'bold', color: '#1a1a1a', margin: 'sm' },
+        { type: 'text', text: `Trung bình ${fmtSo(so.tongLuyKe / (so.soNgayCoData || 1))} đ/ngày`, size: 'xs', color: '#555555', margin: 'sm' },
+      ],
+    },
+    {
+      type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'md',
+      contents: [
+        oThongKeLuyKe('DỰ KIẾN HẾT THÁNG', fmtSo(so.duKienHetThang) + ' đ'),
+        oThongKeLuyKe('THỰC TẾ THÁNG TRƯỚC', fmtSo(so.thangTruoc) + ' đ'),
+      ],
+    },
+    {
+      type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'sm',
+      contents: [
+        oThongKeLuyKe('MoM', mom, mauMom),
+        oThongKeLuyKe('CHÊNH LỆCH', `${so.mom >= 0 ? '+' : ''}${fmtSo(so.duKienHetThang - so.thangTruoc)} đ`, mauMom),
+      ],
+    },
+    { type: 'separator', margin: 'lg' },
+    { type: 'text', text: '📊 XU HƯỚNG SO VỚI THÁNG TRƯỚC', size: 'sm', weight: 'bold', color: '#333333', margin: 'lg' },
+    {
+      type: 'box', layout: 'horizontal', margin: 'md', contents: [
+        { type: 'text', text: ' ', size: 'xs', flex: 4 },
+        { type: 'text', text: 'Dự kiến hết tháng', size: 'xs', flex: 4, align: 'end', color: '#888888' },
+        { type: 'text', text: 'MoM', size: 'xs', flex: 3, align: 'end', color: '#888888' },
+      ],
+    },
+    { type: 'separator', margin: 'sm' },
+    dongSoSanhXuHuong('💰 Doanh thu', fmtSo(so.duKienHetThang) + ' đ', so.mom),
+    dongSoSanhXuHuong('🧾 Lượt bill', fmtSo(so.billDuKienHetThang), so.billMom),
+    dongSoSanhXuHuong('💳 Giá trị bill', fmtSo(so.giaTriBillTB) + ' đ', so.giaTriBillMom),
+    { type: 'separator', margin: 'lg' },
+    dongThongTinNgay('🧾', 'Tổng số bill (lũy kế)', fmtSo(so.tongBill), false),
+    dongThongTinNgay('💳', 'Giá trị bill TB (lũy kế)', fmtSo(so.giaTriBillTB) + ' đ', false),
+    dongThongTinNgay('📅', 'Số ngày có dữ liệu', `${so.soNgayCoData} ngày`, false),
+  ];
 
   return {
-    type: 'bubble',
-    size: 'giga',
-    header: {
-      type: 'box', layout: 'vertical', backgroundColor: '#E67E22', paddingAll: '20px',
-      contents: [
-        { type: 'text', text: '📦 SẢN LƯỢNG BÁN', color: '#FFFFFF', weight: 'bold', size: 'lg' },
-        { type: 'text', text: `Dự kiến T8 (${t8.soNgay}/${soNgayThang8} ngày) so với T7`, color: '#FCEEE0', size: 'sm', margin: 'sm' },
-      ],
-    },
-    body: {
-      type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'md',
-      contents: [
-        {
-          type: 'box', layout: 'horizontal', contents: [
-            { type: 'box', layout: 'vertical', flex: 1, contents: [
-              { type: 'text', text: 'DỰ KIẾN T8', size: 'xs', color: '#888888' },
-              { type: 'text', text: fmtSoLuongVN(duKienT8), size: 'md', weight: 'bold' },
-            ]},
-            { type: 'box', layout: 'vertical', flex: 1, contents: [
-              { type: 'text', text: 'THỰC TẾ T7', size: 'xs', color: '#888888' },
-              { type: 'text', text: fmtSoLuongVN(thucTeT7), size: 'md', weight: 'bold' },
-            ]},
-            { type: 'box', layout: 'vertical', flex: 1, contents: [
-              { type: 'text', text: 'MoM T8 - T7', size: 'xs', color: '#888888' },
-              { type: 'text', text: fmtPctMuiTen(mom), size: 'md', weight: 'bold', color: mauTangGiam(mom) },
-              { type: 'text', text: `${mom >= 0 ? '▲' : '▼'} ${fmtSoLuongVN(Math.abs(duKienT8 - thucTeT7))}`, size: 'xs', color: mauTangGiam(mom) },
-            ]},
-          ],
-        },
-      ],
+    type: 'flex',
+    altText: `Lũy kế DT ${tenSieuThi}: ${fmtSo(so.tongLuyKe)} đ, dự kiến hết tháng ${fmtSo(so.duKienHetThang)} đ`,
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#1B4F72', paddingAll: '20px',
+        contents: [
+          { type: 'text', text: '📈 BC LŨY KẾ DOANH THU', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+          { type: 'text', text: `${maSieuThi} · Lũy kế 01-${fmtNgayNgan(so.ngayCuoi)}`, color: '#D6E4F0', size: 'sm', margin: 'sm' },
+          { type: 'text', text: 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị\nThạch Phạm Hoàng Anh -  197042', color: '#D6E4F0', size: 'xxs', margin: 'sm', wrap: true },
+        ],
+      },
+      body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: bodyContents },
     },
   };
 }
 
-async function generateRevenueReport() {
+async function generateLuyKeReport() {
   const sheets = getSheetsClient();
+  const rows = await docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_LUYKE_DT);
 
-  const [rowsT7DT, rowsT8DT, rowsT7SL, rowsT8SL] = await Promise.all([
-    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_T7_DOANHTHU),
-    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_T8_DOANHTHU),
-    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_T7_SANLUONG),
-    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_T8_SANLUONG),
-  ]);
+  const header = rows[0];
+  const colNgay = timCotTheoTen(header, 'Ngày');
+  const colMa = timCotTheoTen(header, 'Mã siêu thị');
+  const colTen = timCotTheoTen(header, 'Tên siêu thị');
+  const colDTOffline = timCotTheoTen(header, 'Doanh thu offline');
+  const colDTOnline = timCotTheoTen(header, 'Doanh thu Online');
+  const colSoBill = timCotTheoTen(header, 'Tổng số bill');
 
-  const t7DT = gomTheoNganhHang(rowsT7DT, 'Doanh thu');
-  const t8DT = gomTheoNganhHang(rowsT8DT, 'Doanh thu');
-  const t7SL = gomTheoNganhHang(rowsT7SL, 'Sản lượng bán');
-  const t8SL = gomTheoNganhHang(rowsT8SL, 'Sản lượng bán');
+  const theoSieuThi = {};
+  let ngayMoiNhatChung = null;
 
-  const { card1, card2, altText } = taoFlexBaoCaoDoanhThu(t7DT, t8DT);
-  const card3 = taoFlexSanLuong(t7SL, t8SL);
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row[colNgay] === undefined || row[colNgay] === '') continue;
+    const dateKey = toDateKey(row[colNgay]);
+    if (!dateKey || dateKey.length !== 10) continue;
+    if (ngayMoiNhatChung === null || dateKey > ngayMoiNhatChung) ngayMoiNhatChung = dateKey;
 
-  return [
-    { type: 'flex', altText: altText.slice(0, 400), contents: card1 },
-    { type: 'flex', altText: 'Chi tiết ngành hàng dự kiến T8', contents: card2 },
-    { type: 'flex', altText: 'Sản lượng bán dự kiến T8', contents: card3 },
+    const ma = chuanHoaMaSieuThi(row[colMa]);
+    const ten = row[colTen] || ma;
+    const ym = dateKey.slice(0, 7);
+    const dt = (Number(row[colDTOffline]) || 0) + (Number(row[colDTOnline]) || 0);
+    const bill = Number(row[colSoBill]) || 0;
+
+    if (!theoSieuThi[ma]) theoSieuThi[ma] = { ten, byThang: {} };
+    if (theoSieuThi[ma].ten === ma && ten !== ma) theoSieuThi[ma].ten = ten;
+    if (!theoSieuThi[ma].byThang[ym]) theoSieuThi[ma].byThang[ym] = { tongDT: 0, tongBill: 0, ngay: new Set() };
+    const o = theoSieuThi[ma].byThang[ym];
+    o.tongDT += dt;
+    o.tongBill += bill;
+    o.ngay.add(dateKey);
+  }
+
+  if (!ngayMoiNhatChung) {
+    throw new Error(`Tab "${GOOGLE_SHEET_TAB_LUYKE_DT}" chưa có dữ liệu ngày hợp lệ`);
+  }
+
+  const [namHienTai, thangHienTaiSo] = ngayMoiNhatChung.slice(0, 7).split('-').map(Number);
+  const ymHienTai = ngayMoiNhatChung.slice(0, 7);
+  const ymThangTruoc = thangHienTaiSo === 1
+    ? `${namHienTai - 1}-12`
+    : `${namHienTai}-${String(thangHienTaiSo - 1).padStart(2, '0')}`;
+  const soNgayTrongThangHienTai = new Date(namHienTai, thangHienTaiSo, 0).getDate();
+
+  const cards = Object.entries(theoSieuThi).map(([ma, data]) => {
+    const cur = data.byThang[ymHienTai] || { tongDT: 0, tongBill: 0, ngay: new Set() };
+    const prev = data.byThang[ymThangTruoc] || { tongDT: 0, tongBill: 0, ngay: new Set() };
+    const soNgayCoData = cur.ngay.size;
+    const duKienHetThang = soNgayCoData > 0 ? (cur.tongDT / soNgayCoData) * soNgayTrongThangHienTai : 0;
+    const mom = prev.tongDT > 0 ? ((duKienHetThang - prev.tongDT) / prev.tongDT) * 100 : 0;
+    const giaTriBillTB = cur.tongBill > 0 ? cur.tongDT / cur.tongBill : 0;
+
+    const billDuKienHetThang = soNgayCoData > 0 ? (cur.tongBill / soNgayCoData) * soNgayTrongThangHienTai : 0;
+    const billMom = prev.tongBill > 0 ? ((billDuKienHetThang - prev.tongBill) / prev.tongBill) * 100 : 0;
+
+    const giaTriBillThangTruoc = prev.tongBill > 0 ? prev.tongDT / prev.tongBill : 0;
+    const giaTriBillMom = giaTriBillThangTruoc > 0 ? ((giaTriBillTB - giaTriBillThangTruoc) / giaTriBillThangTruoc) * 100 : 0;
+
+    let ngayCuoiThangHienTai = ngayMoiNhatChung;
+    const ngayThangHienTaiSorted = Array.from(cur.ngay).sort();
+    if (ngayThangHienTaiSorted.length > 0) ngayCuoiThangHienTai = ngayThangHienTaiSorted[ngayThangHienTaiSorted.length - 1];
+
+    return taoCardLuyKeDT(ma, data.ten, {
+      tongLuyKe: cur.tongDT,
+      tongBill: cur.tongBill,
+      soNgayCoData,
+      duKienHetThang,
+      thangTruoc: prev.tongDT,
+      mom,
+      giaTriBillTB,
+      billDuKienHetThang,
+      billMom,
+      giaTriBillMom,
+      ngayCuoi: ngayCuoiThangHienTai,
+    });
+  });
+
+  return cards.slice(0, 5);
+}
+
+// ---------------------------------------------------------------------------
+// BÁO CÁO BÁNH TRUNG THU
+// ---------------------------------------------------------------------------
+const GOOGLE_SHEET_TAB_BANHTT_TON = process.env.GOOGLE_SHEET_TAB_BANHTT_TON || 'BANHTT_TON';
+const GOOGLE_SHEET_TAB_BANHTT_DOANHTHU = process.env.GOOGLE_SHEET_TAB_BANHTT_DOANHTHU || 'BANHTT_DOANHTHU';
+
+const GIA_THUONG_CAI = 1000;
+const GIA_THUONG_HOP = 4000;
+
+// Nhận diện 1 dòng là "Hộp" nếu cột Đơn vị ghi "Hộp", HOẶC tên sản phẩm (Model)
+// có chữ "HỘP" trong đó (một số SKU đóng gói theo hộp nhưng cột Đơn vị bị ghi sai/thiếu).
+function laHangHop(donVi, tenModel) {
+  if ((donVi || '').toString().trim() === 'Hộp') return true;
+  const ten = (tenModel || '').toString().toUpperCase();
+  return ten.includes('HỘP') || ten.includes('HOP ') || ten.startsWith('HOP');
+}
+
+function docTonBanhTT(rows) {
+  const header = rows[0];
+  const colTenST = timCotTheoTen(header, 'Tên siêu thị');
+  const colDonVi = timCotTheoTen(header, 'Đơn vị');
+  const colTon = timCotTheoTen(header, 'Tồn kho siêu thị');
+  const colModel = header.indexOf('Model'); // -1 nếu file không có cột này, vẫn chạy được
+
+  const ton = {};
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const st = row[colTenST];
+    if (!st) continue;
+    const donVi = row[colDonVi];
+    const tenModel = colModel === -1 ? '' : row[colModel];
+    const soLuong = Number(row[colTon]) || 0;
+    if (!ton[st]) ton[st] = { cai: 0, hop: 0 };
+    if (laHangHop(donVi, tenModel)) ton[st].hop += soLuong;
+    else ton[st].cai += soLuong;
+  }
+  return ton;
+}
+
+function docBanBanhTT(rows) {
+  const header = rows[0];
+  const colTenST = timCotTheoTen(header, 'Tên siêu thị');
+  const colDonVi = timCotTheoTen(header, 'Đơn vị');
+  const colSLOnline = timCotTheoTen(header, 'Số lượng Online');
+  const colSLOffline = timCotTheoTen(header, 'Số lượng Offline');
+  const colModel = header.indexOf('Model');
+
+  const ban = {};
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const st = row[colTenST];
+    if (!st) continue;
+    const donVi = row[colDonVi];
+    const tenModel = colModel === -1 ? '' : row[colModel];
+    const soLuong = (Number(row[colSLOnline]) || 0) + (Number(row[colSLOffline]) || 0);
+    if (!ban[st]) ban[st] = { cai: 0, hop: 0 };
+    if (laHangHop(donVi, tenModel)) ban[st].hop += soLuong;
+    else ban[st].cai += soLuong;
+  }
+  return ban;
+}
+
+function dongBangBanhTT(label, tonCai, tonHop, banCai, banHop, thuong, dam) {
+  return {
+    type: 'box', layout: 'horizontal', margin: dam ? 'none' : 'sm',
+    contents: [
+      { type: 'text', text: label, size: 'xs', flex: 5, wrap: false, weight: dam ? 'bold' : 'regular', color: dam ? '#1a1a1a' : '#333333' },
+      { type: 'text', text: tonCai, size: 'xs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
+      { type: 'text', text: tonHop, size: 'xs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
+      { type: 'text', text: banCai, size: 'xs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
+      { type: 'text', text: banHop, size: 'xs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
+      { type: 'text', text: thuong, size: 'xs', flex: 3, align: 'end', weight: 'bold', color: dam ? '#B8860B' : '#D97706' },
+    ],
+  };
+}
+
+function taoFlexBanhTrungThu(ton, ban) {
+  const tatCaSieuThi = new Set([...Object.keys(ton), ...Object.keys(ban)]);
+  const rows = [];
+
+  for (const st of tatCaSieuThi) {
+    const t = ton[st] || { cai: 0, hop: 0 };
+    const b = ban[st] || { cai: 0, hop: 0 };
+    const thuong = b.cai * GIA_THUONG_CAI + b.hop * GIA_THUONG_HOP;
+    rows.push({ ten: tenNganSieuThi(st), tonCai: t.cai, tonHop: t.hop, banCai: b.cai, banHop: b.hop, thuong });
+  }
+  rows.sort((a, b) => b.thuong - a.thuong);
+
+  const tong = rows.reduce((acc, r) => ({
+    tonCai: acc.tonCai + r.tonCai, tonHop: acc.tonHop + r.tonHop,
+    banCai: acc.banCai + r.banCai, banHop: acc.banHop + r.banHop,
+    thuong: acc.thuong + r.thuong,
+  }), { tonCai: 0, tonHop: 0, banCai: 0, banHop: 0, thuong: 0 });
+
+  const now = new Date();
+  const thoiGian = now.toLocaleString('vi-VN', {
+    hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric',
+    timeZone: 'Asia/Ho_Chi_Minh',
+  });
+
+  const bodyContents = [
+    dongBangBanhTT('Siêu thị', 'Tồn C', 'Tồn H', 'Bán C', 'Bán H', 'Thưởng', false),
+    { type: 'separator', margin: 'sm' },
+    dongBangBanhTT('TỔNG TẤT CẢ', fmtSo(tong.tonCai), fmtSo(tong.tonHop), fmtSo(tong.banCai), fmtSo(tong.banHop), fmtSo(tong.thuong) + 'đ', true),
+    { type: 'separator', margin: 'sm' },
   ];
+
+  rows.forEach((r) => {
+    bodyContents.push(
+      dongBangBanhTT(rutGonTen(r.ten, 18), fmtSo(r.tonCai), fmtSo(r.tonHop), fmtSo(r.banCai), fmtSo(r.banHop), fmtSo(r.thuong) + 'đ', false)
+    );
+  });
+
+  const altText = `Bánh Trung Thu: Bán ${fmtSo(tong.banCai)} cái + ${fmtSo(tong.banHop)} hộp, Thưởng ${fmtSo(tong.thuong)}đ (${rows.length} siêu thị)`;
+
+  return {
+    type: 'flex',
+    altText: altText.slice(0, 400),
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#8B4513', paddingAll: '20px',
+        contents: [
+          { type: 'text', text: '🥮 BÁO CÁO BÁNH TRUNG THU', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+          { type: 'text', text: `Đơn giá thưởng: Cái ${fmtSo(GIA_THUONG_CAI)}đ · Hộp ${fmtSo(GIA_THUONG_HOP)}đ`, color: '#F5E0C3', size: 'sm', margin: 'sm' },
+          { type: 'text', text: `Cập nhật lúc ${thoiGian} · ${rows.length} siêu thị`, color: '#F5E0C3', size: 'xs', margin: 'sm' },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'sm',
+        contents: bodyContents,
+      },
+    },
+  };
 }
 
-// ---------------------------------------------------------------------------
-// TẠO BÁO CÁO ĐẦY ĐỦ: ĐỌC 2 TAB TRONG GOOGLE SHEET -> FLEX MESSAGE
-// ---------------------------------------------------------------------------
-async function generateTraReport() {
+async function generateBanhTrungThuReport() {
   const sheets = getSheetsClient();
 
-  const [rowsTon, rowsDoanhThu] = await Promise.all([
-    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_TON),
-    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_DOANHTHU),
+  const [rowsTon, rowsBan] = await Promise.all([
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_BANHTT_TON),
+    docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_BANHTT_DOANHTHU),
   ]);
 
-  const ton = docTon(rowsTon);
-  const ban = docBan(rowsDoanhThu);
+  const ton = docTonBanhTT(rowsTon);
+  const ban = docBanBanhTT(rowsBan);
 
-  return taoFlexBaoCao(ton, ban);
+  return taoFlexBanhTrungThu(ton, ban);
 }
+
+// ---------------------------------------------------------------------------
+// NẠP FILE NGƯỜI DÙNG GỬI TRỰC TIẾP VÀO GROUP (.xlsx/.xls) — GHI ĐÈ VÀO SHEET
+// ---------------------------------------------------------------------------
+async function taiNoiDungFileLine(messageId) {
+  const token = (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').replace(/\s+/g, '');
+  const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Tai file LINE that bai: ${res.status} ${body}`);
+  }
+  const arrayBuffer = await res.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+function nhomHangPhoBien(header, dataRows) {
+  const idx = header.indexOf('Nhóm hàng');
+  if (idx === -1) return null;
+  const dem = {};
+  for (const row of dataRows) {
+    const v = (row[idx] || '').toString().trim();
+    if (!v) continue;
+    dem[v] = (dem[v] || 0) + 1;
+  }
+  const entries = Object.entries(dem).sort((a, b) => b[1] - a[1]);
+  return entries.length ? entries[0][0] : null;
+}
+
+function soNgayPhanBiet(header, dataRows) {
+  const idx = header.indexOf('Ngày');
+  if (idx === -1) return 0;
+  const s = new Set();
+  for (const row of dataRows) {
+    const v = row[idx];
+    if (v === undefined || v === null || v === '') continue;
+    s.add(toDateKey(v));
+  }
+  return s.size;
+}
+
+function nhanDangLoaiFile(header, dataRows) {
+  const co = (ten) => header.includes(ten);
+  const nhomPhoBien = nhomHangPhoBien(header, dataRows || []);
+
+  // Đã bỏ nhận diện file "trà" (Mã Model + Tồn kho siêu thị / Tổng số lượng không kèm Bánh Trung Thu)
+  // vì tính năng "Báo cáo trà" đã tắt — chỉ còn nhận diện file Bánh Trung Thu ở 2 mẫu dưới đây.
+  if (co('Mã Model') && co('Tồn kho siêu thị') && nhomPhoBien === 'Bánh Trung Thu') {
+    return { loai: 'banhtt_ton', tenTab: GOOGLE_SHEET_TAB_BANHTT_TON };
+  }
+  if (co('Mã Model') && co('Tổng số lượng') && !co('Tồn kho siêu thị') && nhomPhoBien === 'Bánh Trung Thu') {
+    return { loai: 'banhtt_ban', tenTab: GOOGLE_SHEET_TAB_BANHTT_DOANHTHU };
+  }
+  // Đã có: file "Giá Vốn" — nhận diện qua 2 cột đặc trưng chỉ file này mới có
+  if (co('Giá vốn cơ bản hôm nay') && co('DT FRESH tính giá vốn')) {
+    return { loai: 'giavon', tenTab: GOOGLE_SHEET_TAB_GIAVON };
+  }
+  if (co('SL hủy tồn') && co('SL mất mát kiểm kê') && co('SL hủy hao hụt NCC')) {
+    return { loai: 'huymmkk', tenTab: GOOGLE_SHEET_TAB_HUYMMKK };
+  }
+  if (co('Ngày') && co('Mã siêu thị') && co('Doanh thu offline')) {
+    if (soNgayPhanBiet(header, dataRows || []) > 1) {
+      return { loai: 'luyke_dt', tenTab: GOOGLE_SHEET_TAB_LUYKE_DT };
+    }
+    return { loai: 'doanhthu_sieuthi', tenTab: GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI };
+  }
+  if (co('Ngày') && co('Mã siêu thị') && co('Ngành hàng - Phân tích') && co('Thành tiền phải thu khách hàng (chưa VAT)')) {
+    return { loai: 'fresh', tenTab: GOOGLE_SHEET_TAB_FRESH };
+  }
+  if (co('Ngày xuất') && co('Ngành hàng BHX') && co('Doanh thu')) {
+    return { loai: 'doanhthu_nganhhang', tenTab: GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG };
+  }
+  if (co('Mã phiếu xuất') && co('Tên sản phẩm') && co('Số lượng') && co('Giá bán')) {
+    return { loai: 'chitietxuat', tenTab: GOOGLE_SHEET_TAB_CHITIETXUAT };
+  }
+  if (co('Lượt Bill của Siêu Thị') && co('Ngày xuất') && co('Tổng tiền (VAT)')) {
+    return { loai: 'luotbill', tenTab: GOOGLE_SHEET_TAB_LUOTBILL };
+  }
+  return null;
+}
+
+async function napFileVaoSheet(fileName, buffer) {
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const allRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  if (allRows.length < 2) throw new Error('File trống hoặc không đọc được dữ liệu');
+
+  const header = allRows[0].map((h) => (h || '').toString().trim());
+  const dataRows = allRows.slice(1).filter((r) => r && r.some((v) => v !== null && v !== ''));
+  if (dataRows.length === 0) throw new Error('File không có dòng dữ liệu nào');
+
+  const nhanDang = nhanDangLoaiFile(header, dataRows);
+  if (!nhanDang) {
+    throw new Error(
+      `Không nhận diện được loại báo cáo từ file "${fileName || ''}". Kiểm tra lại tiêu đề cột trong file có đúng mẫu không.`
+    );
+  }
+
+  const sheets = getSheetsClient();
+
+  if (nhanDang.loai === 'chitietxuat') {
+    const idxTen = header.indexOf('Tên sản phẩm');
+    const idxSL = header.indexOf('Số lượng');
+    const idxGia = header.indexOf('Giá bán');
+
+    const rows = dataRows.map((row) => [row[idxTen], row[idxSL], row[idxGia]]);
+
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: `${nhanDang.tenTab}!A2:ZZ`,
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: `${nhanDang.tenTab}!A2`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: rows },
+    });
+
+    return { loai: nhanDang.loai, tenTab: nhanDang.tenTab, soDong: rows.length };
+  }
+
+  if (nhanDang.loai === 'luotbill') {
+    const idxNgay = header.indexOf('Ngày xuất');
+    const idxLuotBill = header.indexOf('Lượt Bill của Siêu Thị');
+    const idxTenST = header.indexOf('Tên siêu thị');
+
+    const rowsLB = dataRows.map((row) => [
+      toDateTimeKeyForBucket(row[idxNgay]),
+      row[idxLuotBill],
+      idxTenST === -1 ? '' : row[idxTenST],
+    ]);
+
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: `${nhanDang.tenTab}!A2:ZZ`,
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: `${nhanDang.tenTab}!A2`,
+      valueInputOption: 'RAW',
+      requestBody: { values: rowsLB },
+    });
+
+    return { loai: nhanDang.loai, tenTab: nhanDang.tenTab, soDong: rowsLB.length };
+  }
+
+  if (nhanDang.loai === 'huymmkk') {
+    const idxNgay = header.indexOf('Ngày xuất');
+    const idxMa = header.indexOf('Mã siêu thị');
+    const idxTen = header.indexOf('Tên siêu thị');
+    const idxNganh = header.indexOf('Ngành hàng');
+    const idxSLBan = header.indexOf('Tổng SL bán');
+    const idxDoanhThu = header.indexOf('Doanh thu');
+    const idxSLGiamGia = header.indexOf('SL s.thị bán giảm giá');
+    const idxTienGiamGia = header.indexOf('Tiền s.thị bán giảm giá(chưa VAT)');
+    const idxSLMMKK = header.indexOf('SL mất mát kiểm kê');
+
+    const gop = {};
+    for (const row of dataRows) {
+      const ngay = row[idxNgay];
+      const ma = row[idxMa];
+      const ten = row[idxTen];
+      const nganh = (row[idxNganh] || '').toString().trim();
+      if (ngay === undefined || ngay === null || ngay === '' || !nganh) continue;
+      const key = toDateKey(ngay) + '|' + ma + '|' + nganh;
+      if (!gop[key]) {
+        gop[key] = { ngay, ma, ten, nganh, slBan: 0, doanhThu: 0, slGiamGia: 0, tienGiamGia: 0, slMMKK: 0 };
+      }
+      gop[key].slBan += Number(row[idxSLBan]) || 0;
+      gop[key].doanhThu += Number(row[idxDoanhThu]) || 0;
+      gop[key].slGiamGia += Number(row[idxSLGiamGia]) || 0;
+      gop[key].tienGiamGia += Number(row[idxTienGiamGia]) || 0;
+      gop[key].slMMKK += Number(row[idxSLMMKK]) || 0;
+    }
+
+    const rowsGop = Object.values(gop).map((g) => [
+      g.ngay, g.ma, g.ten, g.nganh, g.slBan, g.doanhThu, g.slGiamGia, g.tienGiamGia, g.slMMKK,
+    ]);
+
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: nhanDang.tenTab + '!A2:ZZ',
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: nhanDang.tenTab + '!A2',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: rowsGop },
+    });
+
+    return { loai: nhanDang.loai, tenTab: nhanDang.tenTab, soDong: rowsGop.length };
+  }
+
+  const destRows = await docTabThanhMangDong(sheets, nhanDang.tenTab);
+  const destHeader = destRows[0];
+
+  const rowsToAppend = dataRows.map((row) =>
+    destHeader.map((tenCot) => {
+      const idx = header.indexOf(tenCot);
+      return idx === -1 ? '' : row[idx] ?? '';
+    })
+  );
+
+  if (nhanDang.loai === 'luyke_dt') {
+    const colNgayDest = timCotTheoTen(destHeader, 'Ngày');
+    const colMaDest = timCotTheoTen(destHeader, 'Mã siêu thị');
+
+    const keyMoi = new Set(
+      rowsToAppend.map((r) => `${toDateKey(r[colNgayDest])}|${chuanHoaMaSieuThi(r[colMaDest])}`)
+    );
+    const giuLai = destRows.slice(1).filter((row) => {
+      if (!row || row[colNgayDest] === undefined || row[colNgayDest] === '') return false;
+      const key = `${toDateKey(row[colNgayDest])}|${chuanHoaMaSieuThi(row[colMaDest])}`;
+      return !keyMoi.has(key);
+    });
+    const ketQua = [...giuLai, ...rowsToAppend];
+
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: `${nhanDang.tenTab}!A2:ZZ`,
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: `${nhanDang.tenTab}!A2`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: ketQua },
+    });
+
+    return { loai: nhanDang.loai, tenTab: nhanDang.tenTab, soDong: rowsToAppend.length };
+  }
+
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: `${nhanDang.tenTab}!A2:ZZ`,
+  });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: `${nhanDang.tenTab}!A2`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: rowsToAppend },
+  });
+
+  return { loai: nhanDang.loai, tenTab: nhanDang.tenTab, soDong: rowsToAppend.length };
+}
+
+// ---------------------------------------------------------------------------
+// AI (CLAUDE) — đoán tab liên quan + phân tích bảng dữ liệu / ảnh
+// ---------------------------------------------------------------------------
+
+// Danh sách tab hiện có để AI chọn khi trả lời câu hỏi tự do.
+// (Đã bỏ TON/DOANHTHU trà vì tính năng trà đã tắt.)
+const KNOWN_TABS = [
+  { name: GOOGLE_SHEET_TAB_DOANHTHU_SIEUTHI, desc: 'Doanh thu theo từng siêu thị theo ngày (offline/online, số bill)' },
+  { name: GOOGLE_SHEET_TAB_DOANHTHU_NGANHHANG, desc: 'Doanh thu theo ngành hàng theo ngày' },
+  { name: GOOGLE_SHEET_TAB_FRESH, desc: 'Nhập/xuất hàng Fresh (rau củ, thịt cá, trái cây...) theo siêu thị theo ngày' },
+  { name: GOOGLE_SHEET_TAB_BANHTT_TON, desc: 'Tồn kho Bánh Trung Thu theo siêu thị' },
+  { name: GOOGLE_SHEET_TAB_BANHTT_DOANHTHU, desc: 'Số lượng bán Bánh Trung Thu theo siêu thị' },
+  { name: GOOGLE_SHEET_TAB_LUYKE_DT, desc: 'Doanh thu luỹ kế nhiều ngày/tháng để so sánh MoM' },
+  { name: GOOGLE_SHEET_TAB_GIAVON, desc: 'Giá vốn, lợi nhuận lũy kế theo ngành hàng, so với TB 3 tháng trước' },
+];
+
+async function pickRelevantTab(question) {
+  const tabList = KNOWN_TABS.map((t) => `- ${t.name}: ${t.desc}`).join('\n');
+  const msg = await anthropic.messages.create({
+    model: AI_MODEL,
+    max_tokens: 300,
+    system:
+      'Bạn là trợ lý chọn đúng tab Google Sheet để trả lời câu hỏi của quản lý cửa hàng. ' +
+      'CHỈ trả lời bằng JSON hợp lệ, không thêm chữ nào khác, không dùng markdown code block. ' +
+      'Định dạng bắt buộc: {"tab": "TEN_TAB_HOAC_null", "reason": "giải thích ngắn gọn"}',
+    messages: [
+      {
+        role: 'user',
+        content: `Danh sách tab hiện có:\n${tabList}\n\nCâu hỏi của quản lý: "${question}"\n\nChọn 1 tab phù hợp nhất. Nếu không tab nào phù hợp, trả "tab": null.`,
+      },
+    ],
+  });
+  const text = msg.content.find((b) => b.type === 'text')?.text || '{}';
+  try {
+    return JSON.parse(text.replace(/```json|```/g, '').trim());
+  } catch {
+    return { tab: null };
+  }
+}
+
+async function analyzeTableData(question, sourceLabel, rows, maxRows = 500) {
+  const header = rows[0] || [];
+  const dataRows = rows.slice(1, maxRows + 1);
+  const truncatedNote =
+    rows.length - 1 > maxRows
+      ? `\n(Lưu ý: dữ liệu có ${rows.length - 1} dòng, chỉ gửi ${maxRows} dòng đầu để phân tích)`
+      : '';
+  const csvText = [header, ...dataRows]
+    .map((r) => r.map((c) => (c === undefined || c === null ? '' : c)).join(','))
+    .join('\n');
+
+  const msg = await anthropic.messages.create({
+    model: AI_MODEL,
+    max_tokens: 1024,
+    system:
+      'Bạn là trợ lý phân tích dữ liệu bán lẻ cho quản lý cửa hàng Bách Hoá Xanh. ' +
+      'Trả lời ngắn gọn, đi thẳng vào số liệu và nhận xét thực tế, dùng tiếng Việt, ' +
+      'dùng gạch đầu dòng cho dễ đọc trên LINE (không dùng bảng markdown).',
+    messages: [
+      {
+        role: 'user',
+        content: `Nguồn dữ liệu: ${sourceLabel}${truncatedNote}\n\nDữ liệu (CSV):\n${csvText}\n\nCâu hỏi: ${question}`,
+      },
+    ],
+  });
+  return msg.content.find((b) => b.type === 'text')?.text || 'Không có phản hồi từ AI.';
+}
+
+async function analyzeImage(question, imageBuffer, mimeType) {
+  const base64Image = imageBuffer.toString('base64');
+  const userQuestion =
+    question && question.trim().length > 0
+      ? question
+      : 'Đọc và phân tích nội dung trong ảnh này giúp anh (số liệu, tình trạng hàng hoá, hoặc điểm bất thường nếu có).';
+
+  const msg = await anthropic.messages.create({
+    model: AI_MODEL,
+    max_tokens: 1024,
+    system:
+      'Bạn là trợ lý phân tích ảnh cho quản lý cửa hàng Bách Hoá Xanh. ' +
+      'Ảnh có thể là: (1) ảnh chụp bảng số liệu/báo cáo — hãy đọc số liệu và phân tích; ' +
+      'hoặc (2) ảnh hàng hoá/kệ hàng thực tế — hãy nhận xét tình trạng trưng bày, tồn kho, hoặc vấn đề quan sát được. ' +
+      'Trả lời ngắn gọn, thực tế, tiếng Việt.',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64Image } },
+          { type: 'text', text: userQuestion },
+        ],
+      },
+    ],
+  });
+  return msg.content.find((b) => b.type === 'text')?.text || 'Không có phản hồi từ AI.';
+}
+
+function readExcelBufferAsRows(fileBuffer, sheetName) {
+  const wb = XLSX.read(fileBuffer, { type: 'buffer' });
+  const targetSheet = sheetName || wb.SheetNames[0];
+  const ws = wb.Sheets[targetSheet];
+  return XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+}
+
+// Bật/tắt toàn bộ tính năng AI (đoán tab, phân tích ảnh/file/câu hỏi tự do).
+// Tự động BẬT khi đã có ANTHROPIC_API_KEY trong biến môi trường — trước đó bot sẽ
+// im lặng bỏ qua (không trả lời) thay vì trả lời lỗi công khai trong group.
+const AI_ENABLED = !!process.env.ANTHROPIC_API_KEY;
 
 // ---------------------------------------------------------------------------
 // LINE BOT
@@ -636,59 +1534,662 @@ async function generateTraReport() {
 const app = express();
 const client = new line.Client(config);
 
-// Trả về 'tra' nếu nhắn "báo cáo trà", 'doanhthu' nếu nhắn "báo cáo"/"báo cáo dt"
-// (kiểm tra "trà" trước để không bị từ khoá "báo cáo" tổng quát nuốt mất)
-function loaiTrigger(text) {
-  if (!text) return null;
+let botUserId = null; // lấy 1 lần lúc khởi động, dùng để nhận biết bot có bị @tag không
+
+const TRIGGER_NGAY = ['báo cáo ngày', 'bao cao ngay'];
+function laTriggerNgay(text) {
+  if (!text) return false;
   const t = text.trim().toLowerCase();
-  if (TRIGGER_KEYWORDS.some((kw) => t === kw || t.includes(kw))) return 'tra';
-  if (t === 'báo cáo' || t === 'bao cao' || t.includes('báo cáo') || t.includes('bao cao')) return 'doanhthu';
+  return TRIGGER_NGAY.some((kw) => t === kw || t.includes(kw));
+}
+
+const TRIGGER_BANHTT = ['bánh trung thu', 'banh trung thu'];
+function laTriggerBanhTT(text) {
+  if (!text) return false;
+  const t = text.trim().toLowerCase();
+  return TRIGGER_BANHTT.some((kw) => t === kw || t.includes(kw));
+}
+
+// Đã sửa: trước đây mảng này rỗng nên lệnh "BC Luỹ Kế DT" không bao giờ khớp qua tin nhắn text
+// (chỉ chạy được khi tự động sau khi nạp file) — nay thêm từ khoá để gõ tay cũng dùng được.
+const TRIGGER_LUYKE = ['bc luỹ kế dt', 'bc luy ke dt', 'luỹ kế dt', 'luy ke dt', 'luỹ kế', 'luy ke', 'dt dự kiến', 'dt du kien'];
+function laTriggerLuyKe(text) {
+  if (!text) return false;
+  const t = text.trim().toLowerCase();
+  return TRIGGER_LUYKE.some((kw) => t === kw || t.includes(kw));
+}
+
+// Lệnh "Giá Vốn"
+const TRIGGER_GIAVON = ['giá vốn', 'gia von'];
+function laTriggerGiaVon(text) {
+  if (!text) return false;
+  const t = text.trim().toLowerCase();
+  return TRIGGER_GIAVON.some((kw) => t === kw || t.includes(kw));
+}
+
+const TRIGGER_HUYMMKK = ['mmkk huỷ', 'mmkk huy', 'huỷ mmkk', 'huy mmkk', 'hủy mmkk'];
+function laTriggerHuyMmkk(text) {
+  if (!text) return false;
+  const t = text.trim().toLowerCase();
+  return TRIGGER_HUYMMKK.some((kw) => t === kw || t.includes(kw));
+}
+
+const TRIGGER_SP1DONG = ['sp 1 đồng', 'sp 1 dong', 'sản phẩm 1 đồng', 'san pham 1 dong'];
+function laTriggerSp1Dong(text) {
+  if (!text) return false;
+  const t = text.trim().toLowerCase();
+  return TRIGGER_SP1DONG.some((kw) => t === kw || t.includes(kw));
+}
+
+function toDateTimeKeyForBucket(value) {
+  if (typeof value === 'number') {
+    const epoch = Date.UTC(1899, 11, 30);
+    const d = new Date(epoch + value * 86400000);
+    const y = d.getUTCFullYear();
+    const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const da = String(d.getUTCDate()).padStart(2, '0');
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mi = String(d.getUTCMinutes()).padStart(2, '0');
+    return `${y}-${mo}-${da} ${hh}:${mi}`;
+  }
+  const s = (value || '').toString().trim();
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{1,2})/);
+  if (m) {
+    const [, d, mo, y, hh, mi] = m;
+    return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')} ${hh.padStart(2, '0')}:${mi.padStart(2, '0')}`;
+  }
+  return s;
+}
+
+function trichNgayTuCauLenh(text) {
+  if (!text) return null;
+  const m = text.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
+  if (!m) return null;
+  const d = m[1].padStart(2, '0');
+  const mo = m[2].padStart(2, '0');
+  const y = m[3] || new Date().getFullYear().toString();
+  return `${y}-${mo}-${d}`;
+}
+
+const TRIGGER_LUOTBILL = ['lượt bill', 'luot bill', 'lượt hóa đơn', 'luot hoa don'];
+function laTriggerLuotBill(text) {
+  if (!text) return false;
+  const t = text.trim().toLowerCase();
+  return TRIGGER_LUOTBILL.some((kw) => t === kw || t.includes(kw));
+}
+
+async function generateLuotBillReport(ngayYeuCau) {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: `${GOOGLE_SHEET_TAB_LUOTBILL}!A2:C`,
+  });
+
+  const rows = res.data.values || [];
+  if (rows.length === 0) {
+    return { type: 'text', text: 'Chưa có dữ liệu Lượt Bill nào được nạp.' };
+  }
+
+  let ngayMoiNhat = null;
+  let tenSieuThi = '';
+  const cacNgayCoDuLieu = new Set();
+  for (const [dt, , tenST] of rows) {
+    if (!dt) continue;
+    const ngay = dt.toString().slice(0, 10);
+    cacNgayCoDuLieu.add(ngay);
+    if (ngayMoiNhat === null || ngay > ngayMoiNhat) ngayMoiNhat = ngay;
+    if (tenST) tenSieuThi = tenST;
+  }
+
+  const ngayMucTieu = ngayYeuCau || ngayMoiNhat;
+  if (ngayYeuCau && !cacNgayCoDuLieu.has(ngayYeuCau)) {
+    return {
+      type: 'text',
+      text: `Không có dữ liệu Lượt Bill cho ngày ${fmtNgayHienThi(ngayYeuCau)}. Các ngày hiện có: ${[...cacNgayCoDuLieu].sort().map(fmtNgayHienThi).join(', ')}`,
+    };
+  }
+  ngayMoiNhat = ngayMucTieu;
+
+  const BUCKET_ORDER = ['05:30-06:00'];
+  for (let h = 6; h <= 20; h++) {
+    BUCKET_ORDER.push(`${String(h).padStart(2, '0')}:00-${String(h + 1).padStart(2, '0')}:00`);
+  }
+
+  const tong = {};
+  BUCKET_ORDER.forEach((k) => { tong[k] = 0; });
+
+  function xacDinhKhung(hh, mm) {
+    const tongPhut = hh * 60 + mm;
+    if (tongPhut >= 5 * 60 + 30 && tongPhut < 6 * 60) return '05:30-06:00';
+    if (tongPhut >= 6 * 60 && tongPhut < 21 * 60) {
+      const gioBatDau = Math.floor(tongPhut / 60);
+      return `${String(gioBatDau).padStart(2, '0')}:00-${String(gioBatDau + 1).padStart(2, '0')}:00`;
+    }
+    return null;
+  }
+
+  for (const [dt, luotBillRaw] of rows) {
+    if (!dt) continue;
+    const s = dt.toString();
+    const ngay = s.slice(0, 10);
+    if (ngay !== ngayMoiNhat) continue;
+
+    const gioPhutMatch = s.match(/(\d{1,2}):(\d{2})$/);
+    if (!gioPhutMatch) continue;
+    const hh = Number(gioPhutMatch[1]);
+    const mm = Number(gioPhutMatch[2]);
+
+    const khung = xacDinhKhung(hh, mm);
+    if (!khung) continue;
+
+    tong[khung] += Number(luotBillRaw) || 0;
+  }
+
+  const tongCong = Object.values(tong).reduce((a, b) => a + b, 0);
+  const khungCoLuot = BUCKET_ORDER.filter((k) => tong[k] > 0);
+  const khungMax = khungCoLuot.length ? khungCoLuot.reduce((a, b) => (tong[a] >= tong[b] ? a : b)) : null;
+  const khungMin = khungCoLuot.length ? khungCoLuot.reduce((a, b) => (tong[a] <= tong[b] ? a : b)) : null;
+
+  const danhSachContents = BUCKET_ORDER.map((khung) => {
+    const soLuot = tong[khung];
+    const laMax = khung === khungMax && soLuot > 0;
+    const laMin = khung === khungMin && soLuot > 0;
+    let icon = '';
+    let mauChu = '#333333';
+    let doDam = 'regular';
+    if (laMax) { icon = '🔥 '; mauChu = '#C62828'; doDam = 'bold'; }
+    if (laMin) { icon = '❄️ '; mauChu = '#1565C0'; doDam = 'bold'; }
+
+    return {
+      type: 'box',
+      layout: 'horizontal',
+      margin: 'md',
+      contents: [
+        { type: 'text', text: `${icon}${khung}`, size: 'sm', color: mauChu, weight: doDam, flex: 3 },
+        { type: 'text', text: `${soLuot}`, size: 'sm', color: mauChu, weight: doDam, align: 'end', flex: 1 },
+      ],
+    };
+  });
+
+  return {
+    type: 'flex',
+    altText: `Lượt Bill ${tenSieuThi} ngày ${fmtNgayHienThi(ngayMoiNhat)}: Tổng ${tongCong} lượt${khungMax ? ', cao nhất ' + khungMax : ''}`,
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#1565C0',
+        paddingAll: '20px',
+        contents: [
+          { type: 'text', text: '🧾 BÁO CÁO LƯỢT BILL THEO KHUNG GIỜ', color: '#FFFFFF', weight: 'bold', size: 'lg', wrap: true },
+          ...(tenSieuThi ? [{ type: 'text', text: tenSieuThi, color: '#D6E4F5', size: 'sm', margin: 'sm', wrap: true }] : []),
+          { type: 'text', text: `Ngày ${fmtNgayHienThi(ngayMoiNhat)}`, color: '#D6E4F5', size: 'sm', margin: tenSieuThi ? 'xs' : 'sm' },
+          { type: 'text', text: 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị\nThạch Phạm Hoàng Anh -  197042', color: '#FFFFFF', size: 'xxs', margin: 'sm', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '16px',
+        contents: [
+          {
+            type: 'box',
+            layout: 'vertical',
+            backgroundColor: '#E3F2FD',
+            cornerRadius: '8px',
+            paddingAll: '12px',
+            contents: [
+              { type: 'text', text: 'TỔNG LƯỢT BILL TRONG NGÀY', size: 'xs', color: '#666666' },
+              { type: 'text', text: `${tongCong}`, size: 'xxl', weight: 'bold', color: '#1565C0' },
+              ...(khungMax ? [{ type: 'text', text: `🔥 Cao nhất: ${khungMax} (${tong[khungMax]} lượt)`, size: 'xs', color: '#C62828', margin: 'sm' }] : []),
+              ...(khungMin ? [{ type: 'text', text: `❄️ Thấp nhất: ${khungMin} (${tong[khungMin]} lượt)`, size: 'xs', color: '#1565C0', margin: 'xs' }] : []),
+            ],
+          },
+          { type: 'separator', margin: 'lg' },
+          { type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm', contents: danhSachContents },
+        ],
+      },
+    },
+  };
+}
+
+async function generateSp1DongReport() {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: GOOGLE_SHEET_ID,
+    range: `${GOOGLE_SHEET_TAB_CHITIETXUAT}!A2:C`,
+  });
+
+  const rows = res.data.values || [];
+  const grouped = {};
+  let tongSoLuong = 0;
+
+  for (const [tenSP, soLuong, giaBan] of rows) {
+    if (!tenSP) continue;
+    if (Number(giaBan) !== 1) continue;
+    if (tenSP.toUpperCase().includes('NẤM')) continue;
+
+    const sl = Number(soLuong) || 0;
+    grouped[tenSP] = (grouped[tenSP] || 0) + sl;
+    tongSoLuong += sl;
+  }
+
+  const allSorted = Object.entries(grouped).sort((a, b) => b[1] - a[1]);
+  const soMatHang = allSorted.length;
+  const sorted = allSorted.slice(0, 15);
+
+  if (sorted.length === 0) {
+    return { type: 'text', text: 'Không có sản phẩm giá bán 1 đồng nào (đã loại nấm) trong dữ liệu hiện tại.' };
+  }
+
+  const danhSachContents = [];
+  sorted.forEach(([ten, sl], idx) => {
+    danhSachContents.push({
+      type: 'box',
+      layout: 'horizontal',
+      margin: idx === 0 ? 'none' : 'md',
+      contents: [
+        { type: 'text', text: `${idx + 1}. ${ten}`, size: 'sm', color: '#333333', wrap: true, flex: 4 },
+        { type: 'text', text: `${sl}`, size: 'sm', color: '#2E7D32', weight: 'bold', align: 'end', flex: 1 },
+      ],
+    });
+  });
+
+  return {
+    type: 'flex',
+    altText: `Báo cáo SP 1 Đồng: Tổng SL ${tongSoLuong}, ${soMatHang} mặt hàng`,
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#2E7D32',
+        paddingAll: '20px',
+        contents: [
+          { type: 'text', text: '📦 BÁO CÁO SP GIÁ BÁN 1 ĐỒNG', color: '#FFFFFF', weight: 'bold', size: 'lg', wrap: true },
+          { type: 'text', text: '(đã loại trừ sản phẩm nấm)', color: '#D6F5D6', size: 'sm', margin: 'sm' },
+          { type: 'text', text: 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị\nThạch Phạm Hoàng Anh -  197042', color: '#FFFFFF', size: 'xxs', margin: 'sm', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '16px',
+        contents: [
+          {
+            type: 'box',
+            layout: 'vertical',
+            backgroundColor: '#F1F8E9',
+            cornerRadius: '8px',
+            paddingAll: '12px',
+            contents: [
+              { type: 'text', text: 'TỔNG SỐ LƯỢNG ĐÃ BÁN', size: 'xs', color: '#666666' },
+              { type: 'text', text: `${tongSoLuong}`, size: 'xxl', weight: 'bold', color: '#2E7D32' },
+              { type: 'text', text: `${soMatHang} mặt hàng khác nhau`, size: 'xs', color: '#888888', margin: 'sm' },
+            ],
+          },
+          { type: 'separator', margin: 'lg' },
+          { type: 'box', layout: 'vertical', margin: 'lg', spacing: 'sm', contents: danhSachContents },
+        ],
+      },
+    },
+  };
+}
+
+// Chạy đúng lệnh báo cáo cũ theo tên khớp được (dùng chung cho cả group lẫn chat riêng)
+async function chayLenhCu(text) {
+  text = (text || '').normalize('NFC');
+  if (laTriggerNgay(text)) return { ten: 'ngày', ket: await generateDailyReport() };
+  if (laTriggerBanhTT(text)) return { ten: 'Bánh Trung Thu', ket: await generateBanhTrungThuReport() };
+  if (laTriggerLuyKe(text)) return { ten: 'Lũy Kế', ket: await generateLuyKeReport() };
+  if (laTriggerGiaVon(text)) return { ten: 'Giá Vốn', ket: await generateGiaVonReport() };
+  if (laTriggerHuyMmkk(text)) return { ten: 'MMKK Huỷ', ket: await generateHuyMmkkReport() };
+  if (laTriggerSp1Dong(text)) return { ten: 'SP 1 Đồng', ket: await generateSp1DongReport() };
+  if (laTriggerLuotBill(text)) return { ten: 'Lượt Bill', ket: await generateLuotBillReport(trichNgayTuCauLenh(text)) };
   return null;
 }
 
+// ---- MỚI: nhận diện @tag bot trong tin nhắn text (chỉ có ý nghĩa trong group/room) ----
+function extractMentionQuestion(event) {
+  const mention = event.message?.mention;
+  if (!mention || !Array.isArray(mention.mentionees)) return null;
+
+  const isTaggingBot = mention.mentionees.some(
+    (m) => m.isSelf === true || (botUserId && m.userId === botUserId)
+  );
+  if (!isTaggingBot) return null;
+
+  let question = event.message.text;
+  const sorted = [...mention.mentionees].sort((a, b) => b.index - a.index);
+  for (const m of sorted) {
+    question = question.slice(0, m.index) + question.slice(m.index + m.length);
+  }
+  return question.trim();
+}
+
+// ---- MỚI: nhớ tạm "vừa @tag hỏi gì" theo từng group, để phân biệt file gửi tiếp theo
+// là để AI phân tích nhanh (không lưu Sheet) hay vẫn là file nạp dữ liệu như cũ.
+// Hết hạn sau 3 phút nếu không có file/ảnh gửi tiếp theo.
+const cho_AI_PhanTich = new Map(); // groupId/roomId -> { question, expiresAt }
+const THOI_GIAN_CHO_MS = 3 * 60 * 1000;
+
+function datCoDangChoFile(targetId, question) {
+  cho_AI_PhanTich.set(targetId, { question, expiresAt: Date.now() + THOI_GIAN_CHO_MS });
+}
+function layVaXoaCoDangCho(targetId) {
+  const info = cho_AI_PhanTich.get(targetId);
+  if (!info) return null;
+  cho_AI_PhanTich.delete(targetId);
+  if (Date.now() > info.expiresAt) return null;
+  return info;
+}
+
 app.post('/webhook', line.middleware(config), async (req, res) => {
-  // Trả 200 ngay để LINE không retry, xử lý reply ở dưới (không chặn response)
   res.status(200).end();
 
   const events = req.body.events || [];
   console.log(`[webhook] nhận ${events.length} event(s)`);
 
   for (const event of events) {
-    console.log(`[webhook] event type=${event.type} messageType=${event.message?.type} text="${event.message?.text}"`);
+    if (event.type !== 'message') continue;
 
-    if (event.type !== 'message' || event.message.type !== 'text') continue;
-    const loai = loaiTrigger(event.message.text);
-    if (!loai) {
-      console.log('[webhook] text không khớp từ khoá trigger, bỏ qua');
+    const isGroup = event.source?.type === 'group' || event.source?.type === 'room';
+    const targetId = event.source?.groupId || event.source?.roomId;
+
+    // ------------------------------------------------------------------
+    // ẢNH — luôn dùng AI vision phân tích (không có tính năng cũ nào xử lý ảnh
+    // nên không xung đột; LINE cũng không gắn kèm được @tag vào ảnh)
+    // ------------------------------------------------------------------
+    if (event.message.type === 'image') {
+      if (!AI_ENABLED) {
+        console.log('[webhook] nhận ảnh nhưng AI đang tắt (chưa có ANTHROPIC_API_KEY) -> bỏ qua, không trả lời');
+        continue;
+      }
+      console.log('[webhook] nhận ảnh, đang phân tích bằng AI...');
+      try {
+        const buffer = await taiNoiDungFileLine(event.message.id);
+        const cauHoiCho = isGroup ? layVaXoaCoDangCho(targetId) : null;
+        const answer = await analyzeImage(cauHoiCho?.question || '', buffer, 'image/jpeg');
+        await client.replyMessage(event.replyToken, { type: 'text', text: answer });
+      } catch (err) {
+        console.error('[webhook] Lỗi phân tích ảnh:', err);
+        try {
+          await client.replyMessage(event.replyToken, { type: 'text', text: `❌ Em xem ảnh này bị lỗi: ${err.message}` });
+        } catch (e2) { console.error('[webhook] Lỗi luôn cả khi reply lỗi:', e2.message); }
+      }
       continue;
     }
 
-    console.log(`[webhook] khớp trigger loại="${loai}", đang tạo báo cáo...`);
-    try {
-      if (loai === 'tra') {
-        const flexMessage = await generateTraReport();
-        await client.replyMessage(event.replyToken, flexMessage);
-      } else {
-        const flexMessages = await generateRevenueReport();
-        await client.replyMessage(event.replyToken, flexMessages);
+    // ------------------------------------------------------------------
+    // FILE EXCEL
+    // - Nếu group vừa @tag hỏi gì đó trong 3 phút gần đây -> AI phân tích nhanh,
+    //   KHÔNG lưu vào Sheet.
+    // - Ngược lại -> giữ nguyên hành vi cũ: tự nhận diện + GHI ĐÈ vào Sheet + trả báo cáo.
+    // ------------------------------------------------------------------
+    if (event.message.type === 'file') {
+      const fileName = event.message.fileName || '';
+      if (!/\.(xlsx|xls)$/i.test(fileName)) {
+        console.log(`[webhook] file "${fileName}" không phải Excel, bỏ qua`);
+        continue;
       }
-      console.log('[webhook] tạo báo cáo + reply thành công');
+
+      const cauHoiCho = isGroup ? layVaXoaCoDangCho(targetId) : null;
+
+      if (cauHoiCho) {
+        console.log(`[webhook] file "${fileName}" đang trong luồng @tag -> AI phân tích nhanh, không lưu Sheet`);
+        try {
+          const buffer = await taiNoiDungFileLine(event.message.id);
+          const rows = readExcelBufferAsRows(buffer);
+          const answer = await analyzeTableData(
+            cauHoiCho.question || 'Tóm tắt và nhận xét nhanh các điểm đáng chú ý trong file này giúp anh.',
+            `File Excel đính kèm: ${fileName}`,
+            rows
+          );
+          await client.replyMessage(event.replyToken, { type: 'text', text: answer });
+        } catch (err) {
+          console.error('[webhook] Lỗi AI phân tích file:', err);
+          try {
+            await client.replyMessage(event.replyToken, { type: 'text', text: `❌ Em đọc file này bị lỗi: ${err.message}` });
+          } catch (e2) { console.error('[webhook] Lỗi luôn cả khi reply lỗi:', e2.message); }
+        }
+        continue;
+      }
+
+      console.log(`[webhook] nhận file "${fileName}", đang tải + nạp vào Sheet...`);
+      try {
+        const buffer = await taiNoiDungFileLine(event.message.id);
+        const ketQua = await napFileVaoSheet(fileName, buffer);
+        console.log(`[webhook] đã GHI ĐÈ ${ketQua.soDong} dòng vào tab "${ketQua.tenTab}" (loại: ${ketQua.loai})`);
+
+        try {
+          let baoCao;
+          if (ketQua.loai === 'banhtt_ton' || ketQua.loai === 'banhtt_ban') {
+            baoCao = await generateBanhTrungThuReport();
+          } else if (ketQua.loai === 'luyke_dt') {
+            baoCao = await generateLuyKeReport();
+          } else if (ketQua.loai === 'giavon') {
+            baoCao = await generateGiaVonReport();
+          } else if (ketQua.loai === 'huymmkk') {
+            baoCao = await generateHuyMmkkReport();
+          } else {
+            baoCao = await generateDailyReport();
+          }
+          await client.replyMessage(event.replyToken, baoCao);
+        } catch (loiBaoCao) {
+          console.error('[webhook] nạp file OK nhưng chưa tạo được báo cáo:', loiBaoCao.message);
+          await client.replyMessage(event.replyToken, {
+            type: 'text',
+            text: `✅ Đã nạp ${ketQua.soDong} dòng vào tab "${ketQua.tenTab}".\n⚠️ Chưa tạo được báo cáo ngay: ${loiBaoCao.message}`,
+          });
+        }
+      } catch (err) {
+        console.error('[webhook] Lỗi nạp file:', err);
+        try {
+          await client.replyMessage(event.replyToken, { type: 'text', text: `❌ Lỗi nạp file: ${err.message}` });
+        } catch (replyErr) {
+          console.error('[webhook] Lỗi luôn cả khi reply lỗi:', replyErr.message);
+        }
+      }
+      continue;
+    }
+
+    if (event.message.type !== 'text') continue;
+    const text = event.message.text;
+
+    // ------------------------------------------------------------------
+    // TRONG GROUP/ROOM: bắt buộc phải @tag bot mới xử lý (theo yêu cầu mới)
+    // ------------------------------------------------------------------
+    if (isGroup) {
+      const question = extractMentionQuestion(event);
+      if (question === null) {
+        console.log('[webhook] tin nhắn group không @tag bot, bỏ qua');
+        continue;
+      }
+
+      // Nếu câu hỏi khớp đúng 1 trong các lệnh báo cáo có sẵn -> chạy lệnh đó
+      const ketQuaLenhCu = await chayLenhCu(question).catch((err) => {
+        console.error('[webhook] Lỗi khi chạy lệnh cũ:', err);
+        return { loi: err };
+      });
+
+      if (ketQuaLenhCu && !ketQuaLenhCu.loi) {
+        try {
+          await client.replyMessage(event.replyToken, ketQuaLenhCu.ket);
+          console.log(`[webhook] @tag khớp lệnh "${ketQuaLenhCu.ten}", đã trả báo cáo`);
+        } catch (err) {
+          const chiTietLoi = (err.originalError && err.originalError.response && err.originalError.response.data) || (err.response && err.response.data) || err.message; console.error('[webhook] LOI_CHI_TIET: ' + JSON.stringify(chiTietLoi));
+        }
+        continue;
+      }
+      if (ketQuaLenhCu && ketQuaLenhCu.loi) {
+        try {
+          await client.replyMessage(event.replyToken, { type: 'text', text: `⚠️ Không tạo được báo cáo: ${ketQuaLenhCu.loi.message}` });
+        } catch (e2) { console.error('[webhook] Lỗi luôn cả khi reply lỗi:', e2.message); }
+        continue;
+      }
+
+      // Không khớp lệnh có sẵn -> coi là câu hỏi tự do, để AI tự đoán tab + phân tích
+      if (!AI_ENABLED) {
+        console.log('[webhook] @tag kèm câu hỏi tự do nhưng AI đang tắt -> bỏ qua, không trả lời');
+        continue;
+      }
+      console.log('[webhook] @tag kèm câu hỏi tự do, đang nhờ AI tra cứu + phân tích...');
+      try {
+        await client.replyMessage(event.replyToken, { type: 'text', text: 'Anh chờ chút, em đang tra cứu và phân tích...' });
+
+        // Đánh dấu "đang chờ" để nếu anh gửi tiếp file/ảnh trong 3 phút, bot biết là để AI phân tích
+        datCoDangChoFile(targetId, question);
+
+        const picked = await pickRelevantTab(question);
+        if (!picked.tab) {
+          await client.pushMessage(targetId, {
+            type: 'text',
+            text: 'Em chưa xác định được câu hỏi này liên quan tab dữ liệu nào, anh hỏi cụ thể hơn giúp em nhé.',
+          });
+          continue;
+        }
+        const sheets = getSheetsClient();
+        const rows = await docTabThanhMangDong(sheets, picked.tab);
+        const answer = await analyzeTableData(question, picked.tab, rows);
+        await client.pushMessage(targetId, { type: 'text', text: answer });
+      } catch (err) {
+        console.error('[webhook] Lỗi phân tích câu hỏi:', err);
+        try {
+          await client.pushMessage(targetId, { type: 'text', text: `❌ Em gặp lỗi khi phân tích: ${err.message}` });
+        } catch (e2) { console.error('[webhook] Lỗi luôn cả khi push lỗi:', e2.message); }
+      }
+      continue;
+    }
+
+    // ------------------------------------------------------------------
+    // CHAT RIÊNG (1-1): giữ hành vi cũ — không cần @tag, gõ đúng lệnh là chạy,
+    // gõ câu hỏi khác thì AI cũng tự phân tích luôn cho tiện.
+    // ------------------------------------------------------------------
+    try {
+      const ketQuaLenhCu = await chayLenhCu(text);
+      if (ketQuaLenhCu) {
+        await client.replyMessage(event.replyToken, ketQuaLenhCu.ket);
+        console.log(`[webhook] khớp lệnh "${ketQuaLenhCu.ten}", đã trả báo cáo`);
+        continue;
+      }
     } catch (err) {
       console.error('[webhook] Lỗi tạo báo cáo:', err);
       try {
-        await client.replyMessage(event.replyToken, {
-          type: 'text',
-          text: `⚠️ Không tạo được báo cáo: ${err.message}`,
-        });
+        await client.replyMessage(event.replyToken, { type: 'text', text: `⚠️ Không tạo được báo cáo: ${err.message}` });
       } catch (replyErr) {
-        console.error('[webhook] Lỗi luôn cả khi reply lỗi (có thể replyToken hết hạn):', replyErr.message);
+        console.error('[webhook] Lỗi luôn cả khi reply lỗi:', replyErr.message);
       }
+      continue;
+    }
+
+    // Không khớp lệnh nào -> AI tự đoán tab + phân tích (chat riêng không cần @tag)
+    if (!AI_ENABLED) {
+      console.log('[webhook] (1-1) không khớp lệnh và AI đang tắt -> bỏ qua, không trả lời');
+      continue;
+    }
+    try {
+      await client.replyMessage(event.replyToken, { type: 'text', text: 'Anh chờ chút, em đang tra cứu và phân tích...' });
+      const picked = await pickRelevantTab(text);
+      if (!picked.tab) {
+        await client.pushMessage(event.source.userId, {
+          type: 'text',
+          text: 'Em chưa xác định được câu hỏi này liên quan tab dữ liệu nào, anh hỏi cụ thể hơn giúp em nhé.',
+        });
+        continue;
+      }
+      const sheets = getSheetsClient();
+      const rows = await docTabThanhMangDong(sheets, picked.tab);
+      const answer = await analyzeTableData(text, picked.tab, rows);
+      await client.pushMessage(event.source.userId, { type: 'text', text: answer });
+    } catch (err) {
+      console.error('[webhook] Lỗi phân tích câu hỏi (1-1):', err);
     }
   }
 });
 
 app.get('/health', (req, res) => res.send('ok'));
 
-app.listen(PORT, () => {
-  console.log(`LINE bot "Báo cáo trà" đang chạy ở port ${PORT}`);
-});
+(async () => {
+  try {
+    const info = await client.getBotInfo();
+    botUserId = info.userId;
+    console.log('[startup] Bot userId:', botUserId);
+  } catch (err) {
+    console.error('[startup] Không lấy được botUserId (tính năng @tag có thể không nhận diện đúng):', err.message);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`LINE bot đang chạy ở port ${PORT}`);
+  });
+})();
+
+// ================== SP 1 ĐỒNG (Chi Tiết Phiếu Xuất) ==================
+
+// ---- NHẬN DIỆN FILE "Chi Tiết Phiếu Xuất" ----
+function isChiTietPhieuXuatFile(headers) {
+  return headers.includes('Mã phiếu xuất') &&
+         headers.includes('Tên sản phẩm') &&
+         headers.includes('Số lượng') &&
+         headers.includes('Giá bán');
+}
+
+// ---- NẠP FILE VÀO TAB CHITIETXUAT (ghi đè toàn bộ) ----
+async function saveChiTietXuatToSheet(sheets, spreadsheetId, data) {
+  const rows = data.map(row => [
+    row['Tên sản phẩm'],
+    row['Số lượng'],
+    row['Giá bán']
+  ]);
+
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId,
+    range: 'CHITIETXUAT!A:C',
+  });
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: 'CHITIETXUAT!A1',
+    valueInputOption: 'RAW',
+    requestBody: {
+      values: [['Tên sản phẩm', 'Số lượng', 'Giá bán'], ...rows],
+    },
+  });
+}
+
+// ---- XỬ LÝ LỆNH "SP 1 ĐỒNG" ----
+async function handleSp1Dong(sheets, spreadsheetId) {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: 'CHITIETXUAT!A2:C',
+  });
+
+  const rows = res.data.values || [];
+  const grouped = {};
+
+  for (const [tenSP, soLuong, giaBan] of rows) {
+    if (!tenSP) continue;
+    if (Number(giaBan) !== 1) continue;
+    if (tenSP.toUpperCase().includes('NẤM')) continue;
+
+    const sl = Number(soLuong) || 0;
+    grouped[tenSP] = (grouped[tenSP] || 0) + sl;
+  }
+
+  const sorted = Object.entries(grouped)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15);
+
+  if (sorted.length === 0) {
+    return 'Không có sản phẩm giá bán 1 đồng nào (đã loại nấm) trong dữ liệu hiện tại.';
+  }
+
+  let message = '📋 BÁO CÁO SP GIÁ BÁN 1 ĐỒNG (đã loại nấm)\n\n';
+  sorted.forEach(([ten, sl], idx) => {
+    message += `${idx + 1}. ${ten}: ${sl}\n`;
+  });
+
+  return message;
+}
