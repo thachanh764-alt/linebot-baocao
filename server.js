@@ -1034,7 +1034,8 @@ const GIA_THUONG_HOP = 4000;
 // Nhận diện 1 dòng là "Hộp" nếu cột Đơn vị ghi "Hộp", HOẶC tên sản phẩm (Model)
 // có chữ "HỘP" trong đó (một số SKU đóng gói theo hộp nhưng cột Đơn vị bị ghi sai/thiếu).
 function laHangHop(donVi, tenModel) {
-  if ((donVi || '').toString().trim() === 'Hộp') return true;
+  const dv = (donVi || '').toString().trim();
+  if (dv === 'Hộp' || dv === 'Bộ' || dv === 'Giỏ') return true;
   const ten = (tenModel || '').toString().toUpperCase();
   return ten.includes('HỘP') || ten.includes('HOP ') || ten.startsWith('HOP');
 }
