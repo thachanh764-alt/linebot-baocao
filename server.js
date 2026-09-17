@@ -1162,11 +1162,8 @@ function docBanBanhTT(rows) {
   const colSLOffline = timCotTheoTen(header, 'Số lượng Offline');
   const colMaModel = timCotTheoTen(header, 'Mã Model');
   const colSLKM = header.indexOf('SL xuất km');
-  const colNhomHangMa = header.indexOf('Mã nhóm hàng');
-  const colDoanhThuTong = header.indexOf('Tổng doanh thu');
 
   const ban = {};
-  const doanhThuXepHang = {};
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
@@ -1185,27 +1182,19 @@ function docBanBanhTT(rows) {
       ban[st][skuInfo.nhom][skuInfo.loai] += soLuongTinhThuong;
       ban[st].thuong += soLuongTinhThuong * skuInfo.tienThuong;
     }
-
-    if (colNhomHangMa !== -1 && colDoanhThuTong !== -1) {
-      const maNhom = (row[colNhomHangMa] || '').toString().trim();
-      if (maNhom === '7519') {
-        doanhThuXepHang[st] = (doanhThuXepHang[st] || 0) + (Number(row[colDoanhThuTong]) || 0);
-      }
-    }
   }
-  return { ban, doanhThuXepHang };
+  return { ban };
 }
 
-function dongBangBanhTT(label, btt, banhtuoi, tra, thuong, dtXepHang, dam) {
+function dongBangBanhTT(label, btt, banhtuoi, tra, thuong, dam) {
   return {
     type: 'box', layout: 'horizontal', margin: dam ? 'none' : 'sm',
     contents: [
-      { type: 'text', text: label, size: 'xxs', flex: 4, wrap: false, weight: dam ? 'bold' : 'regular', color: dam ? '#1a1a1a' : '#333333' },
+      { type: 'text', text: label, size: 'xxs', flex: 5, wrap: false, weight: dam ? 'bold' : 'regular', color: dam ? '#1a1a1a' : '#333333' },
       { type: 'text', text: btt, size: 'xxs', flex: 3, align: 'end', weight: dam ? 'bold' : 'regular' },
       { type: 'text', text: banhtuoi, size: 'xxs', flex: 3, align: 'end', weight: dam ? 'bold' : 'regular' },
       { type: 'text', text: tra, size: 'xxs', flex: 3, align: 'end', weight: dam ? 'bold' : 'regular' },
-      { type: 'text', text: thuong, size: 'xxs', flex: 3, align: 'end', weight: 'bold', color: dam ? '#B8860B' : '#D97706' },
-      { type: 'text', text: dtXepHang, size: 'xxs', flex: 4, align: 'end', weight: dam ? 'bold' : 'regular', color: dam ? '#1B4F72' : '#2E75B6' },
+      { type: 'text', text: thuong, size: 'xxs', flex: 4, align: 'end', weight: 'bold', color: dam ? '#B8860B' : '#D97706' },
     ],
   };
 }
@@ -1214,7 +1203,7 @@ function chuoiCaiHop(nhom) {
   return `${fmtSo(nhom.cai)}/${fmtSo(nhom.hop)}`;
 }
 
-function taoFlexBanhTrungThu(ton, ban, doanhThuXepHang) {
+function taoFlexBanhTrungThu(ton, ban) {
   const tatCaSieuThi = new Set([...Object.keys(ton), ...Object.keys(ban)]);
   const rongNhom = () => ({ cai: 0, hop: 0 });
   const rows = [];
@@ -1222,8 +1211,7 @@ function taoFlexBanhTrungThu(ton, ban, doanhThuXepHang) {
   for (const st of tatCaSieuThi) {
     const t = ton[st] || { btt: rongNhom(), banhtuoi: rongNhom(), tra: rongNhom() };
     const b = ban[st] || { btt: rongNhom(), banhtuoi: rongNhom(), tra: rongNhom(), thuong: 0 };
-    const dtXH = (doanhThuXepHang && doanhThuXepHang[st]) || 0;
-    rows.push({ ten: tenNganSieuThi(st), ton: t, ban: b, thuong: b.thuong, dtXepHang: dtXH });
+    rows.push({ ten: tenNganSieuThi(st), ton: t, ban: b, thuong: b.thuong });
   }
   rows.sort((a, b) => b.thuong - a.thuong);
 
@@ -1233,8 +1221,8 @@ function taoFlexBanhTrungThu(ton, ban, doanhThuXepHang) {
       banhtuoi: { cai: acc.ban.banhtuoi.cai + r.ban.banhtuoi.cai, hop: acc.ban.banhtuoi.hop + r.ban.banhtuoi.hop },
       tra: { cai: acc.ban.tra.cai + r.ban.tra.cai, hop: acc.ban.tra.hop + r.ban.tra.hop },
     },
-    thuong: acc.thuong + r.thuong, dtXepHang: acc.dtXepHang + r.dtXepHang,
-  }), { ban: { btt: rongNhom(), banhtuoi: rongNhom(), tra: rongNhom() }, thuong: 0, dtXepHang: 0 });
+    thuong: acc.thuong + r.thuong,
+  }), { ban: { btt: rongNhom(), banhtuoi: rongNhom(), tra: rongNhom() }, thuong: 0 });
 
   const now = new Date();
   const thoiGian = now.toLocaleString('vi-VN', {
@@ -1243,20 +1231,20 @@ function taoFlexBanhTrungThu(ton, ban, doanhThuXepHang) {
   });
 
   const bodyContents = [
-    dongBangBanhTT('Siêu thị', 'BTT', 'B.Tươi', 'Trà', 'Thưởng', 'DT X.Hạng', false),
+    dongBangBanhTT('Siêu thị', 'BTT', 'B.Tươi', 'Trà', 'Thưởng', false),
     { type: 'text', text: '(Số bán ra dạng Cái/Hộp)', size: 'xxs', color: '#999999', margin: 'xs' },
     { type: 'separator', margin: 'sm' },
-    dongBangBanhTT('TỔNG TẤT CẢ', chuoiCaiHop(tong.ban.btt), chuoiCaiHop(tong.ban.banhtuoi), chuoiCaiHop(tong.ban.tra), fmtSo(tong.thuong) + 'đ', fmtSo(tong.dtXepHang) + 'đ', true),
+    dongBangBanhTT('TỔNG TẤT CẢ', chuoiCaiHop(tong.ban.btt), chuoiCaiHop(tong.ban.banhtuoi), chuoiCaiHop(tong.ban.tra), fmtSo(tong.thuong) + 'đ', true),
     { type: 'separator', margin: 'sm' },
   ];
 
   rows.forEach((r) => {
     bodyContents.push(
-      dongBangBanhTT(rutGonTen(r.ten, 14), chuoiCaiHop(r.ban.btt), chuoiCaiHop(r.ban.banhtuoi), chuoiCaiHop(r.ban.tra), fmtSo(r.thuong) + 'đ', fmtSo(r.dtXepHang) + 'đ', false)
+      dongBangBanhTT(rutGonTen(r.ten, 14), chuoiCaiHop(r.ban.btt), chuoiCaiHop(r.ban.banhtuoi), chuoiCaiHop(r.ban.tra), fmtSo(r.thuong) + 'đ', false)
     );
   });
 
-  const altText = `Bánh Trung Thu: Thưởng ${fmtSo(tong.thuong)}đ, DT xếp hạng ${fmtSo(tong.dtXepHang)}đ (${rows.length} siêu thị)`;
+  const altText = `Bánh Trung Thu: Thưởng ${fmtSo(tong.thuong)}đ (${rows.length} siêu thị)`;
 
   return {
     type: 'flex',
@@ -1289,9 +1277,9 @@ async function generateBanhTrungThuReport() {
   ]);
 
   const ton = docTonBanhTT(rowsTon);
-  const { ban, doanhThuXepHang } = docBanBanhTT(rowsBan);
+  const { ban } = docBanBanhTT(rowsBan);
 
-  return taoFlexBanhTrungThu(ton, ban, doanhThuXepHang);
+  return taoFlexBanhTrungThu(ton, ban);
 }
 
 // ---------------------------------------------------------------------------
