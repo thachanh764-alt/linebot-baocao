@@ -1234,6 +1234,10 @@ function taoFlexBanhTrungThu(ton, ban) {
     timeZone: 'Asia/Ho_Chi_Minh',
   });
 
+  const SO_DONG_HIEN_THI_TOI_DA = 30; // giới hạn để tránh vượt quá dung lượng Flex Message cho phép của LINE (~50KB)
+  const rowsHienThi = rows.slice(0, SO_DONG_HIEN_THI_TOI_DA);
+  const soDongBiAn = rows.length - rowsHienThi.length;
+
   const bodyContents = [
     dongBangBanhTT('Siêu thị', 'Tồn', 'BTT-C', 'BTT-H', 'B.Tươi', 'Trà', 'Thưởng', false),
     { type: 'separator', margin: 'sm' },
@@ -1241,11 +1245,16 @@ function taoFlexBanhTrungThu(ton, ban) {
     { type: 'separator', margin: 'sm' },
   ];
 
-  rows.forEach((r) => {
+  rowsHienThi.forEach((r) => {
     bodyContents.push(
       dongBangBanhTT(rutGonTen(r.ten, 14), fmtSo(r.ton), fmtSo(r.ban.bttCai), fmtSo(r.ban.bttHop), fmtSo(r.ban.banhtuoi), fmtSo(r.ban.tra), fmtSo(r.thuong) + 'đ', false)
     );
   });
+
+  if (soDongBiAn > 0) {
+    bodyContents.push({ type: 'separator', margin: 'sm' });
+    bodyContents.push({ type: 'text', text: `(còn ${soDongBiAn} siêu thị khác không hiện đủ do giới hạn dung lượng tin nhắn — số TỔNG TẤT CẢ ở trên vẫn tính đủ)`, size: 'xxs', color: '#999999', margin: 'sm', wrap: true });
+  }
 
   const altText = `Bánh Trung Thu: Thưởng ${fmtSo(tong.thuong)}đ (${rows.length} siêu thị)`;
 
