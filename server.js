@@ -1186,12 +1186,13 @@ function docBanBanhTT(rows) {
   return { ban };
 }
 
-function dongBangBanhTT(label, btt, banhtuoi, tra, thuong, dam) {
+function dongBangBanhTT(label, bttCai, bttHop, banhtuoi, tra, thuong, dam) {
   return {
     type: 'box', layout: 'horizontal', margin: dam ? 'none' : 'sm',
     contents: [
       { type: 'text', text: label, size: 'xxs', flex: 5, wrap: false, weight: dam ? 'bold' : 'regular', color: dam ? '#1a1a1a' : '#333333' },
-      { type: 'text', text: btt, size: 'xxs', flex: 3, align: 'end', weight: dam ? 'bold' : 'regular' },
+      { type: 'text', text: bttCai, size: 'xxs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
+      { type: 'text', text: bttHop, size: 'xxs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
       { type: 'text', text: banhtuoi, size: 'xxs', flex: 3, align: 'end', weight: dam ? 'bold' : 'regular' },
       { type: 'text', text: tra, size: 'xxs', flex: 3, align: 'end', weight: dam ? 'bold' : 'regular' },
       { type: 'text', text: thuong, size: 'xxs', flex: 4, align: 'end', weight: 'bold', color: dam ? '#B8860B' : '#D97706' },
@@ -1231,16 +1232,16 @@ function taoFlexBanhTrungThu(ton, ban) {
   });
 
   const bodyContents = [
-    dongBangBanhTT('Siêu thị', 'BTT', 'B.Tươi', 'Trà', 'Thưởng', false),
-    { type: 'text', text: '(Số bán ra dạng Cái/Hộp)', size: 'xxs', color: '#999999', margin: 'xs' },
+    dongBangBanhTT('Siêu thị', 'BTT-Cái', 'BTT-Hộp', 'B.Tươi', 'Trà', 'Thưởng', false),
+    { type: 'text', text: '(Bánh tươi, Trà: số bán dạng Cái/Hộp)', size: 'xxs', color: '#999999', margin: 'xs' },
     { type: 'separator', margin: 'sm' },
-    dongBangBanhTT('TỔNG TẤT CẢ', chuoiCaiHop(tong.ban.btt), chuoiCaiHop(tong.ban.banhtuoi), chuoiCaiHop(tong.ban.tra), fmtSo(tong.thuong) + 'đ', true),
+    dongBangBanhTT('TỔNG TẤT CẢ', fmtSo(tong.ban.btt.cai), fmtSo(tong.ban.btt.hop), chuoiCaiHop(tong.ban.banhtuoi), chuoiCaiHop(tong.ban.tra), fmtSo(tong.thuong) + 'đ', true),
     { type: 'separator', margin: 'sm' },
   ];
 
   rows.forEach((r) => {
     bodyContents.push(
-      dongBangBanhTT(rutGonTen(r.ten, 14), chuoiCaiHop(r.ban.btt), chuoiCaiHop(r.ban.banhtuoi), chuoiCaiHop(r.ban.tra), fmtSo(r.thuong) + 'đ', false)
+      dongBangBanhTT(rutGonTen(r.ten, 14), fmtSo(r.ban.btt.cai), fmtSo(r.ban.btt.hop), chuoiCaiHop(r.ban.banhtuoi), chuoiCaiHop(r.ban.tra), fmtSo(r.thuong) + 'đ', false)
     );
   });
 
