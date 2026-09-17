@@ -1245,7 +1245,7 @@ function taoFlexBanhTrungThu(ton, ban) {
 
   // Chia trang: 47 siêu thị x 6 cột có màu vẫn quá nặng cho 1 trang (đã kiểm chứng LINE trả 400).
   // Chia carousel, mỗi trang ~18 siêu thị, TỔNG TẤT CẢ chỉ hiện ở trang đầu.
-  const SO_DONG_MOI_TRANG = 18;
+  const SO_DONG_MOI_TRANG = 999;
   const nhomTrang = [];
   for (let i = 0; i < rows.length; i += SO_DONG_MOI_TRANG) {
     nhomTrang.push(rows.slice(i, i + SO_DONG_MOI_TRANG));
