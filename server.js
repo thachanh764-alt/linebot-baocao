@@ -1187,6 +1187,9 @@ function docBanBanhTT(rows) {
         ban[st].tra += soLuongTinhThuong;
       }
       ban[st].thuong += soLuongTinhThuong * skuInfo.tienThuong;
+      if (st.includes('Phú Lộc')) {
+        console.log('[DEBUG BanhTT PhuLoc]', maModel, '| SL Online=' + row[colSLOnline], '| SL Offline=' + row[colSLOffline], '| SL KM=' + slKM, '| Tính thưởng=' + soLuongTinhThuong, '| nhóm=' + skuInfo.nhom, '| loại=' + skuInfo.loai);
+      }
     }
   }
   return { ban };
