@@ -1234,41 +1234,30 @@ function taoFlexBanhTrungThu(ton, ban) {
     timeZone: 'Asia/Ho_Chi_Minh',
   });
 
-  const bodyContents = [
-    dongBangBanhTT('Siêu thị', 'Tồn', 'BTT-C', 'BTT-H', 'B.Tươi', 'Trà', 'Thưởng', false),
-    { type: 'separator', margin: 'sm' },
-    dongBangBanhTT('TỔNG TẤT CẢ', fmtSo(tong.ton), fmtSo(tong.ban.bttCai), fmtSo(tong.ban.bttHop), fmtSo(tong.ban.banhtuoi), fmtSo(tong.ban.tra), fmtSo(tong.thuong) + 'đ', true),
-    { type: 'separator', margin: 'sm' },
-  ];
+  // ĐỔI SANG TEXT THUẦN (bỏ hẳn Flex Message) để loại trừ mọi rủi ro về giới hạn/cấu trúc
+  // JSON của LINE — đảm bảo chắc chắn gửi được dù có bao nhiêu siêu thị đi nữa.
+  const pad = (s, len) => { s = String(s); return s.length >= len ? s.slice(0, len) : s + ' '.repeat(len - s.length); };
+  const padNum = (s, len) => { s = String(s); return s.length >= len ? s.slice(0, len) : ' '.repeat(len - s.length) + s; };
+  const dong = (ten, tn, c, h, bt, tr, th) =>
+    pad(ten, 13) + padNum(tn, 6) + padNum(c, 4) + padNum(h, 4) + padNum(bt, 5) + padNum(tr, 4) + padNum(th, 9);
+
+  let text = '🥮 BÁO CÁO BÁNH TRUNG THU\n';
+  text += 'Thưởng: Cái 1.000đ / Hộp 4.000đ, đã trừ hàng xuất KM\n';
+  text += `Cập nhật ${thoiGian} · ${rows.length} siêu thị\n`;
+  text += '━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+  text += 'SiêuThị       Tồn  C   H  BT  Trà   Thưởng\n';
+  text += dong('TỔNG TẤT CẢ', fmtSo(tong.ton), fmtSo(tong.ban.bttCai), fmtSo(tong.ban.bttHop), fmtSo(tong.ban.banhtuoi), fmtSo(tong.ban.tra), fmtSo(tong.thuong) + 'đ') + '\n';
+  text += '━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
 
   rows.forEach((r) => {
-    bodyContents.push(
-      dongBangBanhTT(rutGonTen(r.ten, 14), fmtSo(r.ton), fmtSo(r.ban.bttCai), fmtSo(r.ban.bttHop), fmtSo(r.ban.banhtuoi), fmtSo(r.ban.tra), fmtSo(r.thuong) + 'đ', false)
-    );
+    text += dong(rutGonTen(r.ten, 13), fmtSo(r.ton), fmtSo(r.ban.bttCai), fmtSo(r.ban.bttHop), fmtSo(r.ban.banhtuoi), fmtSo(r.ban.tra), fmtSo(r.thuong) + 'đ') + '\n';
   });
 
-  const altText = `Bánh Trung Thu: Thưởng ${fmtSo(tong.thuong)}đ (${rows.length} siêu thị)`;
+  if (text.length > 4900) {
+    text = text.slice(0, 4880) + '\n... (còn tiếp, xem chi tiết trong Google Sheet)';
+  }
 
-  return {
-    type: 'flex',
-    altText: altText.slice(0, 400),
-    contents: {
-      type: 'bubble',
-      size: 'giga',
-      header: {
-        type: 'box', layout: 'vertical', backgroundColor: '#8B4513', paddingAll: '20px',
-        contents: [
-          { type: 'text', text: '🥮 BÁO CÁO BÁNH TRUNG THU', color: '#FFFFFF', weight: 'bold', size: 'lg' },
-          { type: 'text', text: 'Thưởng theo 89 mã đã duyệt (Cái 1.000đ / Hộp 4.000đ), không tính hàng xuất KM', color: '#F5E0C3', size: 'xs', margin: 'sm', wrap: true },
-          { type: 'text', text: `Cập nhật lúc ${thoiGian} · ${rows.length} siêu thị`, color: '#F5E0C3', size: 'xs', margin: 'sm' },
-        ],
-      },
-      body: {
-        type: 'box', layout: 'vertical', paddingAll: '16px', spacing: 'sm',
-        contents: bodyContents,
-      },
-    },
-  };
+  return { type: 'text', text };
 }
 
 async function generateBanhTrungThuReport() {
