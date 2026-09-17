@@ -1274,7 +1274,7 @@ function taoFlexBanhTrungThu(ton, ban) {
         ],
       },
       body: {
-        type: 'box', layout: 'vertical', paddingAll: '8px', spacing: 'xxs',
+        type: 'box', layout: 'vertical', paddingAll: '8px', spacing: 'none',
         contents: bodyContents,
       },
     };
