@@ -1243,26 +1243,32 @@ function taoFlexBanhTrungThu(ton, ban) {
     timeZone: 'Asia/Ho_Chi_Minh',
   });
 
-  const bodyContents = [dongTieuDeBanhTT()];
-  bodyContents.push(dongBangBanhTT('TỔNG TẤT CẢ', fmtSo(tong.bttCai), fmtSo(tong.bttHop), fmtSo(tong.banhtuoi), fmtSo(tong.tra), fmtSo(tong.thuong) + 'đ', true, '#FFE9B3'));
+  // Chia trang: 47 siêu thị x 6 cột có màu vẫn quá nặng cho 1 trang (đã kiểm chứng LINE trả 400).
+  // Chia carousel, mỗi trang ~18 siêu thị, TỔNG TẤT CẢ chỉ hiện ở trang đầu.
+  const SO_DONG_MOI_TRANG = 18;
+  const nhomTrang = [];
+  for (let i = 0; i < rows.length; i += SO_DONG_MOI_TRANG) {
+    nhomTrang.push(rows.slice(i, i + SO_DONG_MOI_TRANG));
+  }
+  if (nhomTrang.length === 0) nhomTrang.push([]);
 
-  rows.forEach((r, idx) => {
-    const nen = idx % 2 === 0 ? '#FFFFFF' : '#F7F2EC';
-    bodyContents.push(dongBangBanhTT(rutGonTen(r.ten, 14), fmtSo(r.ban.bttCai), fmtSo(r.ban.bttHop), fmtSo(r.ban.banhtuoi), fmtSo(r.ban.tra), fmtSo(r.thuong) + 'đ', false, nen));
-  });
+  const bubbles = nhomTrang.map((rowsTrang, idx) => {
+    const bodyContents = [dongTieuDeBanhTT()];
+    if (idx === 0) {
+      bodyContents.push(dongBangBanhTT('TỔNG TẤT CẢ', fmtSo(tong.bttCai), fmtSo(tong.bttHop), fmtSo(tong.banhtuoi), fmtSo(tong.tra), fmtSo(tong.thuong) + 'đ', true, '#FFE9B3'));
+    }
+    rowsTrang.forEach((r, i2) => {
+      const nen = i2 % 2 === 0 ? '#FFFFFF' : '#F7F2EC';
+      bodyContents.push(dongBangBanhTT(rutGonTen(r.ten, 14), fmtSo(r.ban.bttCai), fmtSo(r.ban.bttHop), fmtSo(r.ban.banhtuoi), fmtSo(r.ban.tra), fmtSo(r.thuong) + 'đ', false, nen));
+    });
 
-  const altText = `Bánh Trung Thu: Thưởng ${fmtSo(tong.thuong)}đ (${rows.length} siêu thị)`;
-
-  return {
-    type: 'flex',
-    altText: altText.slice(0, 400),
-    contents: {
+    return {
       type: 'bubble',
       size: 'giga',
       header: {
         type: 'box', layout: 'vertical', backgroundColor: '#8B4513', paddingAll: '20px',
         contents: [
-          { type: 'text', text: '🥮 BÁO CÁO BÁNH TRUNG THU', color: '#FFFFFF', weight: 'bold', size: 'lg' },
+          { type: 'text', text: '🥮 BÁO CÁO BÁNH TRUNG THU' + (nhomTrang.length > 1 ? ` (${idx + 1}/${nhomTrang.length})` : ''), color: '#FFFFFF', weight: 'bold', size: 'lg' },
           { type: 'text', text: 'Thưởng theo mã đã duyệt (Cái 1.000đ / Hộp 4.000đ), không tính hàng xuất KM', color: '#F5E0C3', size: 'xs', margin: 'sm', wrap: true },
           { type: 'text', text: `Cập nhật lúc ${thoiGian} · ${rows.length} siêu thị`, color: '#F5E0C3', size: 'xs', margin: 'sm' },
         ],
@@ -1271,7 +1277,19 @@ function taoFlexBanhTrungThu(ton, ban) {
         type: 'box', layout: 'vertical', paddingAll: '8px', spacing: 'xxs',
         contents: bodyContents,
       },
-    },
+    };
+  });
+
+  const altText = `Bánh Trung Thu: Thưởng ${fmtSo(tong.thuong)}đ (${rows.length} siêu thị)`;
+
+  if (bubbles.length === 1) {
+    return { type: 'flex', altText: altText.slice(0, 400), contents: bubbles[0] };
+  }
+
+  return {
+    type: 'flex',
+    altText: altText.slice(0, 400),
+    contents: { type: 'carousel', contents: bubbles.slice(0, 12) },
   };
 }
 
