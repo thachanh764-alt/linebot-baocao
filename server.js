@@ -1159,6 +1159,7 @@ function docBanBanhTT(rows) {
   const colTenST = timCotTheoTen(header, 'Tên siêu thị');
   const colSLOnline = timCotTheoTen(header, 'Số lượng Online');
   const colSLOffline = timCotTheoTen(header, 'Số lượng Offline');
+  const colTongSL = timCotTheoTen(header, 'Tổng số lượng');
   const colMaModel = timCotTheoTen(header, 'Mã Model');
   const colSLKM = header.indexOf('SL xuất km');
 
@@ -1171,7 +1172,9 @@ function docBanBanhTT(rows) {
     if (!st) continue;
     const maModel = (row[colMaModel] || '').toString().trim();
     const slKM = colSLKM === -1 ? 0 : (Number(row[colSLKM]) || 0);
-    const soLuongBanRa = (Number(row[colSLOnline]) || 0) + (Number(row[colSLOffline]) || 0);
+    const soLuongBanRa = colTongSL !== -1
+      ? (Number(row[colTongSL]) || 0)
+      : (Number(row[colSLOnline]) || 0) + (Number(row[colSLOffline]) || 0);
     const soLuongTinhThuong = Math.max(0, soLuongBanRa - slKM);
 
     if (!ban[st]) ban[st] = { bttCai: 0, bttHop: 0, banhtuoi: 0, tra: 0, thuong: 0 };
