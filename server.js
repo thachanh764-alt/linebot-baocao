@@ -2159,7 +2159,9 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
             await client.pushMessage(targetId, ketQuaLenhCu.ket);
             console.log('[webhook] Đã push thành công báo cáo "' + ketQuaLenhCu.ten + '" vào group (fallback)');
           } catch (pushErr) {
-            console.error('[webhook] Push fallback cũng thất bại:', pushErr.message);
+            const chiTietPush = (pushErr.originalError && pushErr.originalError.response && pushErr.originalError.response.data) || (pushErr.response && pushErr.response.data) || pushErr.message;
+            console.error('[webhook] Push fallback cũng thất bại. CHI TIẾT LỖI THẬT TỪ LINE: ' + JSON.stringify(chiTietPush));
+            console.error('[webhook] Kích thước JSON của báo cáo (ký tự): ' + JSON.stringify(ketQuaLenhCu.ket).length);
           }
         }
         continue;
