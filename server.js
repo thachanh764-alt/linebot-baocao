@@ -2260,6 +2260,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           console.log('[webhook] Đã push thành công báo cáo "' + ketQuaLenhCuRieng.ten + '" (fallback)');
         } catch (pushErr) {
           console.error('[webhook] Push fallback cũng thất bại:', pushErr.message);
+          console.error('[webhook] Chi tiết lỗi LINE:', JSON.stringify(pushErr.originalError?.response?.data || pushErr.response?.data || pushErr));
         }
       }
       continue;
