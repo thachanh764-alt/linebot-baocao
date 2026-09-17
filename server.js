@@ -2144,7 +2144,14 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           await client.replyMessage(event.replyToken, ketQuaLenhCu.ket);
           console.log(`[webhook] @tag khớp lệnh "${ketQuaLenhCu.ten}", đã trả báo cáo`);
         } catch (err) {
-          const chiTietLoi = (err.originalError && err.originalError.response && err.originalError.response.data) || (err.response && err.response.data) || err.message; console.error('[webhook] LOI_CHI_TIET: ' + JSON.stringify(chiTietLoi));
+          const chiTietLoi = (err.originalError && err.originalError.response && err.originalError.response.data) || (err.response && err.response.data) || err.message;
+          console.error('[webhook] Reply thất bại (' + JSON.stringify(chiTietLoi) + '), thử push thẳng vào group...');
+          try {
+            await client.pushMessage(targetId, ketQuaLenhCu.ket);
+            console.log('[webhook] Đã push thành công báo cáo "' + ketQuaLenhCu.ten + '" vào group (fallback)');
+          } catch (pushErr) {
+            console.error('[webhook] Push fallback cũng thất bại:', pushErr.message);
+          }
         }
         continue;
       }
@@ -2192,19 +2199,35 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
     // CHAT RIÊNG (1-1): giữ hành vi cũ — không cần @tag, gõ đúng lệnh là chạy,
     // gõ câu hỏi khác thì AI cũng tự phân tích luôn cho tiện.
     // ------------------------------------------------------------------
+    let ketQuaLenhCuRieng = null;
     try {
-      const ketQuaLenhCu = await chayLenhCu(text);
-      if (ketQuaLenhCu) {
-        await client.replyMessage(event.replyToken, ketQuaLenhCu.ket);
-        console.log(`[webhook] khớp lệnh "${ketQuaLenhCu.ten}", đã trả báo cáo`);
-        continue;
-      }
+      ketQuaLenhCuRieng = await chayLenhCu(text);
     } catch (err) {
       console.error('[webhook] Lỗi tạo báo cáo:', err);
       try {
         await client.replyMessage(event.replyToken, { type: 'text', text: `⚠️ Không tạo được báo cáo: ${err.message}` });
       } catch (replyErr) {
-        console.error('[webhook] Lỗi luôn cả khi reply lỗi:', replyErr.message);
+        console.error('[webhook] Reply lỗi thất bại, thử push:', replyErr.message);
+        try {
+          await client.pushMessage(event.source.userId, { type: 'text', text: `⚠️ Không tạo được báo cáo: ${err.message}` });
+        } catch (pushErr) {
+          console.error('[webhook] Push fallback lỗi cũng thất bại:', pushErr.message);
+        }
+      }
+      continue;
+    }
+    if (ketQuaLenhCuRieng) {
+      try {
+        await client.replyMessage(event.replyToken, ketQuaLenhCuRieng.ket);
+        console.log(`[webhook] khớp lệnh "${ketQuaLenhCuRieng.ten}", đã trả báo cáo`);
+      } catch (err) {
+        console.error('[webhook] Reply thất bại, thử push thẳng...');
+        try {
+          await client.pushMessage(event.source.userId, ketQuaLenhCuRieng.ket);
+          console.log('[webhook] Đã push thành công báo cáo "' + ketQuaLenhCuRieng.ten + '" (fallback)');
+        } catch (pushErr) {
+          console.error('[webhook] Push fallback cũng thất bại:', pushErr.message);
+        }
       }
       continue;
     }
