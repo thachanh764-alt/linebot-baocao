@@ -1220,24 +1220,15 @@ function dongTieuDeBanhTT() {
   };
 }
 
-function dongBangBanhTT(label, bttCai, bttHop, banhtuoi, tra, dam, nen, duoiTrungBinh) {
+function dongBangBanhTT(label, bttCai, bttHop, banhtuoi, tra, dam, nen) {
   return {
     type: 'box', layout: 'horizontal', paddingAll: '5px', backgroundColor: nen,
     contents: [
-      { type: 'text', text: label, size: 'xxs', flex: 6, wrap: false, weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : (duoiTrungBinh ? '#D32F2F' : '#333333') },
-      { type: 'text', text: bttCai, size: 'xxs', flex: 2, align: 'end', weight: (dam || duoiTrungBinh) ? 'bold' : 'regular', color: dam ? '#8B4513' : (duoiTrungBinh ? '#D32F2F' : '#333333') },
+      { type: 'text', text: label, size: 'xxs', flex: 6, wrap: false, weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
+      { type: 'text', text: bttCai, size: 'xxs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
       { type: 'text', text: bttHop, size: 'xxs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
       { type: 'text', text: banhtuoi, size: 'xxs', flex: 3, align: 'end', weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
       { type: 'text', text: tra, size: 'xxs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
-    ],
-  };
-}
-
-function dongTrungBinh(text) {
-  return {
-    type: 'box', layout: 'horizontal', paddingAll: '6px', backgroundColor: '#FFE0E0',
-    contents: [
-      { type: 'text', text, size: 'xxs', wrap: false, weight: 'bold', color: '#D32F2F' },
     ],
   };
 }
@@ -1264,17 +1255,13 @@ function taoFlexBanhTrungThu(ton, ban) {
     const b = ban[st] || rongBan();
     rows.push({ ten: tenNganSieuThi(st), ban: b, thuong: b.thuong });
   }
-  rows.forEach((r) => { r.tongBanRa = r.ban.bttCai + r.ban.bttHop + r.ban.banhtuoi + r.ban.tra; });
-  rows.sort((a, b) => b.tongBanRa - a.tongBanRa);
+  rows.sort((a, b) => b.thuong - a.thuong);
 
   const tong = rows.reduce((acc, r) => ({
     bttCai: acc.bttCai + r.ban.bttCai, bttHop: acc.bttHop + r.ban.bttHop,
     banhtuoi: acc.banhtuoi + r.ban.banhtuoi, tra: acc.tra + r.ban.tra,
     thuong: acc.thuong + r.thuong,
   }), { bttCai: 0, bttHop: 0, banhtuoi: 0, tra: 0, thuong: 0 });
-
-  const tongBanRaTatCa = tong.bttCai + tong.bttHop + tong.banhtuoi + tong.tra;
-  const trungBinh = rows.length > 0 ? tongBanRaTatCa / rows.length : 0;
 
   const now = new Date();
   const thoiGian = now.toLocaleString('vi-VN', {
@@ -1283,13 +1270,11 @@ function taoFlexBanhTrungThu(ton, ban) {
   });
 
   const bodyContents = [dongTieuDeBanhTT()];
-  bodyContents.push(dongBangBanhTT('TỔNG TẤT CẢ', fmtSo(tong.bttCai), fmtSo(tong.bttHop), fmtSo(tong.banhtuoi), fmtSo(tong.tra), true, '#FFE9B3', false));
-  bodyContents.push(dongTrungBinh(`Trung bình khu vực (tổng 4 cột): ${trungBinh.toFixed(1)}/siêu thị — đỏ = dưới mức này`));
+  bodyContents.push(dongBangBanhTT('TỔNG TẤT CẢ', fmtSo(tong.bttCai), fmtSo(tong.bttHop), fmtSo(tong.banhtuoi), fmtSo(tong.tra), true, '#FFE9B3'));
 
   rows.forEach((r, idx) => {
     const nen = idx % 2 === 0 ? '#FFFFFF' : '#F7F2EC';
-    const duoiTrungBinh = r.tongBanRa < trungBinh;
-    bodyContents.push(dongBangBanhTT(rutGonTen(r.ten, 15), fmtSo(r.ban.bttCai), fmtSo(r.ban.bttHop), fmtSo(r.ban.banhtuoi), fmtSo(r.ban.tra), false, nen, duoiTrungBinh));
+    bodyContents.push(dongBangBanhTT(rutGonTen(r.ten, 15), fmtSo(r.ban.bttCai), fmtSo(r.ban.bttHop), fmtSo(r.ban.banhtuoi), fmtSo(r.ban.tra), false, nen));
   });
 
   const altText = `Bánh Trung Thu: Thưởng ${fmtSo(tong.thuong)}đ (${rows.length} siêu thị)`;
