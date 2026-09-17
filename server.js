@@ -1175,7 +1175,7 @@ function docBanBanhTT(rows) {
     const soLuongBanRa = colTongSL !== -1
       ? (Number(row[colTongSL]) || 0)
       : (Number(row[colSLOnline]) || 0) + (Number(row[colSLOffline]) || 0);
-    const soLuongTinhThuong = Math.max(0, soLuongBanRa - slKM);
+    const soLuongTinhThuong = soLuongBanRa; // Không trừ hàng xuất KM, tính nguyên số bán ra
 
     if (!ban[st]) ban[st] = { bttCai: 0, bttHop: 0, banhtuoi: 0, tra: 0, thuong: 0 };
 
