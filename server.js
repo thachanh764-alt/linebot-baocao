@@ -1028,11 +1028,103 @@ async function generateLuyKeReport() {
 const GOOGLE_SHEET_TAB_BANHTT_TON = process.env.GOOGLE_SHEET_TAB_BANHTT_TON || 'BANHTT_TON';
 const GOOGLE_SHEET_TAB_BANHTT_DOANHTHU = process.env.GOOGLE_SHEET_TAB_BANHTT_DOANHTHU || 'BANHTT_DOANHTHU';
 
-const GIA_THUONG_CAI = 1000;
-const GIA_THUONG_HOP = 4000;
+// Danh sách 89 mã SKU Bánh Trung Thu ĐÃ ĐƯỢC DUYỆT tính thưởng
+// (theo file "DANH SÁCH SKUS TRUNG THU 20082026.xlsx" sếp gửi ngày 20/08/2026).
+// Khớp theo "Mã Model" (10 số) — mã KHÔNG có trong danh sách này thì KHÔNG tính thưởng.
+const SKU_TRUNGTHU_MAP = {
+  '2607001852': { loai: 'hop', tienThuong: 4000 },
+  '2407001584': { loai: 'hop', tienThuong: 4000 },
+  '2407001585': { loai: 'hop', tienThuong: 4000 },
+  '2407001417': { loai: 'hop', tienThuong: 4000 },
+  '2607001877': { loai: 'hop', tienThuong: 4000 },
+  '2607001879': { loai: 'hop', tienThuong: 4000 },
+  '2407001423': { loai: 'hop', tienThuong: 4000 },
+  '1708000229': { loai: 'cai', tienThuong: 1000 },
+  '1708000230': { loai: 'cai', tienThuong: 1000 },
+  '1708000237': { loai: 'cai', tienThuong: 1000 },
+  '1708000239': { loai: 'cai', tienThuong: 1000 },
+  '2607001872': { loai: 'hop', tienThuong: 4000 },
+  '2508000902': { loai: 'hop', tienThuong: 4000 },
+  '2407001413': { loai: 'hop', tienThuong: 4000 },
+  '2607001865': { loai: 'hop', tienThuong: 4000 },
+  '2607001866': { loai: 'hop', tienThuong: 4000 },
+  '2607001853': { loai: 'hop', tienThuong: 4000 },
+  '2508000908': { loai: 'hop', tienThuong: 4000 },
+  '2508000905': { loai: 'hop', tienThuong: 4000 },
+  '2607001873': { loai: 'cai', tienThuong: 1000 },
+  '2607001874': { loai: 'cai', tienThuong: 1000 },
+  '2607001875': { loai: 'cai', tienThuong: 1000 },
+  '2607001876': { loai: 'cai', tienThuong: 1000 },
+  '2508000790': { loai: 'cai', tienThuong: 1000 },
+  '2508000904': { loai: 'cai', tienThuong: 1000 },
+  '2508000792': { loai: 'cai', tienThuong: 1000 },
+  '2508000789': { loai: 'cai', tienThuong: 1000 },
+  '2607001855': { loai: 'cai', tienThuong: 1000 },
+  '2607001854': { loai: 'cai', tienThuong: 1000 },
+  '2607001856': { loai: 'cai', tienThuong: 1000 },
+  '2607001857': { loai: 'cai', tienThuong: 1000 },
+  '1708000254': { loai: 'cai', tienThuong: 1000 },
+  '1708000259': { loai: 'cai', tienThuong: 1000 },
+  '1708000264': { loai: 'cai', tienThuong: 1000 },
+  '1708000252': { loai: 'cai', tienThuong: 1000 },
+  '1708000253': { loai: 'cai', tienThuong: 1000 },
+  '1708000258': { loai: 'cai', tienThuong: 1000 },
+  '1708000262': { loai: 'cai', tienThuong: 1000 },
+  '2508000903': { loai: 'hop', tienThuong: 4000 },
+  '2508000906': { loai: 'hop', tienThuong: 4000 },
+  '2508000907': { loai: 'hop', tienThuong: 4000 },
+  '2607001878': { loai: 'hop', tienThuong: 4000 },
+  '2607001858': { loai: 'cai', tienThuong: 1000 },
+  '2607001859': { loai: 'cai', tienThuong: 1000 },
+  '2507002809': { loai: 'cai', tienThuong: 1000 },
+  '2507002810': { loai: 'cai', tienThuong: 1000 },
+  '2507002811': { loai: 'cai', tienThuong: 1000 },
+  '2508000460': { loai: 'cai', tienThuong: 1000 },
+  '1708000276': { loai: 'cai', tienThuong: 1000 },
+  '1708000277': { loai: 'cai', tienThuong: 1000 },
+  '2407001416': { loai: 'cai', tienThuong: 1000 },
+  '2507002610': { loai: 'cai', tienThuong: 1000 },
+  '2607001867': { loai: 'cai', tienThuong: 1000 },
+  '2607001868': { loai: 'cai', tienThuong: 1000 },
+  '2607001869': { loai: 'cai', tienThuong: 1000 },
+  '2507002609': { loai: 'cai', tienThuong: 1000 },
+  '2607001864': { loai: 'cai', tienThuong: 1000 },
+  '2607001863': { loai: 'cai', tienThuong: 1000 },
+  '2607001870': { loai: 'cai', tienThuong: 1000 },
+  '2607001871': { loai: 'cai', tienThuong: 1000 },
+  '2507002607': { loai: 'cai', tienThuong: 1000 },
+  '2507002606': { loai: 'cai', tienThuong: 1000 },
+  '2507002605': { loai: 'cai', tienThuong: 1000 },
+  '2607001860': { loai: 'cai', tienThuong: 1000 },
+  '2607001862': { loai: 'cai', tienThuong: 1000 },
+  '2607001861': { loai: 'cai', tienThuong: 1000 },
+  '2405000267': { loai: 'hop', tienThuong: 4000 },
+  '2405000268': { loai: 'hop', tienThuong: 4000 },
+  '2508002911': { loai: 'hop', tienThuong: 4000 },
+  '2512000349': { loai: 'hop', tienThuong: 4000 },
+  '2607000922': { loai: 'hop', tienThuong: 4000 },
+  '2607000923': { loai: 'hop', tienThuong: 4000 },
+  '2407002830': { loai: 'hop', tienThuong: 4000 },
+  '2407002831': { loai: 'hop', tienThuong: 4000 },
+  '2508000666': { loai: 'hop', tienThuong: 4000 },
+  '2508001049': { loai: 'hop', tienThuong: 4000 },
+  '1708000225': { loai: 'hop', tienThuong: 4000 },
+  '2607006125': { loai: 'cai', tienThuong: 1000 },
+  '2607006126': { loai: 'cai', tienThuong: 1000 },
+  '2607006124': { loai: 'cai', tienThuong: 1000 },
+  '2407001422': { loai: 'hop', tienThuong: 4000 },
+  '2608000290': { loai: 'hop', tienThuong: 4000 },
+  '2608000292': { loai: 'hop', tienThuong: 4000 },
+  '2608000291': { loai: 'hop', tienThuong: 4000 },
+  '2608000289': { loai: 'hop', tienThuong: 4000 },
+  '2608000288': { loai: 'hop', tienThuong: 4000 },
+  '2608001890': { loai: 'hop', tienThuong: 4000 },
+  '2608002585': { loai: 'hop', tienThuong: 4000 },
+  '2608001064': { loai: 'hop', tienThuong: 4000 },
+};
 
-// Nhận diện 1 dòng là "Hộp" nếu cột Đơn vị ghi "Hộp", HOẶC tên sản phẩm (Model)
-// có chữ "HỘP" trong đó (một số SKU đóng gói theo hộp nhưng cột Đơn vị bị ghi sai/thiếu).
+// Nhận diện 1 dòng là "Hộp" — CHỈ dùng làm fallback cho tồn kho khi mã KHÔNG
+// nằm trong SKU_TRUNGTHU_MAP ở trên (để vẫn hiển thị tồn kho đầy đủ).
 function laHangHop(donVi, tenModel) {
   const dv = (donVi || '').toString().trim();
   if (dv === 'Hộp' || dv === 'Bộ' || dv === 'Giỏ') return true;
@@ -1045,7 +1137,8 @@ function docTonBanhTT(rows) {
   const colTenST = timCotTheoTen(header, 'Tên siêu thị');
   const colDonVi = timCotTheoTen(header, 'Đơn vị');
   const colTon = timCotTheoTen(header, 'Tồn kho siêu thị');
-  const colModel = header.indexOf('Model'); // -1 nếu file không có cột này, vẫn chạy được
+  const colModel = header.indexOf('Model');
+  const colMaModel = header.indexOf('Mã Model');
 
   const ton = {};
   for (let i = 1; i < rows.length; i++) {
@@ -1055,9 +1148,12 @@ function docTonBanhTT(rows) {
     if (!st) continue;
     const donVi = row[colDonVi];
     const tenModel = colModel === -1 ? '' : row[colModel];
+    const maModel = colMaModel === -1 ? '' : (row[colMaModel] || '').toString().trim();
     const soLuong = Number(row[colTon]) || 0;
     if (!ton[st]) ton[st] = { cai: 0, hop: 0 };
-    if (laHangHop(donVi, tenModel)) ton[st].hop += soLuong;
+    const skuInfo = SKU_TRUNGTHU_MAP[maModel];
+    const laHop = skuInfo ? skuInfo.loai === 'hop' : laHangHop(donVi, tenModel);
+    if (laHop) ton[st].hop += soLuong;
     else ton[st].cai += soLuong;
   }
   return ton;
@@ -1066,28 +1162,49 @@ function docTonBanhTT(rows) {
 function docBanBanhTT(rows) {
   const header = rows[0];
   const colTenST = timCotTheoTen(header, 'Tên siêu thị');
-  const colDonVi = timCotTheoTen(header, 'Đơn vị');
   const colSLOnline = timCotTheoTen(header, 'Số lượng Online');
   const colSLOffline = timCotTheoTen(header, 'Số lượng Offline');
-  const colModel = header.indexOf('Model');
+  const colMaModel = timCotTheoTen(header, 'Mã Model');
+  const colSLKM = header.indexOf('SL xuất km');
+  const colNhomHangMa = header.indexOf('Mã nhóm hàng');
+  const colDoanhThuTong = header.indexOf('Tổng doanh thu');
 
   const ban = {};
+  const doanhThuXepHang = {};
+
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row) continue;
     const st = row[colTenST];
     if (!st) continue;
-    const donVi = row[colDonVi];
-    const tenModel = colModel === -1 ? '' : row[colModel];
-    const soLuong = (Number(row[colSLOnline]) || 0) + (Number(row[colSLOffline]) || 0);
-    if (!ban[st]) ban[st] = { cai: 0, hop: 0 };
-    if (laHangHop(donVi, tenModel)) ban[st].hop += soLuong;
-    else ban[st].cai += soLuong;
+    const maModel = (row[colMaModel] || '').toString().trim();
+    const slKM = colSLKM === -1 ? 0 : (Number(row[colSLKM]) || 0);
+    const soLuongBanRa = (Number(row[colSLOnline]) || 0) + (Number(row[colSLOffline]) || 0);
+    const soLuongTinhThuong = Math.max(0, soLuongBanRa - slKM);
+
+    if (!ban[st]) ban[st] = { cai: 0, hop: 0, thuong: 0 };
+
+    // Chỉ tính thưởng cho đúng 89 mã đã duyệt, không tính hàng xuất khuyến mãi
+    const skuInfo = SKU_TRUNGTHU_MAP[maModel];
+    if (skuInfo) {
+      if (skuInfo.loai === 'hop') ban[st].hop += soLuongTinhThuong;
+      else ban[st].cai += soLuongTinhThuong;
+      ban[st].thuong += soLuongTinhThuong * skuInfo.tienThuong;
+    }
+
+    // Doanh thu xếp hạng QLTP: chỉ tính nhóm hàng 7519 - Bánh Trung Thu,
+    // lấy trực tiếp từ cột "Mã nhóm hàng" (không liên quan danh sách 89 mã ở trên)
+    if (colNhomHangMa !== -1 && colDoanhThuTong !== -1) {
+      const maNhom = (row[colNhomHangMa] || '').toString().trim();
+      if (maNhom === '7519') {
+        doanhThuXepHang[st] = (doanhThuXepHang[st] || 0) + (Number(row[colDoanhThuTong]) || 0);
+      }
+    }
   }
-  return ban;
+  return { ban, doanhThuXepHang };
 }
 
-function dongBangBanhTT(label, tonCai, tonHop, banCai, banHop, thuong, dam) {
+function dongBangBanhTT(label, tonCai, tonHop, banCai, banHop, thuong, dtXepHang, dam) {
   return {
     type: 'box', layout: 'horizontal', margin: dam ? 'none' : 'sm',
     contents: [
@@ -1097,27 +1214,28 @@ function dongBangBanhTT(label, tonCai, tonHop, banCai, banHop, thuong, dam) {
       { type: 'text', text: banCai, size: 'xs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
       { type: 'text', text: banHop, size: 'xs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular' },
       { type: 'text', text: thuong, size: 'xs', flex: 3, align: 'end', weight: 'bold', color: dam ? '#B8860B' : '#D97706' },
+      { type: 'text', text: dtXepHang, size: 'xs', flex: 3, align: 'end', weight: dam ? 'bold' : 'regular', color: dam ? '#1B4F72' : '#2E75B6' },
     ],
   };
 }
 
-function taoFlexBanhTrungThu(ton, ban) {
+function taoFlexBanhTrungThu(ton, ban, doanhThuXepHang) {
   const tatCaSieuThi = new Set([...Object.keys(ton), ...Object.keys(ban)]);
   const rows = [];
 
   for (const st of tatCaSieuThi) {
     const t = ton[st] || { cai: 0, hop: 0 };
-    const b = ban[st] || { cai: 0, hop: 0 };
-    const thuong = b.cai * GIA_THUONG_CAI + b.hop * GIA_THUONG_HOP;
-    rows.push({ ten: tenNganSieuThi(st), tonCai: t.cai, tonHop: t.hop, banCai: b.cai, banHop: b.hop, thuong });
+    const b = ban[st] || { cai: 0, hop: 0, thuong: 0 };
+    const dtXH = (doanhThuXepHang && doanhThuXepHang[st]) || 0;
+    rows.push({ ten: tenNganSieuThi(st), tonCai: t.cai, tonHop: t.hop, banCai: b.cai, banHop: b.hop, thuong: b.thuong, dtXepHang: dtXH });
   }
   rows.sort((a, b) => b.thuong - a.thuong);
 
   const tong = rows.reduce((acc, r) => ({
     tonCai: acc.tonCai + r.tonCai, tonHop: acc.tonHop + r.tonHop,
     banCai: acc.banCai + r.banCai, banHop: acc.banHop + r.banHop,
-    thuong: acc.thuong + r.thuong,
-  }), { tonCai: 0, tonHop: 0, banCai: 0, banHop: 0, thuong: 0 });
+    thuong: acc.thuong + r.thuong, dtXepHang: acc.dtXepHang + r.dtXepHang,
+  }), { tonCai: 0, tonHop: 0, banCai: 0, banHop: 0, thuong: 0, dtXepHang: 0 });
 
   const now = new Date();
   const thoiGian = now.toLocaleString('vi-VN', {
@@ -1126,19 +1244,19 @@ function taoFlexBanhTrungThu(ton, ban) {
   });
 
   const bodyContents = [
-    dongBangBanhTT('Siêu thị', 'Tồn C', 'Tồn H', 'Bán C', 'Bán H', 'Thưởng', false),
+    dongBangBanhTT('Siêu thị', 'Tồn C', 'Tồn H', 'Bán C', 'Bán H', 'Thưởng', 'DT X.Hạng', false),
     { type: 'separator', margin: 'sm' },
-    dongBangBanhTT('TỔNG TẤT CẢ', fmtSo(tong.tonCai), fmtSo(tong.tonHop), fmtSo(tong.banCai), fmtSo(tong.banHop), fmtSo(tong.thuong) + 'đ', true),
+    dongBangBanhTT('TỔNG TẤT CẢ', fmtSo(tong.tonCai), fmtSo(tong.tonHop), fmtSo(tong.banCai), fmtSo(tong.banHop), fmtSo(tong.thuong) + 'đ', fmtSo(tong.dtXepHang) + 'đ', true),
     { type: 'separator', margin: 'sm' },
   ];
 
   rows.forEach((r) => {
     bodyContents.push(
-      dongBangBanhTT(rutGonTen(r.ten, 18), fmtSo(r.tonCai), fmtSo(r.tonHop), fmtSo(r.banCai), fmtSo(r.banHop), fmtSo(r.thuong) + 'đ', false)
+      dongBangBanhTT(rutGonTen(r.ten, 18), fmtSo(r.tonCai), fmtSo(r.tonHop), fmtSo(r.banCai), fmtSo(r.banHop), fmtSo(r.thuong) + 'đ', fmtSo(r.dtXepHang) + 'đ', false)
     );
   });
 
-  const altText = `Bánh Trung Thu: Bán ${fmtSo(tong.banCai)} cái + ${fmtSo(tong.banHop)} hộp, Thưởng ${fmtSo(tong.thuong)}đ (${rows.length} siêu thị)`;
+  const altText = `Bánh Trung Thu: Bán ${fmtSo(tong.banCai)} cái + ${fmtSo(tong.banHop)} hộp, Thưởng ${fmtSo(tong.thuong)}đ, DT xếp hạng ${fmtSo(tong.dtXepHang)}đ (${rows.length} siêu thị)`;
 
   return {
     type: 'flex',
@@ -1150,7 +1268,7 @@ function taoFlexBanhTrungThu(ton, ban) {
         type: 'box', layout: 'vertical', backgroundColor: '#8B4513', paddingAll: '20px',
         contents: [
           { type: 'text', text: '🥮 BÁO CÁO BÁNH TRUNG THU', color: '#FFFFFF', weight: 'bold', size: 'lg' },
-          { type: 'text', text: `Đơn giá thưởng: Cái ${fmtSo(GIA_THUONG_CAI)}đ · Hộp ${fmtSo(GIA_THUONG_HOP)}đ`, color: '#F5E0C3', size: 'sm', margin: 'sm' },
+          { type: 'text', text: 'Thưởng theo 89 mã đã duyệt (Cái 1.000đ / Hộp 4.000đ), không tính hàng xuất KM', color: '#F5E0C3', size: 'xs', margin: 'sm', wrap: true },
           { type: 'text', text: `Cập nhật lúc ${thoiGian} · ${rows.length} siêu thị`, color: '#F5E0C3', size: 'xs', margin: 'sm' },
         ],
       },
@@ -1171,9 +1289,9 @@ async function generateBanhTrungThuReport() {
   ]);
 
   const ton = docTonBanhTT(rowsTon);
-  const ban = docBanBanhTT(rowsBan);
+  const { ban, doanhThuXepHang } = docBanBanhTT(rowsBan);
 
-  return taoFlexBanhTrungThu(ton, ban);
+  return taoFlexBanhTrungThu(ton, ban, doanhThuXepHang);
 }
 
 // ---------------------------------------------------------------------------
