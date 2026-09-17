@@ -1220,6 +1220,15 @@ function dongTieuDeBanhTT() {
   };
 }
 
+function dongBangGon(text, dam, nen) {
+  return {
+    type: 'box', layout: 'vertical', paddingAll: '4px', backgroundColor: nen,
+    contents: [
+      { type: 'text', text, size: 'xxs', wrap: false, weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
+    ],
+  };
+}
+
 function taoFlexBanhTrungThu(ton, ban) {
   const tatCaSieuThi = new Set([...Object.keys(ton), ...Object.keys(ban)]);
   const rongBan = () => ({ bttCai: 0, bttHop: 0, banhtuoi: 0, tra: 0, thuong: 0 });
@@ -1243,53 +1252,45 @@ function taoFlexBanhTrungThu(ton, ban) {
     timeZone: 'Asia/Ho_Chi_Minh',
   });
 
-  // Chia trang: 47 siêu thị x 6 cột có màu vẫn quá nặng cho 1 trang (đã kiểm chứng LINE trả 400).
-  // Chia carousel, mỗi trang ~18 siêu thị, TỔNG TẤT CẢ chỉ hiện ở trang đầu.
-  const SO_DONG_MOI_TRANG = 999;
-  const nhomTrang = [];
-  for (let i = 0; i < rows.length; i += SO_DONG_MOI_TRANG) {
-    nhomTrang.push(rows.slice(i, i + SO_DONG_MOI_TRANG));
-  }
-  if (nhomTrang.length === 0) nhomTrang.push([]);
+  // Mỗi dòng chỉ 1 text (thay vì 6 ô riêng) để giảm mạnh dung lượng JSON, vẫn giữ
+  // khung màu nền xen kẽ + tiêu đề nâu -> vẫn là bảng Flex có màu, không phải text thuần.
+  const pad = (s, len) => { s = String(s); return s.length >= len ? s.slice(0, len) : s + ' '.repeat(len - s.length); };
+  const padNum = (s, len) => { s = String(s); return s.length >= len ? s.slice(0, len) : ' '.repeat(len - s.length) + s; };
+  const dong = (ten, c, h, bt, tr, th) =>
+    pad(ten, 13) + padNum(c, 4) + padNum(h, 4) + padNum(bt, 5) + padNum(tr, 4) + padNum(th, 10);
 
-  const bubbles = nhomTrang.map((rowsTrang, idx) => {
-    const bodyContents = [dongTieuDeBanhTT()];
-    if (idx === 0) {
-      bodyContents.push(dongBangBanhTT('TỔNG TẤT CẢ', fmtSo(tong.bttCai), fmtSo(tong.bttHop), fmtSo(tong.banhtuoi), fmtSo(tong.tra), fmtSo(tong.thuong) + 'đ', true, '#FFE9B3'));
-    }
-    rowsTrang.forEach((r, i2) => {
-      const nen = i2 % 2 === 0 ? '#FFFFFF' : '#F7F2EC';
-      bodyContents.push(dongBangBanhTT(rutGonTen(r.ten, 14), fmtSo(r.ban.bttCai), fmtSo(r.ban.bttHop), fmtSo(r.ban.banhtuoi), fmtSo(r.ban.tra), fmtSo(r.thuong) + 'đ', false, nen));
-    });
+  const bodyContents = [
+    dongBangGon(dong('Siêu thị', 'Cái', 'Hộp', 'B.Tươi', 'Trà', 'Thưởng'), true, '#8B4513'),
+  ];
+  bodyContents[0].contents[0].color = '#FFFFFF';
 
-    return {
-      type: 'bubble',
-      size: 'giga',
-      header: {
-        type: 'box', layout: 'vertical', backgroundColor: '#8B4513', paddingAll: '20px',
-        contents: [
-          { type: 'text', text: '🥮 BÁO CÁO BÁNH TRUNG THU' + (nhomTrang.length > 1 ? ` (${idx + 1}/${nhomTrang.length})` : ''), color: '#FFFFFF', weight: 'bold', size: 'lg' },
-          { type: 'text', text: 'Thưởng theo mã đã duyệt (Cái 1.000đ / Hộp 4.000đ), không tính hàng xuất KM', color: '#F5E0C3', size: 'xs', margin: 'sm', wrap: true },
-          { type: 'text', text: `Cập nhật lúc ${thoiGian} · ${rows.length} siêu thị`, color: '#F5E0C3', size: 'xs', margin: 'sm' },
-        ],
-      },
-      body: {
-        type: 'box', layout: 'vertical', paddingAll: '8px', spacing: 'none',
-        contents: bodyContents,
-      },
-    };
+  bodyContents.push(dongBangGon(dong('TỔNG TẤT CẢ', fmtSo(tong.bttCai), fmtSo(tong.bttHop), fmtSo(tong.banhtuoi), fmtSo(tong.tra), fmtSo(tong.thuong) + 'đ'), true, '#FFE9B3'));
+
+  rows.forEach((r, idx) => {
+    const nen = idx % 2 === 0 ? '#FFFFFF' : '#F7F2EC';
+    bodyContents.push(dongBangGon(dong(rutGonTen(r.ten, 13), fmtSo(r.ban.bttCai), fmtSo(r.ban.bttHop), fmtSo(r.ban.banhtuoi), fmtSo(r.ban.tra), fmtSo(r.thuong) + 'đ'), false, nen));
   });
 
   const altText = `Bánh Trung Thu: Thưởng ${fmtSo(tong.thuong)}đ (${rows.length} siêu thị)`;
 
-  if (bubbles.length === 1) {
-    return { type: 'flex', altText: altText.slice(0, 400), contents: bubbles[0] };
-  }
-
   return {
     type: 'flex',
     altText: altText.slice(0, 400),
-    contents: { type: 'carousel', contents: bubbles.slice(0, 12) },
+    contents: {
+      type: 'bubble',
+      size: 'giga',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#8B4513', paddingAll: '16px',
+        contents: [
+          { type: 'text', text: '🥮 BÁO CÁO BÁNH TRUNG THU', color: '#FFFFFF', weight: 'bold', size: 'md' },
+          { type: 'text', text: `Cập nhật ${thoiGian} · ${rows.length} siêu thị`, color: '#F5E0C3', size: 'xxs', margin: 'sm' },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '4px', spacing: 'none',
+        contents: bodyContents,
+      },
+    },
   };
 }
 
