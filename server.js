@@ -1282,6 +1282,13 @@ async function generateBanhTrungThuReport() {
   const ton = docTonBanhTT(rowsTon);
   const { ban } = docBanBanhTT(rowsBan);
 
+  console.log('[DEBUG BanhTT] rowsTon.length=' + rowsTon.length + ', rowsBan.length=' + rowsBan.length);
+  console.log('[DEBUG BanhTT] header rowsBan[0]=' + JSON.stringify(rowsBan[0]));
+  console.log('[DEBUG BanhTT] sample rowsBan[1]=' + JSON.stringify(rowsBan[1]));
+  console.log('[DEBUG BanhTT] Object.keys(ton).length=' + Object.keys(ton).length);
+  console.log('[DEBUG BanhTT] Object.keys(ban).length=' + Object.keys(ban).length);
+  console.log('[DEBUG BanhTT] SKU_TRUNGTHU_MAP size=' + Object.keys(SKU_TRUNGTHU_MAP).length);
+
   return taoFlexBanhTrungThu(ton, ban);
 }
 
