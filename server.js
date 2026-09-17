@@ -1264,7 +1264,8 @@ function taoFlexBanhTrungThu(ton, ban) {
     const b = ban[st] || rongBan();
     rows.push({ ten: tenNganSieuThi(st), ban: b, thuong: b.thuong });
   }
-  rows.sort((a, b) => b.thuong - a.thuong);
+  rows.forEach((r) => { r.tongBanRa = r.ban.bttCai + r.ban.bttHop + r.ban.banhtuoi + r.ban.tra; });
+  rows.sort((a, b) => b.tongBanRa - a.tongBanRa);
 
   const tong = rows.reduce((acc, r) => ({
     bttCai: acc.bttCai + r.ban.bttCai, bttHop: acc.bttHop + r.ban.bttHop,
@@ -1272,7 +1273,8 @@ function taoFlexBanhTrungThu(ton, ban) {
     thuong: acc.thuong + r.thuong,
   }), { bttCai: 0, bttHop: 0, banhtuoi: 0, tra: 0, thuong: 0 });
 
-  const trungBinhCai = rows.length > 0 ? tong.bttCai / rows.length : 0;
+  const tongBanRaTatCa = tong.bttCai + tong.bttHop + tong.banhtuoi + tong.tra;
+  const trungBinh = rows.length > 0 ? tongBanRaTatCa / rows.length : 0;
 
   const now = new Date();
   const thoiGian = now.toLocaleString('vi-VN', {
@@ -1282,11 +1284,11 @@ function taoFlexBanhTrungThu(ton, ban) {
 
   const bodyContents = [dongTieuDeBanhTT()];
   bodyContents.push(dongBangBanhTT('TỔNG TẤT CẢ', fmtSo(tong.bttCai), fmtSo(tong.bttHop), fmtSo(tong.banhtuoi), fmtSo(tong.tra), true, '#FFE9B3', false));
-  bodyContents.push(dongTrungBinh(`Trung bình khu vực (Cái): ${trungBinhCai.toFixed(1)}/siêu thị — đỏ = dưới mức này`));
+  bodyContents.push(dongTrungBinh(`Trung bình khu vực (tổng 4 cột): ${trungBinh.toFixed(1)}/siêu thị — đỏ = dưới mức này`));
 
   rows.forEach((r, idx) => {
     const nen = idx % 2 === 0 ? '#FFFFFF' : '#F7F2EC';
-    const duoiTrungBinh = r.ban.bttCai < trungBinhCai;
+    const duoiTrungBinh = r.tongBanRa < trungBinh;
     bodyContents.push(dongBangBanhTT(rutGonTen(r.ten, 15), fmtSo(r.ban.bttCai), fmtSo(r.ban.bttHop), fmtSo(r.ban.banhtuoi), fmtSo(r.ban.tra), false, nen, duoiTrungBinh));
   });
 
