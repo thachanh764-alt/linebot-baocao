@@ -1337,14 +1337,15 @@ function soNgayPhanBiet(header, dataRows) {
 
 function nhanDangLoaiFile(header, dataRows) {
   const co = (ten) => header.includes(ten);
-  const nhomPhoBien = nhomHangPhoBien(header, dataRows || []);
 
-  // Đã bỏ nhận diện file "trà" (Mã Model + Tồn kho siêu thị / Tổng số lượng không kèm Bánh Trung Thu)
-  // vì tính năng "Báo cáo trà" đã tắt — chỉ còn nhận diện file Bánh Trung Thu ở 2 mẫu dưới đây.
-  if (co('Mã Model') && co('Tồn kho siêu thị') && nhomPhoBien === 'Bánh Trung Thu') {
+  // Nhận diện qua CỘT ĐẶC TRƯNG riêng của từng file (không phụ thuộc nhóm hàng phổ biến
+  // nữa, vì giờ anh có thể xuất file KHÔNG lọc theo nhóm hàng, đủ mọi ngành hàng).
+  // File "BC Tồn Theo Model": có cột "Mã sản phẩm cơ sở" chỉ file này mới có.
+  if (co('Mã Model') && co('Tồn kho siêu thị') && co('Mã sản phẩm cơ sở')) {
     return { loai: 'banhtt_ton', tenTab: GOOGLE_SHEET_TAB_BANHTT_TON };
   }
-  if (co('Mã Model') && co('Tổng số lượng') && !co('Tồn kho siêu thị') && nhomPhoBien === 'Bánh Trung Thu') {
+  // File "Doanh Thu Theo Model": có cột "SL xuất km" chỉ file này mới có.
+  if (co('Mã Model') && co('Tổng số lượng') && !co('Tồn kho siêu thị') && co('SL xuất km')) {
     return { loai: 'banhtt_ban', tenTab: GOOGLE_SHEET_TAB_BANHTT_DOANHTHU };
   }
   // Đã có: file "Giá Vốn" — nhận diện qua 2 cột đặc trưng chỉ file này mới có
