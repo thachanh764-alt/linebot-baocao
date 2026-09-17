@@ -2073,7 +2073,8 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         console.error('[webhook] Lỗi phân tích ảnh:', err);
         try {
           await client.replyMessage(event.replyToken, { type: 'text', text: `❌ Em xem ảnh này bị lỗi: ${err.message}` });
-        } catch (e2) { console.error('[webhook] Lỗi luôn cả khi reply lỗi:', e2.message); }
+        } catch (e2) { console.error('[webhook] Lỗi luôn cả khi reply lỗi:', e2.message);
+          console.error('[webhook] >>> CHI TIẾT LỖI LINE:', chiTietLoiLine(e2)); }
       }
       continue;
     }
@@ -2108,7 +2109,8 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           console.error('[webhook] Lỗi AI phân tích file:', err);
           try {
             await client.replyMessage(event.replyToken, { type: 'text', text: `❌ Em đọc file này bị lỗi: ${err.message}` });
-          } catch (e2) { console.error('[webhook] Lỗi luôn cả khi reply lỗi:', e2.message); }
+          } catch (e2) { console.error('[webhook] Lỗi luôn cả khi reply lỗi:', e2.message);
+          console.error('[webhook] >>> CHI TIẾT LỖI LINE:', chiTietLoiLine(e2)); }
         }
         continue;
       }
@@ -2135,6 +2137,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           await client.replyMessage(event.replyToken, baoCao);
         } catch (loiBaoCao) {
           console.error('[webhook] nạp file OK nhưng chưa tạo được báo cáo:', loiBaoCao.message);
+          console.error('[webhook] >>> CHI TIẾT LỖI LINE:', chiTietLoiLine(loiBaoCao));
           await client.replyMessage(event.replyToken, {
             type: 'text',
             text: `✅ Đã nạp ${ketQua.soDong} dòng vào tab "${ketQua.tenTab}".\n⚠️ Chưa tạo được báo cáo ngay: ${loiBaoCao.message}`,
@@ -2146,6 +2149,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           await client.replyMessage(event.replyToken, { type: 'text', text: `❌ Lỗi nạp file: ${err.message}` });
         } catch (replyErr) {
           console.error('[webhook] Lỗi luôn cả khi reply lỗi:', replyErr.message);
+          console.error('[webhook] >>> CHI TIẾT LỖI LINE:', chiTietLoiLine(replyErr));
         }
       }
       continue;
@@ -2191,7 +2195,8 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
       if (ketQuaLenhCu && ketQuaLenhCu.loi) {
         try {
           await client.replyMessage(event.replyToken, { type: 'text', text: `⚠️ Không tạo được báo cáo: ${ketQuaLenhCu.loi.message}` });
-        } catch (e2) { console.error('[webhook] Lỗi luôn cả khi reply lỗi:', e2.message); }
+        } catch (e2) { console.error('[webhook] Lỗi luôn cả khi reply lỗi:', e2.message);
+          console.error('[webhook] >>> CHI TIẾT LỖI LINE:', chiTietLoiLine(e2)); }
         continue;
       }
 
@@ -2223,7 +2228,8 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         console.error('[webhook] Lỗi phân tích câu hỏi:', err);
         try {
           await client.pushMessage(targetId, { type: 'text', text: `❌ Em gặp lỗi khi phân tích: ${err.message}` });
-        } catch (e2) { console.error('[webhook] Lỗi luôn cả khi push lỗi:', e2.message); }
+        } catch (e2) { console.error('[webhook] Lỗi luôn cả khi push lỗi:', e2.message);
+          console.error('[webhook] >>> CHI TIẾT LỖI LINE:', chiTietLoiLine(e2)); }
       }
       continue;
     }
@@ -2241,10 +2247,12 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         await client.replyMessage(event.replyToken, { type: 'text', text: `⚠️ Không tạo được báo cáo: ${err.message}` });
       } catch (replyErr) {
         console.error('[webhook] Reply lỗi thất bại, thử push:', replyErr.message);
+          console.error('[webhook] >>> CHI TIẾT LỖI LINE:', chiTietLoiLine(replyErr));
         try {
           await client.pushMessage(event.source.userId, { type: 'text', text: `⚠️ Không tạo được báo cáo: ${err.message}` });
         } catch (pushErr) {
           console.error('[webhook] Push fallback lỗi cũng thất bại:', pushErr.message);
+          console.error('[webhook] >>> CHI TIẾT LỖI LINE:', chiTietLoiLine(pushErr));
         }
       }
       continue;
@@ -2260,6 +2268,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           console.log('[webhook] Đã push thành công báo cáo "' + ketQuaLenhCuRieng.ten + '" (fallback)');
         } catch (pushErr) {
           console.error('[webhook] Push fallback cũng thất bại:', pushErr.message);
+          console.error('[webhook] >>> CHI TIẾT LỖI LINE:', chiTietLoiLine(pushErr));
           console.error('[webhook] Chi tiết lỗi LINE:', JSON.stringify(pushErr.originalError?.response?.data || pushErr.response?.data || pushErr));
         }
       }
@@ -2373,4 +2382,17 @@ async function handleSp1Dong(sheets, spreadsheetId) {
   });
 
   return message;
+}
+
+
+function chiTietLoiLine(err) {
+  try {
+    return JSON.stringify(
+      (err && err.originalError && err.originalError.response && err.originalError.response.data) ||
+      (err && err.response && err.response.data) ||
+      { message: err && err.message }
+    );
+  } catch (e) {
+    return String(err && err.message);
+  }
 }
