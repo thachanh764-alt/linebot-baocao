@@ -1220,11 +1220,28 @@ function dongTieuDeBanhTT() {
   };
 }
 
-function dongBangGon(text, dam, nen) {
+function dongBangBanhTT(label, bttCai, bttHop, banhtuoi, tra, dam, nen) {
   return {
-    type: 'box', layout: 'vertical', paddingAll: '4px', backgroundColor: nen,
+    type: 'box', layout: 'horizontal', paddingAll: '5px', backgroundColor: nen,
     contents: [
-      { type: 'text', text, size: 'xxs', wrap: false, weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
+      { type: 'text', text: label, size: 'xxs', flex: 6, wrap: false, weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
+      { type: 'text', text: bttCai, size: 'xxs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
+      { type: 'text', text: bttHop, size: 'xxs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
+      { type: 'text', text: banhtuoi, size: 'xxs', flex: 3, align: 'end', weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
+      { type: 'text', text: tra, size: 'xxs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
+    ],
+  };
+}
+
+function dongTieuDeBanhTT() {
+  return {
+    type: 'box', layout: 'horizontal', paddingAll: '6px', backgroundColor: '#8B4513',
+    contents: [
+      { type: 'text', text: 'Siêu thị', size: 'xxs', flex: 6, wrap: false, weight: 'bold', color: '#FFFFFF' },
+      { type: 'text', text: 'Cái', size: 'xxs', flex: 2, align: 'end', weight: 'bold', color: '#FFFFFF' },
+      { type: 'text', text: 'Hộp', size: 'xxs', flex: 2, align: 'end', weight: 'bold', color: '#FFFFFF' },
+      { type: 'text', text: 'B.Tươi', size: 'xxs', flex: 3, align: 'end', weight: 'bold', color: '#FFFFFF' },
+      { type: 'text', text: 'Trà', size: 'xxs', flex: 2, align: 'end', weight: 'bold', color: '#FFFFFF' },
     ],
   };
 }
@@ -1252,23 +1269,14 @@ function taoFlexBanhTrungThu(ton, ban) {
     timeZone: 'Asia/Ho_Chi_Minh',
   });
 
-  // Mỗi dòng chỉ 1 text (thay vì 6 ô riêng) để giảm mạnh dung lượng JSON, vẫn giữ
-  // khung màu nền xen kẽ + tiêu đề nâu -> vẫn là bảng Flex có màu, không phải text thuần.
-  const pad = (s, len) => { s = String(s); return s.length >= len ? s.slice(0, len) : s + ' '.repeat(len - s.length); };
-  const padNum = (s, len) => { s = String(s); return s.length >= len ? s.slice(0, len) : ' '.repeat(len - s.length) + s; };
-  const dong = (ten, c, h, bt, tr, th) =>
-    pad(ten, 13) + padNum(c, 4) + padNum(h, 4) + padNum(bt, 5) + padNum(tr, 4) + padNum(th, 10);
-
-  const bodyContents = [
-    dongBangGon(dong('Siêu thị', 'Cái', 'Hộp', 'B.Tươi', 'Trà', 'Thưởng'), true, '#8B4513'),
-  ];
-  bodyContents[0].contents[0].color = '#FFFFFF';
-
-  bodyContents.push(dongBangGon(dong('TỔNG TẤT CẢ', fmtSo(tong.bttCai), fmtSo(tong.bttHop), fmtSo(tong.banhtuoi), fmtSo(tong.tra), fmtSo(tong.thuong) + 'đ'), true, '#FFE9B3'));
+  // Bỏ cột Thưởng để giảm dung lượng, giữ cột thật (box riêng) cho thẳng hàng,
+  // vẫn sort theo thưởng nội bộ và có màu nền xen kẽ như bản 3 trang cũ.
+  const bodyContents = [dongTieuDeBanhTT()];
+  bodyContents.push(dongBangBanhTT('TỔNG TẤT CẢ', fmtSo(tong.bttCai), fmtSo(tong.bttHop), fmtSo(tong.banhtuoi), fmtSo(tong.tra), true, '#FFE9B3'));
 
   rows.forEach((r, idx) => {
     const nen = idx % 2 === 0 ? '#FFFFFF' : '#F7F2EC';
-    bodyContents.push(dongBangGon(dong(rutGonTen(r.ten, 13), fmtSo(r.ban.bttCai), fmtSo(r.ban.bttHop), fmtSo(r.ban.banhtuoi), fmtSo(r.ban.tra), fmtSo(r.thuong) + 'đ'), false, nen));
+    bodyContents.push(dongBangBanhTT(rutGonTen(r.ten, 15), fmtSo(r.ban.bttCai), fmtSo(r.ban.bttHop), fmtSo(r.ban.banhtuoi), fmtSo(r.ban.tra), false, nen));
   });
 
   const altText = `Bánh Trung Thu: Thưởng ${fmtSo(tong.thuong)}đ (${rows.length} siêu thị)`;
@@ -1287,7 +1295,7 @@ function taoFlexBanhTrungThu(ton, ban) {
         ],
       },
       body: {
-        type: 'box', layout: 'vertical', paddingAll: '4px', spacing: 'none',
+        type: 'box', layout: 'vertical', paddingAll: '0px', spacing: 'none',
         contents: bodyContents,
       },
     },
