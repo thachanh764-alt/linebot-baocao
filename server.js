@@ -1488,10 +1488,25 @@ async function napFileVaoSheet(fileName, buffer) {
     return { loai: nhanDang.loai, tenTab: nhanDang.tenTab, soDong: rowsGop.length };
   }
 
+  // Nếu là file Bánh Trung Thu (tồn hoặc bán), lọc trước theo đúng 89 mã đã duyệt
+  // để tránh nạp hàng chục nghìn dòng không liên quan vào Sheet, gây tràn bộ nhớ (OOM).
+  let dataRowsDaLoc = dataRows;
+  if (nhanDang.loai === 'banhtt_ton' || nhanDang.loai === 'banhtt_ban') {
+    const idxMaModelGoc = header.indexOf('Mã Model');
+    if (idxMaModelGoc !== -1) {
+      const soDongGoc = dataRowsDaLoc.length;
+      dataRowsDaLoc = dataRowsDaLoc.filter((row) => {
+        const ma = (row[idxMaModelGoc] || '').toString().trim();
+        return !!SKU_TRUNGTHU_MAP[ma];
+      });
+      console.log(`[napFileVaoSheet] Đã lọc file Bánh Trung Thu: ${soDongGoc} dòng gốc -> ${dataRowsDaLoc.length} dòng (đúng 89 mã đã duyệt)`);
+    }
+  }
+
   const destRows = await docTabThanhMangDong(sheets, nhanDang.tenTab);
   const destHeader = destRows[0];
 
-  const rowsToAppend = dataRows.map((row) =>
+  const rowsToAppend = dataRowsDaLoc.map((row) =>
     destHeader.map((tenCot) => {
       const idx = header.indexOf(tenCot);
       return idx === -1 ? '' : row[idx] ?? '';
