@@ -2015,7 +2015,6 @@ async function chayLenhCu(text) {
   text = (text || '').normalize('NFC');
   if (laTriggerNgay(text)) return { ten: 'ngày', ket: await generateDailyReport() };
   if (laTriggerBanhTT(text)) return { ten: 'Bánh Trung Thu', ket: await generateBanhTrungThuReport() };
-  if (laTriggerChiTietBanhTT(text)) return { ten: 'Chi tiết Bánh Trung Thu', ket: await generateChiTietBanhTT() };
   if (laTriggerLuyKe(text)) return { ten: 'Lũy Kế', ket: await generateLuyKeReport() };
   if (laTriggerGiaVon(text)) return { ten: 'Giá Vốn', ket: await generateGiaVonReport() };
   if (laTriggerHuyMmkk(text)) return { ten: 'MMKK Huỷ', ket: await generateHuyMmkkReport() };
@@ -2412,104 +2411,4 @@ function chiTietLoiLine(err) {
   } catch (e) {
     return String(err && err.message);
   }
-}
-
-
-// ================== CHI TIẾT BÁNH TRUNG THU (1 siêu thị cố định: 165 Huỳnh Hữu Nghĩa) ==================
-function laTriggerChiTietBanhTT(text) {
-  const t = (text || '').trim().toLowerCase();
-  return t === 'chi tiết bánh trung thu' || t === 'chi tiet banh trung thu';
-}
-
-async function generateChiTietBanhTT() {
-  const TEN_SIEU_THI_CO_DINH = '165'; // lọc theo "165 Huỳnh Hữu Nghĩa"
-  const sheets = getSheetsClient();
-  const rowsBan = await docTabThanhMangDong(sheets, GOOGLE_SHEET_TAB_BANHTT_DOANHTHU);
-  const header = rowsBan[0];
-  const colTenST = timCotTheoTen(header, 'Tên siêu thị');
-  const colTenSP = timCotTheoTen(header, 'Model');
-  const colDonVi = timCotTheoTen(header, 'Đơn vị');
-  const colSLOnline = timCotTheoTen(header, 'Số lượng Online');
-  const colSLOffline = timCotTheoTen(header, 'Số lượng Offline');
-  const colTongSL = timCotTheoTen(header, 'Tổng số lượng');
-  const colMaModel = timCotTheoTen(header, 'Mã Model');
-
-  const gopSanPham = {};
-  for (let i = 1; i < rowsBan.length; i++) {
-    const row = rowsBan[i];
-    if (!row) continue;
-    const st = row[colTenST];
-    if (!st || !st.includes(TEN_SIEU_THI_CO_DINH)) continue;
-    const maModel = (row[colMaModel] || '').toString().trim();
-    if (!SKU_TRUNGTHU_MAP[maModel]) continue;
-    const soLuongBanRa = colTongSL !== -1
-      ? (Number(row[colTongSL]) || 0)
-      : (Number(row[colSLOnline]) || 0) + (Number(row[colSLOffline]) || 0);
-    if (soLuongBanRa <= 0) continue;
-    const ten = row[colTenSP] || maModel;
-    const donvi = row[colDonVi] || (SKU_TRUNGTHU_MAP[maModel].loai === 'hop' ? 'Hộp' : 'Cái');
-    if (!gopSanPham[maModel]) gopSanPham[maModel] = { ten, donvi, soLuong: 0 };
-    gopSanPham[maModel].soLuong += soLuongBanRa;
-  }
-
-  const danhSach = Object.values(gopSanPham).sort((a, b) => b.soLuong - a.soLuong);
-  const tongSoLuong = danhSach.reduce((s, x) => s + x.soLuong, 0);
-
-  const now = new Date();
-  const thoiGian = now.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh' });
-
-  const danhSachContents = danhSach.map((sp) => ({
-    type: 'box', layout: 'horizontal', margin: 'md',
-    contents: [
-      { type: 'text', text: '🥮 ' + sp.ten, size: 'sm', flex: 8, wrap: true, color: '#333333' },
-      { type: 'text', text: sp.donvi, size: 'sm', flex: 2, align: 'center', color: '#333333' },
-      { type: 'text', text: fmtSo(sp.soLuong), size: 'sm', flex: 2, align: 'end', weight: 'bold', color: '#333333' },
-    ],
-  }));
-
-  if (danhSachContents.length === 0) {
-    danhSachContents.push({
-      type: 'text', text: 'Chưa có dữ liệu bán ra.', size: 'sm', color: '#999999', margin: 'md',
-    });
-  }
-
-  return {
-    type: 'flex',
-    altText: `Chi tiết Bánh Trung Thu 165 Huỳnh Hữu Nghĩa: Tổng ${fmtSo(tongSoLuong)}`,
-    contents: {
-      type: 'bubble',
-      size: 'giga',
-      header: {
-        type: 'box', layout: 'vertical', backgroundColor: '#A83244', paddingAll: '20px',
-        contents: [
-          { type: 'text', text: '🥮 BÁO CÁO BÁNH TRUNG THU 🥮', color: '#FFFFFF', weight: 'bold', size: 'lg', align: 'center' },
-          { type: 'text', text: `Cập nhật ${thoiGian}`, color: '#FADBD8', size: 'sm', margin: 'sm', align: 'center' },
-        ],
-      },
-      body: {
-        type: 'box', layout: 'vertical', paddingAll: '16px',
-        contents: [
-          {
-            type: 'box', layout: 'horizontal',
-            contents: [
-              { type: 'text', text: 'Model', size: 'sm', flex: 8, weight: 'bold', color: '#A83244' },
-              { type: 'text', text: 'ĐVT', size: 'sm', flex: 2, weight: 'bold', color: '#A83244', align: 'center' },
-              { type: 'text', text: 'SL', size: 'sm', flex: 2, weight: 'bold', color: '#A83244', align: 'end' },
-            ],
-          },
-          { type: 'separator', margin: 'md' },
-          ...danhSachContents,
-          { type: 'separator', margin: 'lg' },
-          {
-            type: 'box', layout: 'horizontal', margin: 'lg',
-            contents: [
-              { type: 'text', text: 'TỔNG SỐ LƯỢNG', size: 'md', flex: 8, weight: 'bold', color: '#A83244' },
-              { type: 'text', text: '', flex: 2 },
-              { type: 'text', text: fmtSo(tongSoLuong), size: 'md', flex: 2, align: 'end', weight: 'bold', color: '#A83244' },
-            ],
-          },
-        ],
-      },
-    },
-  };
 }
