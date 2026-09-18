@@ -1233,7 +1233,7 @@ function dongBangBanhTT(label, bttCai, bttHop, banhtuoi, tra, dam, nen) {
   return {
     type: 'box', layout: 'horizontal', paddingAll: '5px', backgroundColor: nen,
     contents: [
-      { type: 'text', text: label, size: 'xxs', flex: 6, wrap: false, weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
+      { type: 'text', text: label, size: 'xxs', flex: 10, wrap: true, weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
       { type: 'text', text: bttCai, size: 'xxs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
       { type: 'text', text: bttHop, size: 'xxs', flex: 2, align: 'end', weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
       { type: 'text', text: banhtuoi, size: 'xxs', flex: 3, align: 'end', weight: dam ? 'bold' : 'regular', color: dam ? '#8B4513' : '#333333' },
@@ -1246,7 +1246,7 @@ function dongTieuDeBanhTT() {
   return {
     type: 'box', layout: 'horizontal', paddingAll: '6px', backgroundColor: '#8B4513',
     contents: [
-      { type: 'text', text: 'Siêu thị', size: 'xxs', flex: 6, wrap: false, weight: 'bold', color: '#FFFFFF' },
+      { type: 'text', text: 'Siêu thị', size: 'xxs', flex: 10, wrap: true, weight: 'bold', color: '#FFFFFF' },
       { type: 'text', text: 'Cái', size: 'xxs', flex: 2, align: 'end', weight: 'bold', color: '#FFFFFF' },
       { type: 'text', text: 'Hộp', size: 'xxs', flex: 2, align: 'end', weight: 'bold', color: '#FFFFFF' },
       { type: 'text', text: 'B.Tươi', size: 'xxs', flex: 3, align: 'end', weight: 'bold', color: '#FFFFFF' },
@@ -1283,7 +1283,7 @@ function taoFlexBanhTrungThu(ton, ban) {
 
   rows.forEach((r, idx) => {
     const nen = idx % 2 === 0 ? '#FFFFFF' : '#F7F2EC';
-    bodyContents.push(dongBangBanhTT(rutGonTen(r.ten, 15), fmtSo(r.ban.bttCai), fmtSo(r.ban.bttHop), fmtSo(r.ban.banhtuoi), fmtSo(r.ban.tra), false, nen));
+    bodyContents.push(dongBangBanhTT(r.ten, fmtSo(r.ban.bttCai), fmtSo(r.ban.bttHop), fmtSo(r.ban.banhtuoi), fmtSo(r.ban.tra), false, nen));
   });
 
   const altText = `Bánh Trung Thu: Thưởng ${fmtSo(tong.thuong)}đ (${rows.length} siêu thị)`;
