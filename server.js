@@ -357,42 +357,61 @@ function phanTichThamSo(text) {
   return { tuan: mTuan ? `T${mTuan[1]}` : null, ngay };
 }
 
-function mauPhanTram(p) {
-  if (p >= 100) return '#0B8A3E'; // đạt / vượt MT
-  if (p >= 90) return '#E08A00'; // gần đạt
+function mauPhanTram(p, chuan = 100) {
+  if (p >= chuan) return '#0B8A3E'; // đạt / đúng tiến độ
+  if (p >= chuan * 0.9) return '#E08A00'; // gần đạt
   return '#D0312D'; // thiếu
 }
 
-// Dòng bảng viết gọn để 1 thẻ chứa đủ ~50 siêu thị (LINE giới hạn dung lượng thẻ)
-function dongBangDtNH(stt, ten, mt, dt, p, chan) {
+// 1 ô số trong bảng (viết gọn để 1 thẻ chứa đủ ~50 siêu thị — LINE giới hạn dung lượng thẻ)
+// Dòng: Siêu thị | NGÀY: DT · MT · % | TUẦN: DT LK · MT · %
+// Viết thật gọn (không flex/align cho ô số) vì LINE giới hạn 1 thẻ tối đa 30KB mà bảng ~50 siêu thị.
+// Ô số mặc định flex 1 (cột đều nhau), tên siêu thị flex 3.
+function dongBang2(ten, x, chuanTuan, chan) {
+  const coMT = x.m2 > 0;
+  const so = (text) => ({ type: 'text', text, size: 'xxs' });
+  const pct = (p, chuan) => (coMT ? { type: 'text', text: fmtSoPct(p), size: 'xxs', color: mauPhanTram(p, chuan) } : so('–'));
   const o = {
-    type: 'box', layout: 'horizontal', paddingAll: '3px',
+    type: 'box', layout: 'horizontal',
     contents: [
-      { type: 'text', text: String(stt), size: 'xxs', color: '#888888', flex: 1 },
-      { type: 'text', text: rutGonTen(ten, 22), size: 'xxs', flex: 7 },
-      { type: 'text', text: fmtTrieu(mt), size: 'xxs', color: '#555555', flex: 3, align: 'end' },
-      { type: 'text', text: fmtTrieu(dt), size: 'xxs', flex: 3, align: 'end', weight: 'bold' },
-      { type: 'text', text: fmtPhanTram(p), size: 'xxs', color: mauPhanTram(p), flex: 3, align: 'end', weight: 'bold' },
+      { type: 'text', text: rutGonTen(ten, 18), size: 'xxs', flex: 3 },
+      so(fmtTrieu(x.dtNgay)),
+      so(coMT ? fmtTrieu(x.mtNgay) : '–'),
+      pct(x.pNgay, 100),
+      { type: 'separator' },
+      so(fmtTrieu(x.dtLk)),
+      so(coMT ? fmtTrieu(x.m2) : '–'),
+      pct(x.pTuan, chuanTuan),
     ],
   };
   if (chan) o.backgroundColor = '#F3F7F5';
   return o;
 }
 
-function dongTieuDeBang(nhanMT) {
-  const c = (text, flex, end) => ({ type: 'text', text, size: 'xxs', color: '#0B6E35', flex, weight: 'bold', wrap: true, ...(end ? { align: 'end' } : {}) });
-  return {
-    type: 'box', layout: 'horizontal', paddingAll: '3px', margin: 'md',
-    contents: [c('#', 1), c('Siêu thị', 7), c(nhanMT, 3, true), c('DT hiện tại', 3, true), c('% đạt', 3, true)],
-  };
+function fmtSoPct(p) {
+  return (Math.round(p * 10) / 10).toFixed(1).replace('.', ',');
 }
 
-function oTong(nhan, giaTri, mau) {
+function tieuDeBang2(nhanNgay) {
+  const c = (text, flex) => ({ type: 'text', text, size: 'xxs', color: '#0B6E35', flex: flex || 1, weight: 'bold' });
   return {
-    type: 'box', layout: 'vertical', flex: 1, backgroundColor: '#F2F8F4', cornerRadius: 'md', paddingAll: '8px',
+    type: 'box', layout: 'vertical', margin: 'md', backgroundColor: '#E6F4EC', cornerRadius: 'sm', paddingAll: '4px',
     contents: [
-      { type: 'text', text: nhan, size: 'xxs', color: '#777777' },
-      { type: 'text', text: giaTri, size: 'md', weight: 'bold', color: mau || '#1a1a1a' },
+      {
+        type: 'box', layout: 'horizontal', contents: [
+          { type: 'filler', flex: 3 },
+          { type: 'text', text: nhanNgay, size: 'xxs', color: '#0B6E35', weight: 'bold', align: 'center', flex: 3 },
+          { type: 'separator' },
+          { type: 'text', text: 'TUẦN', size: 'xxs', color: '#0B6E35', weight: 'bold', align: 'center', flex: 3 },
+        ],
+      },
+      {
+        type: 'box', layout: 'horizontal', margin: 'xs', contents: [
+          c('Siêu thị', 3), c('DT'), c('MT'), c('%'),
+          { type: 'separator' },
+          c('DT LK'), c('MT'), c('%'),
+        ],
+      },
     ],
   };
 }
@@ -459,85 +478,89 @@ async function generateDtNganhHangReport(text) {
     ngayTinh = (d) => d.ngay === ganNhat;
   }
 
-  // Cộng DT theo siêu thị
-  const stCoMucTieu = new Set(tuanChon.mucTieu.map((m) => m.maST));
-  const dtTheoST = new Map();
-  const stKhongMT = new Map();
-  let dtNgayCuoi = 0;
+  // Cộng DT theo siêu thị: luỹ kế tuần + riêng ngày đang xem
+  const stCoMucTieu = new Map(tuanChon.mucTieu.map((m) => [m.maST, m]));
+  const dtLkST = new Map();
+  const dtNgayST = new Map();
+  const tenST = new Map();
   for (const d of dtTuan) {
     if (!ngayTinh(d)) continue;
-    if (!stCoMucTieu.has(d.maST)) {
-      // Siêu thị chưa có mục tiêu (shop mới): vẫn hiện DT, không tính %
-      const cu = stKhongMT.get(d.maST) || { ten: d.ten, dt: 0 };
-      cu.dt += d.dt;
-      stKhongMT.set(d.maST, cu);
-      continue;
-    }
-    dtTheoST.set(d.maST, (dtTheoST.get(d.maST) || 0) + d.dt);
-    if (d.ngay === denNgay) dtNgayCuoi += d.dt;
+    dtLkST.set(d.maST, (dtLkST.get(d.maST) || 0) + d.dt);
+    if (d.ngay === denNgay) dtNgayST.set(d.maST, (dtNgayST.get(d.maST) || 0) + d.dt);
+    if (!tenST.has(d.maST)) tenST.set(d.maST, d.ten);
   }
 
-  // Mục tiêu chia theo ngày: MT 1 ngày = M2 tuần ÷ 7 ; MT luỹ kế = MT ngày × số ngày đã qua
+  // MT NGÀY = M2 tuần ÷ 7 ; MT TUẦN = M2 cả tuần
   const soNgay = xemTruoc ? 1 : Math.min(7, soNgayGiua(tuanChon.tuNgay, denNgay) + 1);
+  const chuanTuan = (soNgay / 7) * 100; // % tuần cần có tới hôm nay để kịp tiến độ
+  const lamDong = (maST, ten, m2) => {
+    const dtNgay = (dtNgayST.get(maST) || 0) / 1e6;
+    const dtLk = (dtLkST.get(maST) || 0) / 1e6;
+    const mtNgay = m2 / 7;
+    return {
+      ten, m2, mtNgay, dtNgay, dtLk,
+      pNgay: mtNgay > 0 ? (dtNgay / mtNgay) * 100 : 0,
+      pTuan: m2 > 0 ? (dtLk / m2) * 100 : 0,
+    };
+  };
   const bang = tuanChon.mucTieu
-    .map((mt) => {
-      const dtTr = (dtTheoST.get(mt.maST) || 0) / 1e6;
-      const mtLk = (mt.m2 / 7) * soNgay;
-      return { ...mt, mtLk, dt: dtTr, p: mtLk > 0 ? (dtTr / mtLk) * 100 : 0 };
-    })
-    .sort((a, b) => b.p - a.p);
+    .map((mt) => lamDong(mt.maST, mt.ten, mt.m2))
+    .sort((a, b) => b.pTuan - a.pTuan || b.pNgay - a.pNgay);
+  const dsKhongMT = [...dtLkST.keys()]
+    .filter((ma) => !stCoMucTieu.has(ma))
+    .map((ma) => lamDong(ma, tenST.get(ma), 0))
+    .sort((a, b) => b.dtLk - a.dtLk);
 
-  const tongM2 = bang.reduce((s, x) => s + x.m2, 0);
-  const tongMT = bang.reduce((s, x) => s + x.mtLk, 0);
-  const tongDT = bang.reduce((s, x) => s + x.dt, 0);
-  const tongP = tongMT > 0 ? (tongDT / tongMT) * 100 : 0;
-  const pTuan = tongM2 > 0 ? (tongDT / tongM2) * 100 : 0;
-  const soDat = bang.filter((x) => x.p >= 100).length;
-  const nhanMT = soNgay === 7 ? 'MT M2' : `MT M2 ${soNgay} ngày`;
+  const tong = (arr, k) => arr.reduce((s, x) => s + x[k], 0);
+  const tongM2 = tong(bang, 'm2');
+  const tongMtNgay = tongM2 / 7;
+  const tongDtNgay = tong(bang, 'dtNgay');
+  const tongDtLk = tong(bang, 'dtLk');
+  const pNgayKV = tongMtNgay > 0 ? (tongDtNgay / tongMtNgay) * 100 : 0;
+  const pTuanKV = tongM2 > 0 ? (tongDtLk / tongM2) * 100 : 0;
+  const datNgay = bang.filter((x) => x.pNgay >= 100).length;
+  const kipTuan = bang.filter((x) => x.pTuan >= chuanTuan).length;
+  const nhanNgay = `NGÀY ${fmtNgay(denNgay)}`;
+
+  const oKV = (nhan, dt, mt, p, chuan) => ({
+    type: 'box', layout: 'vertical', flex: 1, backgroundColor: '#F2F8F4', cornerRadius: 'md', paddingAll: '8px',
+    contents: [
+      { type: 'text', text: nhan, size: 'xxs', color: '#777777' },
+      {
+        type: 'box', layout: 'baseline', spacing: 'sm', contents: [
+          { type: 'text', text: fmtPhanTram(p), size: 'lg', weight: 'bold', color: mauPhanTram(p, chuan), flex: 0 },
+          { type: 'text', text: `${fmtTrieu(dt)} / ${fmtTrieu(mt)}`, size: 'xxs', color: '#555555' },
+        ],
+      },
+    ],
+  });
 
   const body = [
     {
       type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
-        oTong(`MT M2 ${soNgay}/7 ngày`, fmtTrieu(tongMT)),
-        oTong('DT luỹ kế', fmtTrieu(tongDT)),
-        oTong('% đạt KV', fmtPhanTram(tongP), mauPhanTram(tongP)),
+        oKV(`KV · ${nhanNgay}`, tongDtNgay, tongMtNgay, pNgayKV, 100),
+        oKV(`KV · TUẦN (ngày ${soNgay}/7)`, tongDtLk, tongM2, pTuanKV, chuanTuan),
       ],
     },
     {
       type: 'text', wrap: true, size: 'xxs', color: '#555555', margin: 'md',
-      text: (xemTruoc
-        ? `⚠️ XEM TRƯỚC: tuần bắt đầu ${fmtNgay(tuanChon.tuNgay)}, đang lấy tạm DT ngày ${fmtNgay(denNgay)} so với MT 1 ngày.\n`
-        : `📅 Ngày ${soNgay}/7 (${fmtNgay(tuanChon.tuNgay)}→${fmtNgay(denNgay)}) · DT ngày ${fmtNgay(denNgay)}: ${fmtTrieu(dtNgayCuoi / 1e6)} tr\n`) +
-        `🎯 MT M2 cả tuần ${fmtTrieu(tongM2)} tr · đã đạt ${fmtPhanTram(pTuan)} · ${soDat}/${bang.length} ST đạt MT`,
+      text: (xemTruoc ? `⚠️ XEM TRƯỚC: tuần bắt đầu ${fmtNgay(tuanChon.tuNgay)}, đang lấy tạm DT ngày ${fmtNgay(denNgay)}.\n` : '') +
+        `✅ Đạt MT ngày: ${datNgay}/${bang.length} ST · Kịp tiến độ tuần (≥${fmtPhanTram(chuanTuan)}): ${kipTuan}/${bang.length} ST`,
     },
     {
       type: 'text', wrap: true, size: 'xxs', color: '#999999', margin: 'xs',
-      text: `MT M2 ngày = M2 tuần ÷ 7 · 🟢 ≥100% · 🟠 90–99% · 🔴 <90% · ĐVT: triệu`,
+      text: `MT ngày = M2 ÷ 7 · MT tuần = M2 · % tuần 🟢 khi ≥ ${fmtPhanTram(chuanTuan)} (tiến độ ${soNgay}/7) · 🟠 gần đạt · 🔴 thiếu · ĐVT: triệu`,
     },
-    { type: 'separator', margin: 'md' },
-    dongTieuDeBang(nhanMT),
-    { type: 'box', layout: 'vertical', contents: bang.map((x, k) => dongBangDtNH(k + 1, x.ten, x.mtLk, x.dt, x.p, k % 2 === 1)) },
+    tieuDeBang2(nhanNgay),
+    { type: 'box', layout: 'vertical', spacing: 'xs', contents: bang.map((x, k) => dongBang2(x.ten, x, chuanTuan, k % 2 === 1)) },
   ];
 
-  // Thêm nhóm siêu thị chưa có mục tiêu ở cuối bảng (chỉ hiện DT)
-  const dsKhongMT = [...stKhongMT.values()].map((x) => ({ ten: x.ten, dt: x.dt / 1e6 })).sort((a, b) => b.dt - a.dt);
   if (dsKhongMT.length > 0) {
-    const tongKhongMT = dsKhongMT.reduce((s, x) => s + x.dt, 0);
-    body.push({ type: 'separator', margin: 'md' });
     body.push({
       type: 'text', size: 'xxs', color: '#0B6E35', weight: 'bold', margin: 'md', wrap: true,
-      text: `🆕 SIÊU THỊ CHƯA CÓ MỤC TIÊU (${dsKhongMT.length} ST · ${fmtTrieu(tongKhongMT)} tr) · tổng DT cả KV ${fmtTrieu(tongDT + tongKhongMT)} tr`,
+      text: `🆕 SIÊU THỊ CHƯA CÓ MỤC TIÊU (${dsKhongMT.length} ST) · tổng DT LK cả KV ${fmtTrieu(tongDtLk + tong(dsKhongMT, 'dtLk'))} tr`,
     });
-    body.push({
-      type: 'box', layout: 'vertical',
-      contents: dsKhongMT.map((x, k) => {
-        const o = dongBangDtNH('–', x.ten, 0, x.dt, 0, k % 2 === 1);
-        o.contents[2].text = '–';
-        o.contents[4].text = '–';
-        o.contents[4].color = '#888888';
-        return o;
-      }),
-    });
+    body.push({ type: 'box', layout: 'vertical', spacing: 'xs', contents: dsKhongMT.map((x, k) => dongBang2(x.ten, x, chuanTuan, k % 2 === 1)) });
   }
 
   const contents = {
@@ -550,7 +573,7 @@ async function generateDtNganhHangReport(text) {
         { type: 'text', text: tuanChon.ten || `NH ${[...tuanChon.maNH].join(', ')}`, color: '#E3F5EA', size: 'xxs', wrap: true, margin: 'xs' },
       ],
     },
-    body: { type: 'box', layout: 'vertical', paddingAll: '12px', contents: body },
+    body: { type: 'box', layout: 'vertical', paddingAll: '10px', contents: body },
     footer: {
       type: 'box', layout: 'vertical', paddingAll: '8px',
       contents: [{ type: 'text', text: DONG_BAN_QUYEN, size: 'xxs', color: '#999999', wrap: true, align: 'center' }],
@@ -558,7 +581,7 @@ async function generateDtNganhHangReport(text) {
   };
   return {
     type: 'flex',
-    altText: `DT Ngành Hàng tuần ${tuanChon.tuan.slice(1)}: KV đạt ${fmtPhanTram(tongP)} MT M2 đến ${fmtNgay(denNgay)}`,
+    altText: `DT Ngành Hàng ${fmtNgay(denNgay)}: ngày ${fmtPhanTram(pNgayKV)} · tuần ${fmtPhanTram(pTuanKV)} M2`,
     contents,
   };
 }
