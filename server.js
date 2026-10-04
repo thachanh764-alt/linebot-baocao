@@ -513,8 +513,9 @@ async function generateDtNganhHangReport(text) {
   const tong = (arr, k) => arr.reduce((s, x) => s + x[k], 0);
   const tongM2 = tong(bang, 'm2');
   const tongMtNgay = tongM2 / 7;
-  const tongDtNgay = tong(bang, 'dtNgay');
-  const tongDtLk = tong(bang, 'dtLk');
+  // DT tổng KV cộng luôn shop mới (chưa có mục tiêu); MT chỉ có ở 43 ST
+  const tongDtNgay = tong(bang, 'dtNgay') + tong(dsKhongMT, 'dtNgay');
+  const tongDtLk = tong(bang, 'dtLk') + tong(dsKhongMT, 'dtLk');
   const pNgayKV = tongMtNgay > 0 ? (tongDtNgay / tongMtNgay) * 100 : 0;
   const pTuanKV = tongM2 > 0 ? (tongDtLk / tongM2) * 100 : 0;
   const nhanNgay = `NGÀY ${fmtNgay(denNgay)}`;
@@ -540,16 +541,9 @@ async function generateDtNganhHangReport(text) {
       ],
     },
     tieuDeBang2(nhanNgay, `TUẦN ${soNgay}/7`),
-    { type: 'box', layout: 'vertical', spacing: 'xs', contents: bang.map((x, k) => dongBang2(x.ten, x, chuanTuan, k % 2 === 1)) },
+    // Shop mới chưa có mục tiêu gộp chung vào cuối bảng (chỉ có DT, cột MT/% để –)
+    { type: 'box', layout: 'vertical', spacing: 'xs', contents: [...bang, ...dsKhongMT].map((x, k) => dongBang2(x.ten, x, chuanTuan, k % 2 === 1)) },
   ];
-
-  if (dsKhongMT.length > 0) {
-    body.push({
-      type: 'text', size: 'xxs', color: '#0B6E35', weight: 'bold', margin: 'md', wrap: true,
-      text: `🆕 SIÊU THỊ CHƯA CÓ MỤC TIÊU (${dsKhongMT.length} ST) · tổng DT LK cả KV ${fmtTrieu(tongDtLk + tong(dsKhongMT, 'dtLk'))} tr`,
-    });
-    body.push({ type: 'box', layout: 'vertical', spacing: 'xs', contents: dsKhongMT.map((x, k) => dongBang2(x.ten, x, chuanTuan, k % 2 === 1)) });
-  }
 
   const contents = {
     type: 'bubble', size: 'giga',
