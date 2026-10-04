@@ -462,9 +462,17 @@ async function generateDtNganhHangReport(text) {
   // Cộng DT theo siêu thị
   const stCoMucTieu = new Set(tuanChon.mucTieu.map((m) => m.maST));
   const dtTheoST = new Map();
+  const stKhongMT = new Map();
   let dtNgayCuoi = 0;
   for (const d of dtTuan) {
-    if (!ngayTinh(d) || !stCoMucTieu.has(d.maST)) continue;
+    if (!ngayTinh(d)) continue;
+    if (!stCoMucTieu.has(d.maST)) {
+      // Siêu thị chưa có mục tiêu (shop mới): vẫn hiện DT, không tính %
+      const cu = stKhongMT.get(d.maST) || { ten: d.ten, dt: 0 };
+      cu.dt += d.dt;
+      stKhongMT.set(d.maST, cu);
+      continue;
+    }
     dtTheoST.set(d.maST, (dtTheoST.get(d.maST) || 0) + d.dt);
     if (d.ngay === denNgay) dtNgayCuoi += d.dt;
   }
@@ -510,6 +518,27 @@ async function generateDtNganhHangReport(text) {
     dongTieuDeBang(nhanMT),
     { type: 'box', layout: 'vertical', contents: bang.map((x, k) => dongBangDtNH(k + 1, x.ten, x.mtLk, x.dt, x.p, k % 2 === 1)) },
   ];
+
+  // Thêm nhóm siêu thị chưa có mục tiêu ở cuối bảng (chỉ hiện DT)
+  const dsKhongMT = [...stKhongMT.values()].map((x) => ({ ten: x.ten, dt: x.dt / 1e6 })).sort((a, b) => b.dt - a.dt);
+  if (dsKhongMT.length > 0) {
+    const tongKhongMT = dsKhongMT.reduce((s, x) => s + x.dt, 0);
+    body.push({ type: 'separator', margin: 'md' });
+    body.push({
+      type: 'text', size: 'xxs', color: '#0B6E35', weight: 'bold', margin: 'md', wrap: true,
+      text: `🆕 SIÊU THỊ CHƯA CÓ MỤC TIÊU (${dsKhongMT.length} ST · ${fmtTrieu(tongKhongMT)} tr) · tổng DT cả KV ${fmtTrieu(tongDT + tongKhongMT)} tr`,
+    });
+    body.push({
+      type: 'box', layout: 'vertical',
+      contents: dsKhongMT.map((x, k) => {
+        const o = dongBangDtNH('–', x.ten, 0, x.dt, 0, k % 2 === 1);
+        o.contents[2].text = '–';
+        o.contents[4].text = '–';
+        o.contents[4].color = '#888888';
+        return o;
+      }),
+    });
+  }
 
   const contents = {
     type: 'bubble', size: 'giga',
