@@ -51,7 +51,6 @@ const TAB_DT_NGAY = process.env.GOOGLE_SHEET_TAB_DT_NGANHHANG_NGAY || 'DT_NGANHH
 const HEADER_MUCTIEU = ['Tuần', 'Từ ngày', 'Đến ngày', 'Tên thi đua', 'Mã ngành hàng', 'Mã siêu thị', 'Tên siêu thị', 'MT M2 (triệu)'];
 const HEADER_DT_NGAY = ['Ngày', 'Mã siêu thị', 'Tên siêu thị', 'Mã ngành hàng', 'Ngành hàng', 'Doanh thu'];
 
-const DONG_BAN_QUYEN = 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh - 197042';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 // Muốn tiết kiệm chi phí thì đổi thành: 'claude-haiku-4-5-20251001'
@@ -563,10 +562,6 @@ async function generateDtNganhHangReport(text) {
       ],
     },
     body: { type: 'box', layout: 'vertical', paddingAll: '10px', contents: body },
-    footer: {
-      type: 'box', layout: 'vertical', paddingAll: '8px',
-      contents: [{ type: 'text', text: DONG_BAN_QUYEN, size: 'xxs', color: '#999999', wrap: true, align: 'center' }],
-    },
   };
   return {
     type: 'flex',
