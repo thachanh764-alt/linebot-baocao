@@ -357,36 +357,33 @@ function phanTichThamSo(text) {
   return { tuan: mTuan ? `T${mTuan[1]}` : null, ngay };
 }
 
-function mauPhanTram(p, tienDoChuan) {
-  if (p >= 100) return '#0B8A3E'; // đã đạt M2
-  if (p >= tienDoChuan) return '#E08A00'; // đúng/vượt tiến độ ngày
-  return '#D0312D'; // chậm tiến độ
+function mauPhanTram(p) {
+  if (p >= 100) return '#0B8A3E'; // đạt / vượt MT
+  if (p >= 90) return '#E08A00'; // gần đạt
+  return '#D0312D'; // thiếu
 }
 
-function dongBangDtNH(stt, ten, mt, dt, p, tienDoChuan, nen) {
-  return {
-    type: 'box', layout: 'horizontal', paddingTop: '5px', paddingBottom: '5px', paddingStart: '6px', paddingEnd: '6px',
-    backgroundColor: nen, cornerRadius: 'sm',
+// Dòng bảng viết gọn để 1 thẻ chứa đủ ~50 siêu thị (LINE giới hạn dung lượng thẻ)
+function dongBangDtNH(stt, ten, mt, dt, p, chan) {
+  const o = {
+    type: 'box', layout: 'horizontal', paddingAll: '3px',
     contents: [
-      { type: 'text', text: String(stt), size: 'xxs', color: '#888888', flex: 1, gravity: 'center' },
-      { type: 'text', text: rutGonTen(ten, 22), size: 'xxs', color: '#1a1a1a', flex: 6, gravity: 'center', wrap: true },
-      { type: 'text', text: fmtTrieu(mt), size: 'xxs', color: '#555555', flex: 3, align: 'end', gravity: 'center' },
-      { type: 'text', text: fmtTrieu(dt), size: 'xxs', color: '#1a1a1a', flex: 3, align: 'end', gravity: 'center', weight: 'bold' },
-      { type: 'text', text: fmtPhanTram(p), size: 'xxs', color: mauPhanTram(p, tienDoChuan), flex: 3, align: 'end', gravity: 'center', weight: 'bold' },
+      { type: 'text', text: String(stt), size: 'xxs', color: '#888888', flex: 1 },
+      { type: 'text', text: rutGonTen(ten, 22), size: 'xxs', flex: 7 },
+      { type: 'text', text: fmtTrieu(mt), size: 'xxs', color: '#555555', flex: 3, align: 'end' },
+      { type: 'text', text: fmtTrieu(dt), size: 'xxs', flex: 3, align: 'end', weight: 'bold' },
+      { type: 'text', text: fmtPhanTram(p), size: 'xxs', color: mauPhanTram(p), flex: 3, align: 'end', weight: 'bold' },
     ],
   };
+  if (chan) o.backgroundColor = '#F3F7F5';
+  return o;
 }
 
-function dongTieuDeBang() {
+function dongTieuDeBang(nhanMT) {
+  const c = (text, flex, end) => ({ type: 'text', text, size: 'xxs', color: '#0B6E35', flex, weight: 'bold', wrap: true, ...(end ? { align: 'end' } : {}) });
   return {
-    type: 'box', layout: 'horizontal', paddingStart: '6px', paddingEnd: '6px', paddingBottom: '4px',
-    contents: [
-      { type: 'text', text: '#', size: 'xxs', color: '#0B6E35', flex: 1, weight: 'bold' },
-      { type: 'text', text: 'Siêu thị', size: 'xxs', color: '#0B6E35', flex: 6, weight: 'bold' },
-      { type: 'text', text: 'MT M2', size: 'xxs', color: '#0B6E35', flex: 3, align: 'end', weight: 'bold' },
-      { type: 'text', text: 'DT hiện tại', size: 'xxs', color: '#0B6E35', flex: 3, align: 'end', weight: 'bold' },
-      { type: 'text', text: '% đạt', size: 'xxs', color: '#0B6E35', flex: 3, align: 'end', weight: 'bold' },
-    ],
+    type: 'box', layout: 'horizontal', paddingAll: '3px', margin: 'md',
+    contents: [c('#', 1), c('Siêu thị', 7), c(nhanMT, 3, true), c('DT hiện tại', 3, true), c('% đạt', 3, true)],
   };
 }
 
@@ -472,78 +469,67 @@ async function generateDtNganhHangReport(text) {
     if (d.ngay === denNgay) dtNgayCuoi += d.dt;
   }
 
+  // Mục tiêu chia theo ngày: MT 1 ngày = M2 tuần ÷ 7 ; MT luỹ kế = MT ngày × số ngày đã qua
+  const soNgay = xemTruoc ? 1 : Math.min(7, soNgayGiua(tuanChon.tuNgay, denNgay) + 1);
   const bang = tuanChon.mucTieu
     .map((mt) => {
       const dtTr = (dtTheoST.get(mt.maST) || 0) / 1e6;
-      return { ...mt, dt: dtTr, p: mt.m2 > 0 ? (dtTr / mt.m2) * 100 : 0 };
+      const mtLk = (mt.m2 / 7) * soNgay;
+      return { ...mt, mtLk, dt: dtTr, p: mtLk > 0 ? (dtTr / mtLk) * 100 : 0 };
     })
     .sort((a, b) => b.p - a.p);
 
-  const tongMT = bang.reduce((s, x) => s + x.m2, 0);
+  const tongM2 = bang.reduce((s, x) => s + x.m2, 0);
+  const tongMT = bang.reduce((s, x) => s + x.mtLk, 0);
   const tongDT = bang.reduce((s, x) => s + x.dt, 0);
   const tongP = tongMT > 0 ? (tongDT / tongMT) * 100 : 0;
+  const pTuan = tongM2 > 0 ? (tongDT / tongM2) * 100 : 0;
   const soDat = bang.filter((x) => x.p >= 100).length;
-  const ngayThu = xemTruoc ? 0 : Math.min(7, soNgayGiua(tuanChon.tuNgay, denNgay) + 1);
-  const tienDoChuan = (ngayThu / 7) * 100;
+  const nhanMT = soNgay === 7 ? 'MT M2' : `MT M2 ${soNgay} ngày`;
 
-  // ---- Dựng Flex: chia bảng thành nhiều thẻ, mỗi thẻ tối đa 25 dòng ----
-  const MOI_THE = 25;
-  const cacThe = [];
-  for (let i = 0; i < bang.length; i += MOI_THE) {
-    const phan = bang.slice(i, i + MOI_THE);
-    const theDau = i === 0;
-    const body = [];
+  const body = [
+    {
+      type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+        oTong(`MT M2 ${soNgay}/7 ngày`, fmtTrieu(tongMT)),
+        oTong('DT luỹ kế', fmtTrieu(tongDT)),
+        oTong('% đạt KV', fmtPhanTram(tongP), mauPhanTram(tongP)),
+      ],
+    },
+    {
+      type: 'text', wrap: true, size: 'xxs', color: '#555555', margin: 'md',
+      text: (xemTruoc
+        ? `⚠️ XEM TRƯỚC: tuần bắt đầu ${fmtNgay(tuanChon.tuNgay)}, đang lấy tạm DT ngày ${fmtNgay(denNgay)} so với MT 1 ngày.\n`
+        : `📅 Ngày ${soNgay}/7 (${fmtNgay(tuanChon.tuNgay)}→${fmtNgay(denNgay)}) · DT ngày ${fmtNgay(denNgay)}: ${fmtTrieu(dtNgayCuoi / 1e6)} tr\n`) +
+        `🎯 MT M2 cả tuần ${fmtTrieu(tongM2)} tr · đã đạt ${fmtPhanTram(pTuan)} · ${soDat}/${bang.length} ST đạt MT`,
+    },
+    {
+      type: 'text', wrap: true, size: 'xxs', color: '#999999', margin: 'xs',
+      text: `MT M2 ngày = M2 tuần ÷ 7 · 🟢 ≥100% · 🟠 90–99% · 🔴 <90% · ĐVT: triệu`,
+    },
+    { type: 'separator', margin: 'md' },
+    dongTieuDeBang(nhanMT),
+    { type: 'box', layout: 'vertical', contents: bang.map((x, k) => dongBangDtNH(k + 1, x.ten, x.mtLk, x.dt, x.p, k % 2 === 1)) },
+  ];
 
-    if (theDau) {
-      body.push({
-        type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
-          oTong('MT M2 KV', fmtTrieu(tongMT)),
-          oTong('DT luỹ kế', fmtTrieu(tongDT)),
-          oTong('% đạt KV', fmtPhanTram(tongP), mauPhanTram(tongP, tienDoChuan)),
-        ],
-      });
-      body.push({
-        type: 'text', wrap: true, size: 'xxs', color: '#555555', margin: 'md',
-        text: xemTruoc
-          ? `⚠️ XEM TRƯỚC: tuần bắt đầu ${fmtNgay(tuanChon.tuNgay)}, đang lấy tạm DT ngày ${fmtNgay(denNgay)} để xem trước.`
-          : `📅 Ngày ${ngayThu}/7 · tiến độ chuẩn ${fmtPhanTram(tienDoChuan)} · DT ngày ${fmtNgay(denNgay)}: ${fmtTrieu(dtNgayCuoi / 1e6)} tr · Đạt M2: ${soDat}/${bang.length} ST`,
-      });
-      body.push({
-        type: 'text', wrap: true, size: 'xxs', color: '#999999', margin: 'xs',
-        text: '🟢 đã đạt M2 · 🟠 kịp tiến độ ngày · 🔴 chậm tiến độ · ĐVT: triệu',
-      });
-      body.push({ type: 'separator', margin: 'md' });
-    }
-    body.push({ type: 'box', layout: 'vertical', margin: 'md', contents: [dongTieuDeBang()] });
-    body.push({
-      type: 'box', layout: 'vertical', spacing: 'xs',
-      contents: phan.map((x, k) =>
-        dongBangDtNH(i + k + 1, x.ten, x.m2, x.dt, x.p, tienDoChuan, (i + k) % 2 === 0 ? '#FFFFFF' : '#F6F8F7')
-      ),
-    });
-
-    cacThe.push({
-      type: 'bubble', size: 'giga',
-      header: {
-        type: 'box', layout: 'vertical', backgroundColor: '#0B8A3E', paddingAll: '14px',
-        contents: [
-          { type: 'text', text: theDau ? '📊 DT NGÀNH HÀNG · MỨC 2' : `📊 DT NGÀNH HÀNG (tiếp ${Math.floor(i / MOI_THE) + 1})`, color: '#FFFFFF', weight: 'bold', size: 'md' },
-          { type: 'text', text: `Tuần ${tuanChon.tuan.slice(1)} · ${fmtNgay(tuanChon.tuNgay)}–${fmtNgay(tuanChon.denNgay)} · luỹ kế đến ${fmtNgay(denNgay)}`, color: '#E3F5EA', size: 'xs', margin: 'xs' },
-          { type: 'text', text: tuanChon.ten || `NH ${[...tuanChon.maNH].join(', ')}`, color: '#E3F5EA', size: 'xxs', wrap: true, margin: 'xs' },
-        ],
-      },
-      body: { type: 'box', layout: 'vertical', paddingAll: '12px', contents: body },
-      footer: {
-        type: 'box', layout: 'vertical', paddingAll: '8px',
-        contents: [{ type: 'text', text: DONG_BAN_QUYEN, size: 'xxs', color: '#999999', wrap: true, align: 'center' }],
-      },
-    });
-  }
-
-  const contents = cacThe.length === 1 ? cacThe[0] : { type: 'carousel', contents: cacThe };
+  const contents = {
+    type: 'bubble', size: 'giga',
+    header: {
+      type: 'box', layout: 'vertical', backgroundColor: '#0B8A3E', paddingAll: '14px',
+      contents: [
+        { type: 'text', text: '📊 DT NGÀNH HÀNG · MỨC 2', color: '#FFFFFF', weight: 'bold', size: 'md' },
+        { type: 'text', text: `Tuần ${tuanChon.tuan.slice(1)} · ${fmtNgay(tuanChon.tuNgay)}–${fmtNgay(tuanChon.denNgay)} · luỹ kế đến ${fmtNgay(denNgay)}`, color: '#E3F5EA', size: 'xs', margin: 'xs' },
+        { type: 'text', text: tuanChon.ten || `NH ${[...tuanChon.maNH].join(', ')}`, color: '#E3F5EA', size: 'xxs', wrap: true, margin: 'xs' },
+      ],
+    },
+    body: { type: 'box', layout: 'vertical', paddingAll: '12px', contents: body },
+    footer: {
+      type: 'box', layout: 'vertical', paddingAll: '8px',
+      contents: [{ type: 'text', text: DONG_BAN_QUYEN, size: 'xxs', color: '#999999', wrap: true, align: 'center' }],
+    },
+  };
   return {
     type: 'flex',
-    altText: `DT Ngành Hàng tuần ${tuanChon.tuan.slice(1)}: KV đạt ${fmtPhanTram(tongP)} M2`,
+    altText: `DT Ngành Hàng tuần ${tuanChon.tuan.slice(1)}: KV đạt ${fmtPhanTram(tongP)} MT M2 đến ${fmtNgay(denNgay)}`,
     contents,
   };
 }
