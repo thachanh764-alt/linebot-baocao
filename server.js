@@ -563,7 +563,7 @@ function veSvgDtNH(d) {
     const coMT = x.m2 > 0;
     if (k % 2 === 1) parts.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW_H}" fill="${C.nenChan}"/>`);
     const yt = y + 20;
-    parts.push(t(cot.stt, yt, coMT ? k + 1 : '–', { fill: C.phu, anchor: 'end' }));
+    parts.push(t(cot.stt, yt, k + 1, { fill: C.phu, anchor: 'end' }));
     parts.push(t(xTen, yt, x.ten));
     parts.push(t(cot.dtNgay, yt, fmtTrieu(x.dtNgay), { bold: true, anchor: 'end' }));
     parts.push(t(cot.mtNgay, yt, coMT ? fmtTrieu(x.mtNgay) : '–', { fill: C.phu, anchor: 'end' }));
