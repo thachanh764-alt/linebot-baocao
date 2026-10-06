@@ -322,6 +322,7 @@ async function napFileVaoSheet(fileName, buffer, ngayChiDinh) {
   const dataRows = allRows.slice(1).filter((r) => r && r.some((v) => v !== null && v !== ''));
 
   if (laFileGiaVon(header)) return napFileGiaVon(sheets, header, dataRows, fileName);
+  if (laFileFreshBan(header)) return napFileFreshBan(sheets, header, dataRows, fileName);
 
   if (laFileDoanhThuModel(header)) {
     const ngayKey = ngayChiDinh || ngayTuTenFile(fileName);
@@ -342,7 +343,7 @@ async function napFileVaoSheet(fileName, buffer, ngayChiDinh) {
   }
 
   throw new Error(
-    `Không nhận diện được file "${fileName || ''}". Bot hiện nhận file THI ĐUA, file "Doanh Thu Theo Model" và file "Báo cáo giá vốn Fresh".`
+    `Không nhận diện được file "${fileName || ''}". Bot hiện nhận file THI ĐUA, file "Doanh Thu Theo Model", file "Báo cáo giá vốn Fresh" và file "BC nhập xuất Fresh".`
   );
 }
 
@@ -673,6 +674,39 @@ const COT_GIAVON = [
   'Tỉ lệ doanh thu trên giá vốn cơ bản', 'LN lũy kế', 'LN TB 3 tháng trước', 'Chênh lệch LN so với 3 tháng trước',
 ];
 
+// File "BC nhập xuất Fresh" (cột Thành tiền phải thu khách hàng) -> DT bán hôm nay theo ngành giá vốn
+const TAB_FRESH_BAN = process.env.GOOGLE_SHEET_TAB_FRESH_BAN || 'FRESH_BAN';
+const FRESH_SANG_GIAVON = { // Mã nhóm SP tính doanh thu -> Mã ngành hàng trong file giá vốn
+  2090: 1236, 2091: 1236, // Thịt địa phương + nhập khẩu -> Thịt gia cầm gia súc
+  2085: 1254, 2086: 1254, // Thủy hải sản nhập khẩu + tập trung
+  2087: 2087, 2088: 2088, // Rau Đà Lạt, Rau địa phương
+  2092: 2854, 2093: 2855, // Trái cây nhập khẩu -> ngoại, tập trung -> nội
+  2094: 2856, // Trứng
+};
+function laFileFreshBan(header) {
+  return header.includes('Thành tiền phải thu khách hàng (chưa VAT)') && header.includes('Mã nhóm SP tính doanh thu') && header.includes('Mã siêu thị');
+}
+async function napFileFreshBan(sheets, header, dataRows, fileName) {
+  const i = (c) => header.indexOf(c);
+  const iNgay = i('Ngày'), iST = i('Mã siêu thị'), iNhom = i('Mã nhóm SP tính doanh thu'), iTien = i('Thành tiền phải thu khách hàng (chưa VAT)');
+  const gop = new Map();
+  for (const r of dataRows) {
+    const ma = chuanHoaMaST(r[iST]);
+    const nh = FRESH_SANG_GIAVON[Number(r[iNhom])];
+    if (!ma || !nh) continue;
+    const ngay = chuanHoaKeyNgay(r[iNgay]) || ngayTuTenFile(fileName);
+    const key = `${ngay}|${ma}|${nh}`;
+    if (!gop.has(key)) gop.set(key, [ngay, ma, nh, 0]);
+    gop.get(key)[3] += soGV(r[iTien]);
+  }
+  const rows = [...gop.values()].map((x) => [x[0], x[1], x[2], Math.round(x[3])]);
+  if (rows.length === 0) throw new Error('File nhập xuất Fresh không có dòng doanh thu nào');
+  const g = gioTuTenFile(fileName);
+  const capNhat = g == null ? '' : `${String(Math.floor(g)).padStart(2, '0')}:${String(Math.round((g % 1) * 60)).padStart(2, '0')}`;
+  await ghiDeTab(sheets, TAB_FRESH_BAN, ['Ngày', 'Mã siêu thị', 'Mã ngành giá vốn', 'DT bán', 'Cập nhật'], rows.map((r) => [...r, capNhat]));
+  return { loai: 'fresh_ban', tenTab: TAB_FRESH_BAN, soDong: rows.length, dsST: [...new Set(rows.map((r) => r[1]))] };
+}
+
 function laFileGiaVon(header) {
   return header.includes('Giá vốn cơ bản hôm nay') && header.includes('DT FRESH tính giá vốn');
 }
@@ -711,8 +745,20 @@ async function docDuLieuGiaVon() {
     theoST.get(ma).nganh.push({
       ten: String(r[4] || ''),
       slNhap: soGV(r[5]), gvHomNay: soGV(r[6]), dt: soGV(r[7]), gvLk: soGV(r[8]),
-      tiLe: soGV(r[9]), ln: soGV(r[10]), ln3t: soGV(r[11]), chenh: soGV(r[12]),
+      maNH: Number(r[3]), tiLe: soGV(r[9]), ln: soGV(r[10]), ln3t: soGV(r[11]), chenh: soGV(r[12]), dtHomNay: null,
     });
+  }
+  // Ghép DT bán hôm nay (ngày mới nhất trong tab FRESH_BAN)
+  const ban = (await docTabAnToan(getSheetsClient(), TAB_FRESH_BAN)).slice(1).filter((r) => r[0] !== undefined && r[0] !== '');
+  const ngayBan = ban.reduce((a, r) => { const k = chuanHoaKeyNgay(r[0]); return k && (!a || k > a) ? k : a; }, null);
+  for (const r of ban) {
+    if (chuanHoaKeyNgay(r[0]) !== ngayBan) continue;
+    const st = theoST.get(chuanHoaMaST(r[1]));
+    if (!st) continue;
+    st.ngayBan = ngayBan;
+    st.gioBan = String(r[4] || '');
+    const ng = st.nganh.find((x) => x.maNH === Number(r[2]));
+    if (ng) ng.dtHomNay = (ng.dtHomNay || 0) + soGV(r[3]);
   }
   return theoST;
 }
@@ -722,80 +768,95 @@ const trGVdau = (v) => (v > 0.05e6 ? '+' : '') + trGV(v);
 const mauLN = (v) => (v < 0 ? '#D0312D' : '#0B8A3E');
 
 function veSvgGiaVon(st) {
-  const W = 1000, PAD = 24, ROW = 34;
-  const C = { xanh: '#0B8A3E', xanhDam: '#0B6E35', nen: '#E6F4EC', chan: '#F3F7F5', vien: '#D5E3DA', phu: '#666666', do: '#D0312D' };
+  const W = 1100, PAD = 24, ROW = 34;
+  const C = { xanh: '#0B8A3E', xanhDam: '#0B6E35', nen: '#E6F4EC', chan: '#F3F7F5', vien: '#D5E3DA', phu: '#666666', do: '#D0312D', vang: '#FFF59D' };
   const t = (x, y, s, o = {}) =>
     `<text x="${x}" y="${y}" font-size="${o.size || 15}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1a1a1a'}" text-anchor="${o.anchor || 'start'}">${escXml(s)}</text>`;
+  const coBan = st.nganh.some((x) => x.dtHomNay != null);
   const ds = st.nganh.slice().sort((a, b) => a.ln - b.ln);
-  const tong = ds.reduce((s, x) => ({ dt: s.dt + x.dt, gvLk: s.gvLk + x.gvLk, ln: s.ln + x.ln, ln3t: s.ln3t + x.ln3t, chenh: s.chenh + x.chenh, gvHomNay: s.gvHomNay + x.gvHomNay }), { dt: 0, gvLk: 0, ln: 0, ln3t: 0, chenh: 0, gvHomNay: 0 });
+  const sum = (k) => ds.reduce((s, x) => s + (x[k] || 0), 0);
+  const tong = { dt: sum('dt'), gvLk: sum('gvLk'), ln: sum('ln'), ln3t: sum('ln3t'), chenh: sum('chenh'), gvHomNay: sum('gvHomNay'), dtHomNay: sum('dtHomNay') };
   const tiLeTong = tong.gvLk > 0 ? (tong.dt / tong.gvLk) * 100 : 0;
   const thang = st.thang.length === 6 ? `T${Number(st.thang.slice(4))}/${st.thang.slice(0, 4)}` : st.thang;
+  const pct = (a, b) => (b > 0 ? (a / b) * 100 : 0);
+  const fPct = (v) => v.toFixed(1).replace('.', ',') + '%';
 
   const p = [];
   p.push(`<rect x="0" y="0" width="${W}" height="96" fill="${C.xanh}"/>`);
-  p.push(t(PAD, 38, 'GIÁ VỐN FRESH · LỢI NHUẬN LUỸ KẾ', { size: 26, bold: true, fill: '#FFFFFF' }));
+  p.push(t(PAD, 38, 'GIÁ VỐN FRESH · BÁN HÔM NAY · LỢI NHUẬN', { size: 26, bold: true, fill: '#FFFFFF' }));
   p.push(t(PAD, 64, `${st.ma} · ${st.ten}`, { size: 16, fill: '#E3F5EA' }));
-  p.push(t(PAD, 86, `Tháng ${thang}${st.capNhat ? ' · cập nhật ' + st.capNhat : ''} · ĐVT: triệu đồng`, { size: 13, fill: '#E3F5EA' }));
+  const capNhat = [`Tháng ${thang}`, st.capNhat ? `giá vốn ${st.capNhat}` : '', coBan ? `bán ngày ${fmtNgay(st.ngayBan)}${st.gioBan ? ' lúc ' + st.gioBan : ''}` : 'chưa có file bán hôm nay', 'ĐVT: triệu'].filter(Boolean).join(' · ');
+  p.push(t(PAD, 86, capNhat, { size: 13, fill: '#E3F5EA' }));
   let y = 112;
 
-  // 4 ô tổng
   const oW = (W - PAD * 2 - 36) / 4, oH = 74;
   const o = (i, nhan, gt, mau, phu) => {
     const x = PAD + i * (oW + 12);
     p.push(`<rect x="${x}" y="${y}" width="${oW}" height="${oH}" rx="10" fill="#F2F8F4"/>`);
     p.push(t(x + 12, y + 22, nhan, { size: 13, fill: '#777777' }));
-    p.push(t(x + 12, y + 52, gt, { size: 25, bold: true, fill: mau || '#1a1a1a' }));
-    if (phu) p.push(t(x + oW - 12, y + 52, phu, { size: 12, fill: '#777777', anchor: 'end' }));
+    p.push(t(x + 12, y + 54, gt, { size: 25, bold: true, fill: mau || '#1a1a1a' }));
+    if (phu) p.push(t(x + oW - 12, y + 54, phu, { size: 12, fill: '#777777', anchor: 'end' }));
   };
-  o(0, 'DT luỹ kế', trGV(tong.dt));
-  o(1, 'Giá vốn luỹ kế', trGV(tong.gvLk));
-  o(2, 'LN luỹ kế', trGV(tong.ln), mauLN(tong.ln), `DT/GV ${tiLeTong.toFixed(1).replace('.', ',')}%`);
+  o(0, 'Giá vốn nhập hôm nay', trGV(tong.gvHomNay));
+  if (coBan) o(1, 'DT bán hôm nay', trGV(tong.dtHomNay), tong.dtHomNay >= tong.gvHomNay ? C.xanh : C.do, `= ${fPct(pct(tong.dtHomNay, tong.gvHomNay))} GV`);
+  else o(1, 'DT bán hôm nay', '–', C.phu, 'gửi file nhập xuất');
+  o(2, 'LN luỹ kế tháng', trGV(tong.ln), mauLN(tong.ln), `DT/GV ${fPct(tiLeTong)}`);
   o(3, 'So TB 3 tháng trước', trGVdau(tong.chenh), mauLN(tong.chenh), `TB 3T ${trGV(tong.ln3t)}`);
   y += oH + 16;
 
-  // Bảng
-  const cot = { ten: PAD + 10, sl: 330, gvHn: 425, dt: 520, gv: 615, tl: 700, ln: 790, ln3: 880, ch: W - PAD - 10 };
-  const H_TD = 50;
+  // Bảng: nhóm HÔM NAY | nhóm LUỸ KẾ THÁNG
+  const cot = { ten: PAD + 10, sl: 300, gvHn: 385, dtHn: 470, chHn: 555, tlHn: 635, dt: 735, gv: 820, tl: 905, ln: 985, ch: W - PAD - 10 };
+  const xChia = 660;
+  const H_TD = 72;
   p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${H_TD}" rx="6" fill="${C.nen}"/>`);
-  const td = (x, a, b, anchor = 'end') => { p.push(t(x, y + 21, a, { size: 13, bold: true, fill: C.xanhDam, anchor })); if (b) p.push(t(x, y + 39, b, { size: 13, bold: true, fill: C.xanhDam, anchor })); };
+  p.push(t((235 + xChia) / 2, y + 20, 'HÔM NAY', { size: 13, bold: true, fill: C.xanhDam, anchor: 'middle' }));
+  p.push(t((xChia + W - PAD) / 2, y + 20, 'LUỸ KẾ THÁNG', { size: 13, bold: true, fill: C.xanhDam, anchor: 'middle' }));
+  const td = (x, a, b, anchor = 'end') => { p.push(t(x, y + 44, a, { size: 13, bold: true, fill: C.xanhDam, anchor })); if (b) p.push(t(x, y + 62, b, { size: 13, bold: true, fill: C.xanhDam, anchor })); };
   td(cot.ten, 'Ngành hàng', '', 'start');
-  td(cot.sl, 'SL nhập', 'hôm nay'); td(cot.gvHn, 'GV', 'hôm nay'); td(cot.dt, 'DT', 'luỹ kế'); td(cot.gv, 'GV', 'luỹ kế');
-  td(cot.tl, 'DT/GV', ''); td(cot.ln, 'LN', 'luỹ kế'); td(cot.ln3, 'LN TB', '3 tháng'); td(cot.ch, 'Chênh', 'so 3T');
+  td(cot.sl, 'SL nhập', ''); td(cot.gvHn, 'GV nhập', ''); td(cot.dtHn, 'DT bán', ''); td(cot.chHn, 'Bán − GV', ''); td(cot.tlHn, 'Bán/GV', '');
+  td(cot.dt, 'DT', ''); td(cot.gv, 'GV', ''); td(cot.tl, 'DT/GV', ''); td(cot.ln, 'LN', ''); td(cot.ch, 'so 3T', '');
   const yTop = y; y += H_TD;
-  ds.forEach((x, k) => {
-    if (k % 2 === 1) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${C.chan}"/>`);
-    const yt = y + 22;
-    p.push(t(cot.ten, yt, rutGonTen(x.ten, 30), { bold: x.ln < 0 }));
-    p.push(t(cot.sl, yt, (Math.round(x.slNhap * 10) / 10).toFixed(1).replace('.', ','), { fill: C.phu, anchor: 'end' }));
-    p.push(t(cot.gvHn, yt, trGV(x.gvHomNay), { fill: C.phu, anchor: 'end' }));
-    p.push(t(cot.dt, yt, trGV(x.dt), { anchor: 'end' }));
-    p.push(t(cot.gv, yt, trGV(x.gvLk), { anchor: 'end' }));
-    p.push(t(cot.tl, yt, x.tiLe.toFixed(1).replace('.', ',') + '%', { bold: true, fill: x.tiLe < 100 ? C.do : C.xanh, anchor: 'end' }));
-    p.push(t(cot.ln, yt, trGV(x.ln), { bold: true, fill: mauLN(x.ln), anchor: 'end' }));
-    p.push(t(cot.ln3, yt, trGV(x.ln3t), { fill: C.phu, anchor: 'end' }));
-    p.push(t(cot.ch, yt, trGVdau(x.chenh), { bold: true, fill: mauLN(x.chenh), anchor: 'end' }));
+  const dongBang = (x, k, tongDong) => {
+    const nen = tongDong ? C.xanh : k % 2 === 1 ? C.chan : null;
+    if (nen) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${nen}"/>`);
+    const yt = y + 22, wt = tongDong ? '#FFFFFF' : null;
+    const co = x.dtHomNay != null;
+    const chHn = co ? x.dtHomNay - x.gvHomNay : null;
+    const tlHn = co ? pct(x.dtHomNay, x.gvHomNay) : null;
+    p.push(t(cot.ten, yt, tongDong ? 'TỔNG FRESH' : rutGonTen(x.ten, 28), { bold: tongDong || x.ln < 0, fill: wt || '#1a1a1a' }));
+    if (!tongDong) p.push(t(cot.sl, yt, (Math.round(x.slNhap * 10) / 10).toFixed(1).replace('.', ','), { fill: C.phu, anchor: 'end' }));
+    p.push(t(cot.gvHn, yt, trGV(x.gvHomNay), { fill: wt || C.phu, anchor: 'end', bold: tongDong }));
+    p.push(t(cot.dtHn, yt, co ? trGV(x.dtHomNay) : '–', { fill: wt || '#1a1a1a', anchor: 'end', bold: true }));
+    p.push(t(cot.chHn, yt, co ? trGVdau(chHn) : '–', { fill: wt || (co ? mauLN(chHn) : C.phu), anchor: 'end', bold: true }));
+    p.push(t(cot.tlHn, yt, co && x.gvHomNay > 0 ? fPct(tlHn) : '–', { fill: wt || (co ? (tlHn >= 100 ? C.xanh : C.do) : C.phu), anchor: 'end', bold: true }));
+    p.push(t(cot.dt, yt, trGV(x.dt), { anchor: 'end', fill: wt || '#1a1a1a', bold: tongDong }));
+    p.push(t(cot.gv, yt, trGV(x.gvLk), { anchor: 'end', fill: wt || '#1a1a1a', bold: tongDong }));
+    const tl = x.gvLk > 0 ? pct(x.dt, x.gvLk) : 0;
+    p.push(t(cot.tl, yt, fPct(tl), { bold: true, fill: wt || (tl < 100 ? C.do : C.xanh), anchor: 'end' }));
+    p.push(t(cot.ln, yt, trGV(x.ln), { bold: true, fill: wt || mauLN(x.ln), anchor: 'end' }));
+    p.push(t(cot.ch, yt, trGVdau(x.chenh), { bold: true, fill: wt || mauLN(x.chenh), anchor: 'end' }));
     y += ROW;
-  });
-  // dòng tổng
-  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 4}" fill="${C.xanh}"/>`);
-  const yt = y + 24, w = { fill: '#FFFFFF', bold: true, anchor: 'end' };
-  p.push(t(cot.ten, yt, 'TỔNG FRESH', { fill: '#FFFFFF', bold: true }));
-  p.push(t(cot.gvHn, yt, trGV(tong.gvHomNay), w)); p.push(t(cot.dt, yt, trGV(tong.dt), w)); p.push(t(cot.gv, yt, trGV(tong.gvLk), w));
-  p.push(t(cot.tl, yt, tiLeTong.toFixed(1).replace('.', ',') + '%', w)); p.push(t(cot.ln, yt, trGV(tong.ln), w));
-  p.push(t(cot.ln3, yt, trGV(tong.ln3t), w)); p.push(t(cot.ch, yt, trGVdau(tong.chenh), w));
-  y += ROW + 4;
+  };
+  ds.forEach((x, k) => dongBang(x, k, false));
+  dongBang({ ...tong, dtHomNay: coBan ? tong.dtHomNay : null }, 0, true);
+  p.push(`<line x1="${xChia}" y1="${yTop + 6}" x2="${xChia}" y2="${y}" stroke="${C.vien}" stroke-width="2"/>`);
+  p.push(`<line x1="235" y1="${yTop + 6}" x2="235" y2="${y}" stroke="${C.vien}" stroke-width="1"/>`);
   p.push(`<rect x="${PAD}" y="${yTop}" width="${W - PAD * 2}" height="${y - yTop}" rx="6" fill="none" stroke="${C.vien}"/>`);
 
-  // Cảnh báo
+  // Cảnh báo + việc cần làm
   y += 26;
+  const dong = [];
+  if (coBan) {
+    const thieu = ds.filter((x) => x.dtHomNay != null && x.dtHomNay < x.gvHomNay).sort((a, b) => (a.dtHomNay - a.gvHomNay) - (b.dtHomNay - b.gvHomNay));
+    if (thieu.length) dong.push(`🎯 Hôm nay cần bán thêm để bù giá vốn nhập: ${thieu.map((x) => `${x.ten} ${trGV(x.gvHomNay - x.dtHomNay)}`).join(' · ')} (tổng ${trGV(thieu.reduce((s, x) => s + x.gvHomNay - x.dtHomNay, 0))} tr)`);
+    else dong.push('✅ Hôm nay tất cả ngành đã bán vượt giá vốn nhập.');
+  }
   const lo = ds.filter((x) => x.ln < 0);
   const giam = ds.filter((x) => x.chenh < -1e6).sort((a, b) => a.chenh - b.chenh);
-  const dong = [];
-  if (lo.length) dong.push(`🔴 Đang LỖ luỹ kế (DT/GV dưới 100%): ${lo.map((x) => `${x.ten} (${trGV(x.ln)})`).join(' · ')}`);
+  if (lo.length) dong.push(`🔴 Đang LỖ luỹ kế tháng: ${lo.map((x) => `${x.ten} (${trGV(x.ln)})`).join(' · ')}`);
   if (giam.length) dong.push(`🔻 Giảm mạnh so TB 3 tháng: ${giam.map((x) => `${x.ten} (${trGVdau(x.chenh)})`).join(' · ')}`);
-  if (!dong.length) dong.push('✅ Tất cả ngành đang có lãi luỹ kế.');
   const wrap = (s, n) => { const out = []; let cur = ''; for (const w2 of s.split(' ')) { if ((cur + ' ' + w2).trim().length > n) { out.push(cur.trim()); cur = w2; } else cur += ' ' + w2; } if (cur.trim()) out.push(cur.trim()); return out; };
-  for (const d of dong) for (const [i, l] of wrap(d, 125).entries()) { p.push(t(PAD + (i ? 22 : 0), y, l, { size: 14, fill: d.startsWith('✅') ? C.xanh : '#1a1a1a' })); y += 22; }
+  for (const d of dong) for (const [i, l] of wrap(d, 135).entries()) { p.push(t(PAD + (i ? 22 : 0), y, l, { size: 14, bold: d.startsWith('🎯'), fill: d.startsWith('✅') ? C.xanh : '#1a1a1a' })); y += 22; }
   const H = y + PAD - 6;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
 }
@@ -845,6 +906,7 @@ async function chayLenh(text) {
 const KNOWN_TABS = [
   { name: TAB_MUCTIEU, desc: 'Mục tiêu thi đua theo tuần (mức 2) của từng siêu thị theo nhóm ngành hàng' },
   { name: TAB_DT_NGAY, desc: 'Doanh thu theo ngày của từng siêu thị theo từng ngành hàng' },
+  { name: TAB_FRESH_BAN, desc: 'Doanh thu bán Fresh hôm nay theo siêu thị, theo ngành giá vốn' },
   { name: TAB_GIAVON, desc: 'Giá vốn, doanh thu, lợi nhuận luỹ kế Fresh theo ngành hàng, so với TB 3 tháng trước' },
 ];
 
@@ -1093,7 +1155,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           continue;
         }
 
-        if (kq.loai === 'giavon') {
+        if (kq.loai === 'giavon' || kq.loai === 'fresh_ban') {
           try {
             await guiTraLoi(event, targetId, await generateGiaVonReport('', kq.dsST));
           } catch (e) {
