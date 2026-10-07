@@ -5,7 +5,7 @@
  * SP 1 Đồng, Lượt Bill, Bánh Trung Thu). Bot hiện chỉ còn:
  *
  * 1) Lệnh "DT NGÀNH HÀNG" (trong group PHẢI @tag bot):
- *    - So DT thực tế luỹ kế trong tuần thi đua với MỤC TIÊU MỨC 2 (M2) của từng siêu thị.
+ *    - So DT thực tế luỹ kế trong tuần thi đua với MỤC TIÊU theo mức (M2 mặc định, T3 = M3; đổi bằng "ĐẶT MỨC T3 M3").
  *    - 3 cột: MT M2 · DT hiện tại · % đạt — xếp từ cao xuống thấp.
  *    - Gõ thêm ngày để xem tới ngày đó:   "DT NGÀNH HÀNG 07/10"
  *    - Gõ thêm tuần để chọn tuần:         "DT NGÀNH HÀNG T2"
@@ -49,7 +49,17 @@ const PORT = process.env.PORT || 3000;
 const TAB_MUCTIEU = process.env.GOOGLE_SHEET_TAB_MUCTIEU_NGANHHANG || 'MUCTIEU_NGANHHANG';
 const TAB_DT_NGAY = process.env.GOOGLE_SHEET_TAB_DT_NGANHHANG_NGAY || 'DT_NGANHHANG_NGAY';
 
-const HEADER_MUCTIEU = ['Tuần', 'Từ ngày', 'Đến ngày', 'Tên thi đua', 'Mã ngành hàng', 'Mã siêu thị', 'Tên siêu thị', 'MT M2 (triệu)'];
+const HEADER_MUCTIEU = ['Tuần', 'Từ ngày', 'Đến ngày', 'Tên thi đua', 'Mã ngành hàng', 'Mã siêu thị', 'Tên siêu thị', 'MT M1 (triệu)', 'MT M2 (triệu)', 'MT M3 (triệu)'];
+const TAB_CAUHINH = process.env.GOOGLE_SHEET_TAB_CAUHINH || 'CAUHINH';
+// Mức thi đua mặc định từng tuần (đổi được bằng lệnh "ĐẶT MỨC T3 M3"). Tuần không ghi = M2.
+const MUC_MAC_DINH = { T3: 3 };
+// Tab tuần không ghi "(NH ...)" trong tiêu đề -> đoán mã ngành theo tên
+const NH_THEO_TEN = [
+  [/HÓA PHẨM|HOÁ PHẨM|CHĂM SÓC NHÀ CỬA/i, '1014'],
+  [/MỸ PHẨM|CHĂM SÓC CÁ NHÂN/i, '925'],
+  [/NHÀ BẾP/i, '1055'],
+  [/BÁNH KẸO/i, '1054'],
+];
 const HEADER_DT_NGAY = ['Ngày', 'Mã siêu thị', 'Tên siêu thị', 'Mã ngành hàng', 'Ngành hàng', 'Doanh thu', 'Giờ xuất'];
 
 
@@ -217,21 +227,27 @@ function docFileThiDua(wb, fileName) {
 
     const tuan = `T${mTuan[1]}`;
     const mNH = tieuDe.match(/\(NH\s*([\d,\s]+)/i);
-    if (!mNH) {
+    let maNH = mNH ? mNH[1].split(/[,\s]+/).filter(Boolean).join(',') : '';
+    if (!maNH) maNH = [...new Set(NH_THEO_TEN.filter(([re]) => re.test(tieuDe)).map(([, ma]) => ma))].join(',');
+    if (!maNH) {
       tuanBoQua.push(`${tuan} (${tenSheet}) – không có mã ngành hàng trong tiêu đề`);
       continue;
     }
-    const maNH = mNH[1].split(/[,\s]+/).filter(Boolean).join(',');
 
     // tìm dòng tiêu đề cột có "Siêu thị" và cột bắt đầu bằng "M2"
     let dongHeader = -1;
     let cotST = -1;
-    let cotM2 = -1;
+    let cotM2 = -1, cotM1 = -1, cotM3 = -1;
     for (let i = 0; i < Math.min(rows.length, 10); i++) {
       const r = (rows[i] || []).map((c) => String(c || '').trim());
       const iST = r.findIndex((c) => c === 'Siêu thị');
       const iM2 = r.findIndex((c) => /^M2\b/.test(c));
-      if (iST !== -1 && iM2 !== -1) { dongHeader = i; cotST = iST; cotM2 = iM2; break; }
+      if (iST !== -1 && iM2 !== -1) {
+        dongHeader = i; cotST = iST; cotM2 = iM2;
+        cotM1 = r.findIndex((c) => /^M1\b/.test(c));
+        cotM3 = r.findIndex((c) => /^M3\b/.test(c));
+        break;
+      }
     }
     if (dongHeader === -1) {
       tuanBoQua.push(`${tuan} (${tenSheet}) – không có cột M2`);
@@ -249,9 +265,10 @@ function docFileThiDua(wb, fileName) {
       const r = rows[i] || [];
       const st = String(r[cotST] || '').trim();
       if (!st || /^TỔNG/i.test(st)) continue;
-      const m2 = Number(r[cotM2]);
-      if (!m2 || isNaN(m2)) continue; // ST chưa có mục tiêu -> bỏ
-      ketQua.push([tuan, tuNgay, denNgay, tenThiDua, maNH, chuanHoaMaST(st), tenNganSieuThi(st), Math.round(m2 * 10000) / 10000]);
+      const so = (c) => { const v = c === -1 ? NaN : Number(r[c]); return !v || isNaN(v) ? '' : Math.round(v * 10000) / 10000; };
+      const m1 = so(cotM1), m2 = so(cotM2), m3 = so(cotM3);
+      if (m2 === '') continue; // ST chưa có mục tiêu -> bỏ
+      ketQua.push([tuan, tuNgay, denNgay, tenThiDua, maNH, chuanHoaMaST(st), tenNganSieuThi(st), m1, m2, m3]);
       soST++;
     }
     tuanDaNap.push(`${tuan} ${fmtNgay(tuNgay)}–${fmtNgay(denNgay)} · NH ${maNH} · ${soST} ST`);
@@ -385,6 +402,9 @@ async function tinhDuLieuDtNH(text) {
     throw new Error('Chưa có mục tiêu. Anh gửi file THI ĐUA vào group trước giúp em.');
   }
   const rowsDT = (await docTabAnToan(sheets, TAB_DT_NGAY)).slice(1);
+  // Tab cũ chỉ có 1 cột M2 (cột H); tab mới có M1/M2/M3 (cột H/I/J)
+  const kieuMoi = rowsMT.some((r) => r.length >= 9);
+  const mucDaDat = new Map((await docTabAnToan(sheets, TAB_CAUHINH)).slice(1).map((r) => [String(r[0]), Number(r[1])]));
   const ts = phanTichThamSo(text);
 
   // Danh sách tuần
@@ -397,7 +417,8 @@ async function tinhDuLieuDtNH(text) {
         maNH: new Set(String(r[4]).split(',').map((s) => s.trim()).filter(Boolean)), mucTieu: [],
       });
     }
-    dsTuan.get(tuan).mucTieu.push({ maST: chuanHoaMaST(r[5]), ten: String(r[6] || ''), m2: Number(r[7]) || 0 });
+    const m = kieuMoi ? { 1: Number(r[7]) || 0, 2: Number(r[8]) || 0, 3: Number(r[9]) || 0 } : { 1: 0, 2: Number(r[7]) || 0, 3: 0 };
+    dsTuan.get(tuan).mucTieu.push({ maST: chuanHoaMaST(r[5]), ten: String(r[6] || ''), m });
   }
 
   const dt = rowsDT
@@ -416,7 +437,10 @@ async function tinhDuLieuDtNH(text) {
     const tuans = [...dsTuan.values()];
     const coNH = tuans.filter((t) => [...t.maNH].some((nh) => nhMoiNhat.has(nh)));
     const ung = coNH.length ? coNH : tuans;
+    // Ưu tiên tuần chứa ngày đang xét mà đã có doanh thu đúng ngành của tuần đó
+    // (gửi thử file ngành tuần sau thì báo cáo vẫn giữ tuần hiện tại)
     tuanChon =
+      tuans.find((t) => t.tuNgay <= ngayXet && ngayXet <= t.denNgay && dt.some((d) => t.maNH.has(d.maNH) && d.ngay >= t.tuNgay && d.ngay <= t.denNgay)) ||
       ung.find((t) => t.tuNgay <= ngayXet && ngayXet <= t.denNgay) ||
       ung.slice().sort((a, b) => Math.abs(soNgayGiua(ngayXet, a.tuNgay)) - Math.abs(soNgayGiua(ngayXet, b.tuNgay)))[0];
   }
@@ -500,8 +524,11 @@ async function tinhDuLieuDtNH(text) {
       pTuan: m2 > 0 ? (dtLk / m2) * 100 : 0,
     };
   };
+  // Chọn mức: lệnh "ĐẶT MỨC" > mặc định theo tuần > M2. Thiếu mức đã chọn thì lùi về M2.
+  const muc = mucDaDat.get(tuanChon.tuan) || MUC_MAC_DINH[tuanChon.tuan] || 2;
+  const mucCo = tuanChon.mucTieu.some((mt) => mt.m[muc] > 0) ? muc : 2;
   const bang = tuanChon.mucTieu
-    .map((mt) => lamDong(mt.maST, mt.ten, mt.m2))
+    .map((mt) => lamDong(mt.maST, mt.ten, mt.m[mucCo] || mt.m[2]))
     .sort((a, b) => b.pTuan - a.pTuan || b.pNgay - a.pNgay);
   const dsKhongMT = [...dtLkST.keys()]
     .filter((ma) => !stCoMucTieu.has(ma))
@@ -521,7 +548,7 @@ async function tinhDuLieuDtNH(text) {
   const tenNH = tuanChon.ten || `NH ${[...tuanChon.maNH].join(', ')}`;
   return {
     tuan: tuanChon.tuan, soTuan: tuanChon.tuan.slice(1), tuNgay: tuanChon.tuNgay, denNgayTuan: tuanChon.denNgay,
-    denNgay, soNgay, chuanTuan, tenNH, nhanNgay,
+    denNgay, soNgay, chuanTuan, tenNH, nhanNgay, muc: mucCo,
     dong: [...bang.slice().sort((a, b) => b.pTuan - a.pTuan || b.pNgay - a.pNgay), ...dsKhongMT],
     kv: { dtNgay: tongDtNgay, mtNgay: tongMtNgay, pNgay: pNgayKV, dtLk: tongDtLk, m2: tongM2, pTuan: pTuanKV },
   };
@@ -563,7 +590,7 @@ function veSvgDtNH(d) {
   // Header xanh
   const H_HEAD = 96;
   parts.push(`<rect x="0" y="0" width="${W}" height="${H_HEAD}" fill="${C.xanh}"/>`);
-  parts.push(t(PAD, 38, 'DT NGÀNH HÀNG · MỨC 2', { size: 26, bold: true, fill: '#FFFFFF' }));
+  parts.push(t(PAD, 38, `DT NGÀNH HÀNG · MỨC ${d.muc}`, { size: 26, bold: true, fill: '#FFFFFF' }));
   parts.push(t(PAD, 64, `Tuần ${d.soTuan} · ${fmtNgay(d.tuNgay)}–${fmtNgay(d.denNgayTuan)} · luỹ kế đến ${fmtNgay(d.denNgay)}`, { size: 16, fill: '#E3F5EA' }));
   parts.push(t(PAD, 86, d.tenNH, { size: 13, fill: '#E3F5EA' }));
   y = H_HEAD + 16;
@@ -763,6 +790,8 @@ async function docDuLieuGiaVon() {
   return theoST;
 }
 
+const TEN_NGAN_GV = { 'Thịt gia cầm gia súc các loại': 'Thịt gia cầm, gia súc', 'Thủy Hải Sản Các Loại': 'Thủy hải sản', 'Trứng gia cầm các loại': 'Trứng gia cầm', 'Trái cây ngoại CL': 'Trái cây ngoại', 'Trái cây nội CL': 'Trái cây nội' };
+const tenNganGV = (t) => TEN_NGAN_GV[String(t).trim()] || rutGonTen(String(t), 22);
 const trGV = (v) => (Math.round((v / 1e6) * 10) / 10).toFixed(1).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d),)/g, '.');
 const trGVdau = (v) => (v > 0.05e6 ? '+' : '') + trGV(v);
 const mauLN = (v) => (v < 0 ? '#D0312D' : '#0B8A3E');
@@ -823,7 +852,7 @@ function veSvgGiaVon(st) {
     const co = x.dtHomNay != null;
     const chHn = co ? x.dtHomNay - x.gvHomNay : null;
     const tlHn = co ? pct(x.dtHomNay, x.gvHomNay) : null;
-    p.push(t(cot.ten, yt, tongDong ? 'TỔNG FRESH' : rutGonTen(x.ten, 28), { bold: tongDong || x.ln < 0, fill: wt || '#1a1a1a' }));
+    p.push(t(cot.ten, yt, tongDong ? 'TỔNG FRESH' : tenNganGV(x.ten), { bold: tongDong || x.ln < 0, fill: wt || '#1a1a1a' }));
     if (!tongDong) p.push(t(cot.sl, yt, (Math.round(x.slNhap * 10) / 10).toFixed(1).replace('.', ','), { fill: C.phu, anchor: 'end' }));
     p.push(t(cot.gvHn, yt, trGV(x.gvHomNay), { fill: wt || C.phu, anchor: 'end', bold: tongDong }));
     p.push(t(cot.dtHn, yt, co ? trGV(x.dtHomNay) : '–', { fill: wt || '#1a1a1a', anchor: 'end', bold: true }));
@@ -848,15 +877,20 @@ function veSvgGiaVon(st) {
   const dong = [];
   if (coBan) {
     const thieu = ds.filter((x) => x.dtHomNay != null && x.dtHomNay < x.gvHomNay).sort((a, b) => (a.dtHomNay - a.gvHomNay) - (b.dtHomNay - b.gvHomNay));
-    if (thieu.length) dong.push(`🎯 Hôm nay cần bán thêm để bù giá vốn nhập: ${thieu.map((x) => `${x.ten} ${trGV(x.gvHomNay - x.dtHomNay)}`).join(' · ')} (tổng ${trGV(thieu.reduce((s, x) => s + x.gvHomNay - x.dtHomNay, 0))} tr)`);
-    else dong.push('✅ Hôm nay tất cả ngành đã bán vượt giá vốn nhập.');
+    if (thieu.length) dong.push(`● Hôm nay cần bán thêm để bù giá vốn nhập: ${thieu.map((x) => `${tenNganGV(x.ten)} ${trGV(x.gvHomNay - x.dtHomNay)}`).join(' · ')} (tổng ${trGV(thieu.reduce((s, x) => s + x.gvHomNay - x.dtHomNay, 0))} tr)`);
+    else dong.push('✔ Hôm nay tất cả ngành đã bán vượt giá vốn nhập.');
   }
   const lo = ds.filter((x) => x.ln < 0);
   const giam = ds.filter((x) => x.chenh < -1e6).sort((a, b) => a.chenh - b.chenh);
-  if (lo.length) dong.push(`🔴 Đang LỖ luỹ kế tháng: ${lo.map((x) => `${x.ten} (${trGV(x.ln)})`).join(' · ')}`);
-  if (giam.length) dong.push(`🔻 Giảm mạnh so TB 3 tháng: ${giam.map((x) => `${x.ten} (${trGVdau(x.chenh)})`).join(' · ')}`);
+  if (lo.length) dong.push(`● Đang LỖ luỹ kế tháng: ${lo.map((x) => `${tenNganGV(x.ten)} (${trGV(x.ln)})`).join(' · ')}`);
+  if (giam.length) dong.push(`▼ Giảm mạnh so TB 3 tháng: ${giam.map((x) => `${tenNganGV(x.ten)} (${trGVdau(x.chenh)})`).join(' · ')}`);
   const wrap = (s, n) => { const out = []; let cur = ''; for (const w2 of s.split(' ')) { if ((cur + ' ' + w2).trim().length > n) { out.push(cur.trim()); cur = w2; } else cur += ' ' + w2; } if (cur.trim()) out.push(cur.trim()); return out; };
-  for (const d of dong) for (const [i, l] of wrap(d, 135).entries()) { p.push(t(PAD + (i ? 22 : 0), y, l, { size: 14, bold: d.startsWith('🎯'), fill: d.startsWith('✅') ? C.xanh : '#1a1a1a' })); y += 22; }
+  const mauDong = (d) => (d.startsWith('✔') ? C.xanh : d.includes('LỖ') || d.startsWith('▼') ? C.do : '#E08A00');
+  for (const d of dong) for (const [i, l] of wrap(d, 135).entries()) {
+    if (i === 0) { p.push(t(PAD, y, l.charAt(0), { size: 15, fill: mauDong(d), bold: true })); p.push(t(PAD + 20, y, l.slice(2), { size: 14, bold: d.includes('cần bán thêm') })); }
+    else p.push(t(PAD + 20, y, l, { size: 14, bold: d.includes('cần bán thêm') }));
+    y += 22;
+  }
   const H = y + PAD - 6;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
 }
@@ -893,8 +927,28 @@ async function generateGiaVonReport(text, chiCacST) {
   return out.length === 1 ? out[0] : out;
 }
 
+// "ĐẶT MỨC T3 M3" (hoặc "ĐẶT MỨC 3" = áp cho tuần đang chạy theo ngày hôm nay)
+async function datMucThiDua(text) {
+  const t = text.normalize('NFC').toUpperCase();
+  const m = t.match(/^Đ[ẶA]T\s*M[ỨU]C\s*(?:(T\d)\s*)?M?\s*([123])\b/);
+  if (!m) return null;
+  const sheets = getSheetsClient();
+  let tuan = m[1];
+  if (!tuan) {
+    const homNay = homNayVN();
+    const r = (await docTabAnToan(sheets, TAB_MUCTIEU)).slice(1).find((x) => chuanHoaKeyNgay(x[1]) <= homNay && homNay <= chuanHoaKeyNgay(x[2]));
+    if (!r) throw new Error('Không xác định được tuần đang chạy, anh gõ rõ tuần, vd "ĐẶT MỨC T3 M3".');
+    tuan = String(r[0]);
+  }
+  const cu = (await docTabAnToan(sheets, TAB_CAUHINH)).slice(1).filter((r) => String(r[0]) !== tuan);
+  await ghiDeTab(sheets, TAB_CAUHINH, ['Tuần', 'Mức'], [...cu, [tuan, Number(m[2])]]);
+  return { type: 'text', text: `✅ Đã đặt tuần ${tuan.slice(1)} chạy theo MỨC ${m[2]} (M${m[2]}). Gõ "DT NGÀNH HÀNG" để xem.` };
+}
+
 async function chayLenh(text) {
   text = (text || '').normalize('NFC');
+  const datMuc = await datMucThiDua(text);
+  if (datMuc) return { ten: 'Đặt mức', ket: datMuc };
   if (laTriggerDtNganhHang(text)) return { ten: 'DT Ngành Hàng', ket: await generateDtNganhHangReport(text) };
   if (laTriggerGiaVon(text)) return { ten: 'Giá Vốn', ket: await generateGiaVonReport(text) };
   return null;
@@ -904,7 +958,7 @@ async function chayLenh(text) {
 // AI (CLAUDE) — đoán tab liên quan + phân tích bảng dữ liệu / ảnh
 // ---------------------------------------------------------------------------
 const KNOWN_TABS = [
-  { name: TAB_MUCTIEU, desc: 'Mục tiêu thi đua theo tuần (mức 2) của từng siêu thị theo nhóm ngành hàng' },
+  { name: TAB_MUCTIEU, desc: 'Mục tiêu thi đua theo tuần (M1, M2, M3) của từng siêu thị theo nhóm ngành hàng' },
   { name: TAB_DT_NGAY, desc: 'Doanh thu theo ngày của từng siêu thị theo từng ngành hàng' },
   { name: TAB_FRESH_BAN, desc: 'Doanh thu bán Fresh hôm nay theo siêu thị, theo ngành giá vốn' },
   { name: TAB_GIAVON, desc: 'Giá vốn, doanh thu, lợi nhuận luỹ kế Fresh theo ngành hàng, so với TB 3 tháng trước' },
@@ -1148,7 +1202,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
 
         if (kq.loai === 'muctieu') {
           const ct = kq.chiTiet;
-          let msg = `✅ Đã nạp MỤC TIÊU THI ĐUA (mức 2):\n• ${ct.tuanDaNap.join('\n• ')}`;
+          let msg = `✅ Đã nạp MỤC TIÊU THI ĐUA (M1/M2/M3):\n• ${ct.tuanDaNap.join('\n• ')}`;
           if (ct.tuanBoQua.length) msg += `\n\nBỏ qua:\n• ${ct.tuanBoQua.join('\n• ')}`;
           msg += '\n\nGửi file "Doanh Thu Theo Model" rồi @bot gõ "DT NGÀNH HÀNG" để xem báo cáo.';
           await guiTraLoi(event, targetId, { type: 'text', text: msg });
@@ -1265,4 +1319,4 @@ if (require.main === module) {
   })();
 }
 
-module.exports = { veSvgGiaVon, docDuLieuGiaVon, generateGiaVonReport, gioTuTenFile, napFileVaoSheet, generateDtNganhHangReport, tinhDuLieuDtNH, veSvgDtNH, docFileThiDua, gopDoanhThuModel };
+module.exports = { datMucThiDua, veSvgGiaVon, docDuLieuGiaVon, generateGiaVonReport, gioTuTenFile, napFileVaoSheet, generateDtNganhHangReport, tinhDuLieuDtNH, veSvgDtNH, docFileThiDua, gopDoanhThuModel };
