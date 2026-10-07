@@ -340,6 +340,7 @@ async function napFileVaoSheet(fileName, buffer, ngayChiDinh) {
 
   if (laFileGiaVon(header)) return napFileGiaVon(sheets, header, dataRows, fileName);
   if (laFileFreshBan(header)) return napFileFreshBan(sheets, header, dataRows, fileName);
+  if (laFileHuyMmkk(header)) return napFileHuyMmkk(sheets, header, dataRows);
 
   if (laFileDoanhThuModel(header)) {
     const ngayKey = ngayChiDinh || ngayTuTenFile(fileName);
@@ -360,7 +361,7 @@ async function napFileVaoSheet(fileName, buffer, ngayChiDinh) {
   }
 
   throw new Error(
-    `Không nhận diện được file "${fileName || ''}". Bot hiện nhận file THI ĐUA, file "Doanh Thu Theo Model", file "Báo cáo giá vốn Fresh" và file "BC nhập xuất Fresh".`
+    `Không nhận diện được file "${fileName || ''}". Bot hiện nhận file THI ĐUA, file "Doanh Thu Theo Model", file "Báo cáo giá vốn Fresh", file "BC nhập xuất Fresh" và file "Báo cáo theo dõi bán, huỷ, MMKK".`
   );
 }
 
@@ -927,6 +928,240 @@ async function generateGiaVonReport(text, chiCacST) {
   return out.length === 1 ? out[0] : out;
 }
 
+// ---------------------------------------------------------------------------
+// BÁO CÁO "HUỶ MMKK" — file "Báo cáo theo dõi số lượng bán, huỷ, hao hụt, mất mát kiểm kê"
+// Chỉ lấy 4 ngành Fresh: Rau củ, Thịt, Trái cây, Thủy hải sản. Ghi đè tab HUYMMKK.
+// Thành tiền huỷ/MMKK trong file thường = 0 -> ước tính = SL × giá bán gốc TB của chính mã đó
+// (giá gốc = (Doanh thu + Tiền giảm giá) ÷ SL bán).
+// ---------------------------------------------------------------------------
+const TAB_HUYMMKK = process.env.GOOGLE_SHEET_TAB_HUYMMKK || 'HUYMMKK';
+const NGANH_MMKK = ['Thịt gia cầm gia súc các loại', 'Rau Củ Các Loại', 'Trái Cây Các Loại', 'Thủy Hải Sản Các Loại'];
+const TEN_NGAN_MMKK = { 'Thịt gia cầm gia súc các loại': 'Thịt', 'Rau Củ Các Loại': 'Rau củ', 'Trái Cây Các Loại': 'Trái cây', 'Thủy Hải Sản Các Loại': 'Thủy hải sản' };
+const HEADER_HUYMMKK = ['Ngày', 'Mã siêu thị', 'Tên siêu thị', 'Ngành hàng', 'Nhóm hàng', 'Sản phẩm', 'Đơn vị', 'SL bán', 'Doanh thu', 'Tiền giảm giá', 'SL giảm giá', 'SL huỷ', 'SL MMKK', 'TT huỷ (file)', 'TT MMKK (file)'];
+
+function laFileHuyMmkk(header) {
+  return header.includes('SL mất mát kiểm kê') && header.includes('SL hủy tồn') && header.includes('Tiền s.thị bán giảm giá(chưa VAT)') && header.includes('Tên sản phẩm');
+}
+
+async function napFileHuyMmkk(sheets, header, dataRows) {
+  const i = (c) => header.indexOf(c);
+  const c = {
+    ngay: i('Ngày xuất'), st: i('Mã siêu thị'), tenST: i('Tên siêu thị'), nganh: i('Ngành hàng'), nhom: i('Nhóm hàng'),
+    sp: i('Tên sản phẩm'), dv: i('Đơn vị'), sl: i('Tổng SL bán'), dt: i('Doanh thu'), gg: i('Tiền s.thị bán giảm giá(chưa VAT)'),
+    slgg: i('SL s.thị bán giảm giá'), huy: i('SL hủy tồn'), mm: i('SL mất mát kiểm kê'), ttHuy: i('Thành tiền SL hủy tồn'), ttMm: i('Thành tiền mất mát kiểm kê'),
+  };
+  const rows = [];
+  for (const r of dataRows) {
+    const nganh = String(r[c.nganh] || '').trim();
+    if (!NGANH_MMKK.includes(nganh)) continue;
+    const ma = chuanHoaMaST(r[c.st]);
+    if (!ma) continue;
+    rows.push([
+      chuanHoaKeyNgay(r[c.ngay]) || '', ma, tenNganSieuThi(r[c.tenST]), nganh, String(r[c.nhom] || ''), String(r[c.sp] || ''), String(r[c.dv] || ''),
+      soGV(r[c.sl]), soGV(r[c.dt]), soGV(r[c.gg]), soGV(r[c.slgg]), soGV(r[c.huy]), soGV(r[c.mm]), soGV(r[c.ttHuy]), soGV(r[c.ttMm]),
+    ]);
+  }
+  if (rows.length === 0) throw new Error('File không có dòng nào thuộc 4 ngành Rau củ / Thịt / Trái cây / Thủy hải sản');
+  await ghiDeTab(sheets, TAB_HUYMMKK, HEADER_HUYMMKK, rows);
+  return { loai: 'huymmkk', tenTab: TAB_HUYMMKK, soDong: rows.length, dsST: [...new Set(rows.map((r) => r[1]))] };
+}
+
+async function docDuLieuHuyMmkk() {
+  const rows = (await docTabAnToan(getSheetsClient(), TAB_HUYMMKK)).slice(1);
+  if (rows.length === 0) throw new Error('Chưa có dữ liệu. Anh gửi file "Báo cáo theo dõi số lượng bán, huỷ, hao hụt, MMKK" vào group trước giúp em.');
+  const theoST = new Map();
+  for (const r of rows) {
+    const ma = chuanHoaMaST(r[1]);
+    if (!theoST.has(ma)) theoST.set(ma, { ma, ten: String(r[2] || ma), dong: [] });
+    theoST.get(ma).dong.push({
+      ngay: chuanHoaKeyNgay(r[0]), nganh: String(r[3]), nhom: String(r[4]), sp: String(r[5]), dv: String(r[6]),
+      sl: soGV(r[7]), dt: soGV(r[8]), gg: soGV(r[9]), slgg: soGV(r[10]), huy: soGV(r[11]), mm: soGV(r[12]), ttHuy: soGV(r[13]), ttMm: soGV(r[14]),
+    });
+  }
+  // Giá gốc TB theo sản phẩm (gộp mọi ngày, mọi ST) để ước tính tiền huỷ/MMKK
+  const gia = new Map();
+  for (const st of theoST.values()) for (const d of st.dong) {
+    const g = gia.get(d.sp) || { tien: 0, sl: 0 };
+    g.tien += d.dt + d.gg; g.sl += d.sl; gia.set(d.sp, g);
+  }
+  for (const st of theoST.values()) for (const d of st.dong) {
+    const g = gia.get(d.sp); const p = g && g.sl > 0 ? g.tien / g.sl : 0;
+    d.vHuy = d.ttHuy || d.huy * p;
+    d.vMm = d.ttMm || d.mm * p;
+  }
+  return theoST;
+}
+
+function tenSpDv(sp, dv) {
+  const ten = rutGonTen(sp, 38);
+  return !dv || /\((KG|TRÁI|BÓ|VỈ|HỘP|TÚI)/i.test(sp) ? ten : `${ten} (${dv})`;
+}
+
+function veSvgHuyMmkk(st) {
+  const W = 1100, PAD = 24, ROW = 30;
+  const C = { xanh: '#0B8A3E', xanhDam: '#0B6E35', nen: '#E6F4EC', chan: '#F3F7F5', vien: '#D5E3DA', phu: '#666666', do: '#D0312D', cam: '#E08A00' };
+  const t = (x, y, s, o = {}) =>
+    `<text x="${x}" y="${y}" font-size="${o.size || 15}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1a1a1a'}" text-anchor="${o.anchor || 'start'}">${escXml(s)}</text>`;
+  const ds = st.dong;
+  const ngays = [...new Set(ds.map((d) => d.ngay).filter(Boolean))].sort();
+  const tu = ngays[0], den = ngays[ngays.length - 1];
+  const sum = (arr, k) => arr.reduce((s, x) => s + (x[k] || 0), 0);
+  const fP = (a, b) => (b > 0 ? ((a / b) * 100).toFixed(1).replace('.', ',') + '%' : '–');
+  const mauP = (a, b, nguong) => (b > 0 && (a / b) * 100 >= nguong ? C.do : b > 0 && (a / b) * 100 >= nguong / 2 ? C.cam : '#1a1a1a');
+  const fKg = (v) => (Math.round(v * 10) / 10).toFixed(1).replace('.', ',');
+  const DT = sum(ds, 'dt'), GG = sum(ds, 'gg'), HUY = sum(ds, 'vHuy'), MM = sum(ds, 'vMm');
+
+  const p = [];
+  p.push(`<rect x="0" y="0" width="${W}" height="96" fill="${C.xanh}"/>`);
+  p.push(t(PAD, 38, 'HUỶ · MẤT MÁT KIỂM KÊ · GIẢM GIÁ FRESH', { size: 26, bold: true, fill: '#FFFFFF' }));
+  p.push(t(PAD, 64, `${st.ma} · ${st.ten}`, { size: 16, fill: '#E3F5EA' }));
+  p.push(t(PAD, 86, `Từ ${fmtNgay(tu)} đến ${fmtNgay(den)} (${ngays.length} ngày) · Thịt · Rau củ · Trái cây · Thủy hải sản · ĐVT: triệu`, { size: 13, fill: '#E3F5EA' }));
+  let y = 112;
+
+  const oW = (W - PAD * 2 - 36) / 4, oH = 74;
+  const o = (i, nhan, gt, mau, phu) => {
+    const x = PAD + i * (oW + 12);
+    p.push(`<rect x="${x}" y="${y}" width="${oW}" height="${oH}" rx="10" fill="#F2F8F4"/>`);
+    p.push(t(x + 12, y + 22, nhan, { size: 13, fill: '#777777' }));
+    p.push(t(x + 12, y + 54, gt, { size: 25, bold: true, fill: mau || '#1a1a1a' }));
+    if (phu) p.push(t(x + oW - 12, y + 54, phu, { size: 12, fill: '#777777', anchor: 'end' }));
+  };
+  o(0, 'Doanh thu Fresh', trGV(DT), null, `${fmtNgay(tu)}–${fmtNgay(den)}`);
+  o(1, 'Tiền giảm giá xả', trGV(GG), C.cam, `${fP(GG, DT)} DT`);
+  o(2, 'Mất mát kiểm kê (ước)', trGV(MM), MM > 0 ? C.do : C.xanh, `${fP(MM, DT)} DT`);
+  o(3, 'Huỷ tồn (ước)', trGV(HUY), HUY > 0 ? C.cam : C.xanh, `${fP(HUY, DT)} DT`);
+  y += oH + 30;
+
+  // Bảng 1: theo nhóm hàng
+  const tieuDe = (s) => { p.push(t(PAD, y, s, { size: 16, bold: true, fill: C.xanhDam })); y += 10; };
+  const headRow = (cols) => {
+    p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="30" rx="5" fill="${C.nen}"/>`);
+    for (const [x, s, a] of cols) p.push(t(x, y + 20, s, { size: 13, bold: true, fill: C.xanhDam, anchor: a || 'end' }));
+    y += 30;
+  };
+  tieuDe('THEO NHÓM HÀNG (xếp theo tổng thất thoát)');
+  const nhom = new Map();
+  for (const d of ds) {
+    const k = `${TEN_NGAN_MMKK[d.nganh] || d.nganh} · ${d.nhom}`;
+    const g = nhom.get(k) || { ten: k, dt: 0, gg: 0, vHuy: 0, vMm: 0 };
+    g.dt += d.dt; g.gg += d.gg; g.vHuy += d.vHuy; g.vMm += d.vMm; nhom.set(k, g);
+  }
+  const dsNhom = [...nhom.values()].map((g) => ({ ...g, tt: g.gg + g.vHuy + Math.max(0, g.vMm) })).sort((a, b) => b.tt - a.tt);
+  const cN = { ten: PAD + 10, dt: 460, gg: 560, pgg: 650, huy: 740, mm: 840, pmm: 930, tt: W - PAD - 10 };
+  headRow([[cN.ten, 'Nhóm hàng', 'start'], [cN.dt, 'DT'], [cN.gg, 'Giảm giá'], [cN.pgg, '%GG'], [cN.huy, 'Huỷ'], [cN.mm, 'MMKK'], [cN.pmm, '%MM'], [cN.tt, 'Thất thoát/DT']]);
+  dsNhom.forEach((g, k) => {
+    if (k % 2 === 1) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${C.chan}"/>`);
+    const yt = y + 20;
+    p.push(t(cN.ten, yt, rutGonTen(g.ten, 40)));
+    p.push(t(cN.dt, yt, trGV(g.dt), { anchor: 'end' }));
+    p.push(t(cN.gg, yt, trGV(g.gg), { anchor: 'end' }));
+    p.push(t(cN.pgg, yt, fP(g.gg, g.dt), { anchor: 'end', bold: true, fill: mauP(g.gg, g.dt, 20) }));
+    p.push(t(cN.huy, yt, trGV(g.vHuy), { anchor: 'end', fill: C.phu }));
+    p.push(t(cN.mm, yt, trGV(g.vMm), { anchor: 'end', bold: g.vMm > 0.5e6, fill: g.vMm > 0.5e6 ? C.do : '#1a1a1a' }));
+    p.push(t(cN.pmm, yt, fP(g.vMm, g.dt), { anchor: 'end', bold: true, fill: mauP(g.vMm, g.dt, 10) }));
+    p.push(t(cN.tt, yt, fP(g.tt, g.dt), { anchor: 'end', bold: true, fill: mauP(g.tt, g.dt, 25) }));
+    y += ROW;
+  });
+  y += 26;
+
+  // Bảng 2: top sản phẩm mất mát kiểm kê
+  const theoSP = new Map();
+  for (const d of ds) {
+    const g = theoSP.get(d.sp) || { sp: d.sp, nganh: d.nganh, dv: d.dv, sl: 0, dt: 0, gg: 0, slgg: 0, mm: 0, vMm: 0, ngayMm: new Set() };
+    g.sl += d.sl; g.dt += d.dt; g.gg += d.gg; g.slgg += d.slgg; g.mm += d.mm; g.vMm += d.vMm;
+    if (d.mm > 0) g.ngayMm.add(d.ngay);
+    theoSP.set(d.sp, g);
+  }
+  const sp = [...theoSP.values()];
+  const topMm = sp.filter((x) => x.vMm > 0).sort((a, b) => b.vMm - a.vMm).slice(0, 10);
+  if (topMm.length) {
+    tieuDe('TOP SẢN PHẨM MẤT MÁT KIỂM KÊ');
+    const cS = { ten: PAD + 10, sl: 560, mm: 660, pmm: 760, v: 870, ng: W - PAD - 10 };
+    headRow([[cS.ten, 'Sản phẩm', 'start'], [cS.sl, 'SL bán'], [cS.mm, 'SL mất'], [cS.pmm, 'Mất/bán'], [cS.v, 'Tiền (ước)'], [cS.ng, 'Số ngày mất']]);
+    topMm.forEach((x, k) => {
+      if (k % 2 === 1) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${C.chan}"/>`);
+      const yt = y + 20;
+      p.push(t(cS.ten, yt, tenSpDv(x.sp, x.dv)));
+      p.push(t(cS.sl, yt, fKg(x.sl), { anchor: 'end', fill: C.phu }));
+      p.push(t(cS.mm, yt, fKg(x.mm), { anchor: 'end', bold: true }));
+      p.push(t(cS.pmm, yt, fP(x.mm, x.sl), { anchor: 'end', bold: true, fill: mauP(x.mm, x.sl, 30) }));
+      p.push(t(cS.v, yt, trGV(x.vMm), { anchor: 'end', bold: true, fill: C.do }));
+      p.push(t(cS.ng, yt, `${x.ngayMm.size}/${ngays.length}`, { anchor: 'end', fill: x.ngayMm.size >= 3 ? C.do : C.phu, bold: x.ngayMm.size >= 3 }));
+      y += ROW;
+    });
+    y += 26;
+  }
+
+  // Bảng 3: top giảm giá nặng
+  const topGg = sp.filter((x) => x.gg > 0).sort((a, b) => b.gg - a.gg).slice(0, 8);
+  if (topGg.length) {
+    tieuDe('TOP SẢN PHẨM GIẢM GIÁ XẢ (tiền giảm nhiều nhất)');
+    const cG = { ten: PAD + 10, sl: 560, slgg: 660, gg: 770, dt: 870, p: W - PAD - 10 };
+    headRow([[cG.ten, 'Sản phẩm', 'start'], [cG.sl, 'SL bán'], [cG.slgg, 'SL giảm'], [cG.gg, 'Tiền giảm'], [cG.dt, 'DT'], [cG.p, 'Giảm/giá gốc']]);
+    topGg.forEach((x, k) => {
+      if (k % 2 === 1) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${C.chan}"/>`);
+      const yt = y + 20;
+      p.push(t(cG.ten, yt, tenSpDv(x.sp, x.dv)));
+      p.push(t(cG.sl, yt, fKg(x.sl), { anchor: 'end', fill: C.phu }));
+      p.push(t(cG.slgg, yt, fKg(x.slgg), { anchor: 'end' }));
+      p.push(t(cG.gg, yt, trGV(x.gg), { anchor: 'end', bold: true, fill: C.cam }));
+      p.push(t(cG.dt, yt, trGV(x.dt), { anchor: 'end', fill: C.phu }));
+      p.push(t(cG.p, yt, fP(x.gg, x.gg + x.dt), { anchor: 'end', bold: true, fill: mauP(x.gg, x.gg + x.dt, 30) }));
+      y += ROW;
+    });
+    y += 26;
+  }
+
+  // Theo ngày
+  tieuDe('THEO NGÀY (MMKK / giảm giá, triệu)');
+  y += 6;
+  const wN = (W - PAD * 2) / Math.max(ngays.length, 1);
+  ngays.forEach((n, k) => {
+    const x = PAD + k * wN;
+    const dn = ds.filter((d) => d.ngay === n);
+    const mm = sum(dn, 'vMm'), gg = sum(dn, 'gg');
+    p.push(`<rect x="${x + 4}" y="${y}" width="${wN - 8}" height="58" rx="8" fill="#F2F8F4"/>`);
+    p.push(t(x + wN / 2, y + 18, fmtNgay(n), { size: 13, fill: C.phu, anchor: 'middle' }));
+    p.push(t(x + wN / 2, y + 38, `MM ${trGV(mm)}`, { size: 14, bold: true, fill: mm > 1e6 ? C.do : '#1a1a1a', anchor: 'middle' }));
+    p.push(t(x + wN / 2, y + 54, `GG ${trGV(gg)}`, { size: 12, fill: C.cam, anchor: 'middle' }));
+  });
+  y += 76;
+  p.push(t(PAD, y, 'Tiền huỷ/MMKK ước tính = số lượng × giá bán gốc trung bình của mã (file không có thành tiền). %GG đỏ ≥ 20%, %MM đỏ ≥ 10%.', { size: 12, fill: C.phu }));
+  const H = y + PAD;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
+}
+
+const TRIGGER_MMKK = ['huỷ mmkk', 'hủy mmkk', 'huy mmkk', 'mmkk', 'huỷ', 'hủy'];
+function laTriggerHuyMmkk(text) {
+  const t = (text || '').normalize('NFC').toLowerCase().trim();
+  return TRIGGER_MMKK.some((k) => t === k || t.startsWith(k + ' '));
+}
+
+async function veAnhHuyMmkk(maST) {
+  const theoST = await docDuLieuHuyMmkk();
+  const st = theoST.get(String(maST)) || [...theoST.values()][0];
+  const svg = veSvgHuyMmkk(st);
+  return { st, png: svgThanhPng(svg, 1500), preview: svgThanhPng(svg, 600) };
+}
+
+async function generateHuyMmkkReport(text, chiCacST) {
+  const theoST = await docDuLieuHuyMmkk();
+  const m = String(text || '').match(/\b(\d{3,6})\b/);
+  let ds = [...theoST.keys()];
+  if (m && theoST.has(m[1])) ds = [m[1]];
+  else if (chiCacST && chiCacST.length) ds = ds.filter((ma) => chiCacST.includes(ma));
+  const out = [];
+  for (const ma of ds.slice(0, 5)) {
+    const { png, preview } = await veAnhHuyMmkk(ma);
+    const id = `mm-${ma}-${Date.now().toString(36)}`;
+    luuAnh(id, png, preview);
+    const q = `loai=mm&st=${ma}`;
+    out.push({ type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?${q}`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?${q}&nho=1` });
+  }
+  if (!out.length) throw new Error('Không tìm thấy siêu thị trong dữ liệu huỷ MMKK.');
+  return out.length === 1 ? out[0] : out;
+}
+
 // "ĐẶT MỨC T3 M3" (hoặc "ĐẶT MỨC 3" = áp cho tuần đang chạy theo ngày hôm nay)
 async function datMucThiDua(text) {
   const t = text.normalize('NFC').toUpperCase();
@@ -951,6 +1186,7 @@ async function chayLenh(text) {
   if (datMuc) return { ten: 'Đặt mức', ket: datMuc };
   if (laTriggerDtNganhHang(text)) return { ten: 'DT Ngành Hàng', ket: await generateDtNganhHangReport(text) };
   if (laTriggerGiaVon(text)) return { ten: 'Giá Vốn', ket: await generateGiaVonReport(text) };
+  if (laTriggerHuyMmkk(text)) return { ten: 'Huỷ MMKK', ket: await generateHuyMmkkReport(text) };
   return null;
 }
 
@@ -961,6 +1197,7 @@ const KNOWN_TABS = [
   { name: TAB_MUCTIEU, desc: 'Mục tiêu thi đua theo tuần (M1, M2, M3) của từng siêu thị theo nhóm ngành hàng' },
   { name: TAB_DT_NGAY, desc: 'Doanh thu theo ngày của từng siêu thị theo từng ngành hàng' },
   { name: TAB_FRESH_BAN, desc: 'Doanh thu bán Fresh hôm nay theo siêu thị, theo ngành giá vốn' },
+  { name: TAB_HUYMMKK, desc: 'Số lượng bán, giảm giá, huỷ, mất mát kiểm kê từng sản phẩm Fresh theo ngày' },
   { name: TAB_GIAVON, desc: 'Giá vốn, doanh thu, lợi nhuận luỹ kế Fresh theo ngành hàng, so với TB 3 tháng trước' },
 ];
 
@@ -1209,6 +1446,15 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           continue;
         }
 
+        if (kq.loai === 'huymmkk') {
+          try {
+            await guiTraLoi(event, targetId, await generateHuyMmkkReport('', kq.dsST));
+          } catch (e) {
+            await guiTraLoi(event, targetId, { type: 'text', text: `✅ Đã nạp huỷ MMKK (${kq.soDong} dòng).\n⚠️ Chưa tạo được báo cáo: ${e.message}` });
+          }
+          continue;
+        }
+
         if (kq.loai === 'giavon' || kq.loai === 'fresh_ban') {
           try {
             await guiTraLoi(event, targetId, await generateGiaVonReport('', kq.dsST));
@@ -1288,6 +1534,8 @@ app.get('/anh/:id.png', async (req, res) => {
       let ve;
       if (req.query.loai === 'gv') {
         ve = await veAnhGiaVon(String(req.query.st || ''));
+      } else if (req.query.loai === 'mm') {
+        ve = await veAnhHuyMmkk(String(req.query.st || ''));
       } else {
         const lenh = `dt ngành hàng ${req.query.t || ''} ${req.query.n ? fmtNgay(String(req.query.n)) : ''}`;
         ve = await veAnhDtNH(lenh);
@@ -1319,4 +1567,4 @@ if (require.main === module) {
   })();
 }
 
-module.exports = { datMucThiDua, veSvgGiaVon, docDuLieuGiaVon, generateGiaVonReport, gioTuTenFile, napFileVaoSheet, generateDtNganhHangReport, tinhDuLieuDtNH, veSvgDtNH, docFileThiDua, gopDoanhThuModel };
+module.exports = { docDuLieuHuyMmkk, veSvgHuyMmkk, datMucThiDua, veSvgGiaVon, docDuLieuGiaVon, generateGiaVonReport, gioTuTenFile, napFileVaoSheet, generateDtNganhHangReport, tinhDuLieuDtNH, veSvgDtNH, docFileThiDua, gopDoanhThuModel };
