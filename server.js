@@ -1277,17 +1277,20 @@ function veSvgSua(d) {
   let y = 108;
 
   // Ô tổng mỗi sản phẩm
-  const oW = (W - PAD * 2 - 12 * nSP) / (nSP + 1), oH = 70;
+  const oW = (W - PAD * 2 - 12 * nSP) / (nSP + 1), oH = 92;
   [...dsSP, { ma: '*', ngan: 'TỔNG' }].forEach((s, k) => {
     const x = PAD + k * (oW + 12);
     const tTon = s.ma === '*' ? rows.reduce((a, r) => a + r.tTon, 0) : rows.reduce((a, r) => a + (r.ton[s.ma] || 0), 0);
     const tBan = s.ma === '*' ? rows.reduce((a, r) => a + r.tBan, 0) : rows.reduce((a, r) => a + (r.ban[s.ma] || 0), 0);
     const het = s.ma === '*' ? null : rows.filter((r) => (r.ton[s.ma] || 0) <= 0).length;
     p.push(`<rect x="${x}" y="${y}" width="${oW}" height="${oH}" rx="10" fill="${s.ma === '*' ? '#E6F4EC' : '#F2F8F4'}"/>`);
-    p.push(t(x + 12, y + 20, s.ngan, { size: 13, bold: true, fill: C.xanhDam }));
-    p.push(t(x + 12, y + 46, `Tồn ${fs(tTon)}`, { size: 17, bold: true }));
-    p.push(t(x + oW - 12, y + 46, `Bán ${fs(tBan)}`, { size: 17, bold: true, fill: C.xanh, anchor: 'end' }));
-    if (het != null) p.push(t(x + 12, y + 63, het ? `${het} ST hết hàng` : 'Không ST nào hết', { size: 11, fill: het ? C.do : C.phu }));
+    // Tồn và Bán xuống 2 dòng riêng để không bị dính chữ
+    p.push(t(x + 12, y + 20, rutGonTen(s.ngan, 22), { size: 13, bold: true, fill: C.xanhDam }));
+    p.push(t(x + 12, y + 44, 'Tồn', { size: 13, fill: C.phu }));
+    p.push(t(x + oW - 12, y + 44, fs(tTon), { size: 17, bold: true, anchor: 'end' }));
+    p.push(t(x + 12, y + 66, 'Bán', { size: 13, fill: C.phu }));
+    p.push(t(x + oW - 12, y + 66, fs(tBan), { size: 17, bold: true, fill: C.xanh, anchor: 'end' }));
+    if (het != null) p.push(t(x + 12, y + 84, het ? `${het} ST hết hàng` : 'Không ST nào hết', { size: 11, fill: het ? C.do : C.phu }));
   });
   y += oH + 16;
 
