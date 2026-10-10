@@ -1535,14 +1535,18 @@ function veSvgDmsk(d) {
   // Cột: MT T10 | DT LK | % đạt | TB/ngày | Cần/ngày còn lại | DK tháng (tr) | DK %
   const conLai = Math.max(0.5, d.ngayThang - d.soNgay);
   // Thứ tự: Hôm nay | Cần/ngày | Dự kiến tháng | Dự kiến % | MT T10 | DT LK T10 | % đạt
-  const cot = { stt: PAD + 30, ten: PAD + 44, hn: 425, can: 525, dkTr: 625, dk: 725, mt: 830, dt: 940, p: W - PAD - 10 };
+  const cot = { stt: PAD + 30, ten: PAD + 44, hn: 420, can: 520, mt: 640, dt: 750, p: 850, dkTr: 975, dk: W - PAD - 10 };
+  const vach = [545, 872]; // vạch ngăn 3 nhóm: HÔM NAY | LUỸ KẾ T10 | DỰ KIẾN CUỐI THÁNG
   const nhanHN = d.coHomNay ? (d.nhanHomNay.split(' ')[0] || 'realtime') : 'realtime';
-  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="48" rx="6" fill="${C.nen}"/>`);
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="70" rx="6" fill="${C.nen}"/>`);
+  const nhom = [[340, vach[0], 'HÔM NAY'], [vach[0], vach[1], 'LUỸ KẾ T10'], [vach[1], W - PAD, 'DỰ KIẾN CUỐI THÁNG']];
+  for (const [x1, x2, ten] of nhom) { p.push(`<rect x="${x1 + 6}" y="${y + 6}" width="${x2 - x1 - 12}" height="20" rx="4" fill="${C.xanh}"/>`); p.push(t((x1 + x2) / 2, y + 21, ten, { size: 12, bold: true, fill: '#FFFFFF', anchor: 'middle' })); }
+  y += 22;
   const td = (x, a1, a2, al) => { p.push(t(x, y + 20, a1, { size: 13, bold: true, fill: C.xanhDam, anchor: al || 'end' })); if (a2) p.push(t(x, y + 38, a2, { size: 13, bold: true, fill: C.xanhDam, anchor: al || 'end' })); };
   td(cot.stt, '#', ''); td(cot.ten, 'Siêu thị', '', 'start');
   td(cot.mt, 'MT', 'T10'); td(cot.dt, 'DT T10', 'luỹ kế'); td(cot.hn, 'Hôm nay', nhanHN); td(cot.p, '%', 'đạt');
-  td(cot.can, 'Cần/ngày', 'để đạt'); td(cot.dkTr, 'Dự kiến', 'tháng'); td(cot.dk, 'Dự kiến', '% tháng');
-  const yTop = y; y += 48;
+  td(cot.can, 'Cần/ngày', 'để đạt'); td(cot.dkTr, 'DT', 'cả tháng'); td(cot.dk, '% đạt', 'cuối tháng');
+  const yTop = y - 22; y += 48;
   // dòng tổng KV
   const tbKV = d.tongDT / d.soNgay, canKV = Math.max(0, (d.tongMT - d.dong.filter((x) => x.p != null).reduce((s2, x) => s2 + x.dt, 0)) / conLai);
   p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 2}" fill="${C.xanh}"/>`);
@@ -1562,15 +1566,16 @@ function veSvgDmsk(d) {
     p.push(t(cot.mt, yt, coMT ? nguyen(x.mt / 1e6) : '–', { fill: C.phu, anchor: 'end' }));
     p.push(t(cot.dt, yt, nguyen(x.dt / 1e6), { bold: true, anchor: 'end' }));
     p.push(t(cot.hn, yt, x.hn == null ? '–' : nguyen(x.hn / 1e6), { bold: true, fill: x.hn != null && coMT && x.hn >= can ? C.xanh : '#1a1a1a', anchor: 'end' }));
-    p.push(t(cot.p, yt, pct(x.p), { bold: true, fill: coMT ? mau(x.p, chuan) : C.phu, anchor: 'end' }));
+    p.push(t(cot.p, yt, pct(x.p), { bold: true, fill: coMT ? '#1a1a1a' : C.phu, anchor: 'end' }));
     p.push(t(cot.can, yt, coMT ? nguyen(can / 1e6) : '–', { bold: true, fill: coMT ? (can > tb * 1.1 ? C.do : can > tb ? C.cam : C.xanh) : C.phu, anchor: 'end' }));
     p.push(t(cot.dkTr, yt, nguyen(dkTr / 1e6), { anchor: 'end' }));
     p.push(t(cot.dk, yt, pct(x.dk), { bold: true, fill: coMT ? mau(x.dk, 100) : C.phu, anchor: 'end' }));
     y += ROW;
   });
+  for (const vx of vach) p.push(`<line x1="${vx}" y1="${yTop + 28}" x2="${vx}" y2="${y}" stroke="#9DBFAA" stroke-width="1.5"/>`);
   p.push(`<rect x="${PAD}" y="${yTop}" width="${W - PAD * 2}" height="${y - yTop}" rx="6" fill="none" stroke="${C.vien}"/>`);
   y += 24;
-  p.push(t(PAD, y, `Hôm nay xanh = đã bán đủ Cần/ngày · Cần/ngày = (MT − DT) ÷ ${String(Math.round(conLai * 10) / 10).replace('.', ',')} ngày còn lại (đỏ: cao hơn nhịp đang bán >10%) · Dự kiến tháng = DT luỹ kế ÷ ${String(Math.round(d.soNgay * 10) / 10).replace('.', ',')} ngày × ${d.ngayThang}.`, { size: 12, fill: C.phu }));
+  p.push(t(PAD, y, `Hôm nay xanh = đã bán đủ Cần/ngày · Cần/ngày = (MT − DT) ÷ ${String(Math.round(conLai * 10) / 10).replace('.', ',')} ngày còn lại (đỏ: cao hơn nhịp đang bán >10%) · DT cả tháng = DT luỹ kế ÷ ${String(Math.round(d.soNgay * 10) / 10).replace('.', ',')} ngày × ${d.ngayThang}.`, { size: 12, fill: C.phu }));
   const H = y + PAD - 4;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
 }
