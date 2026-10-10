@@ -353,7 +353,7 @@ async function napFileVaoSheet(fileName, buffer, ngayChiDinh, laBaseDmsk) {
     const nhFile = new Set(dataRows.map((r) => String(r[iNH] ?? '').trim()).filter(Boolean));
     if (nhFile.size && [...nhFile].every((nh) => NH_TAT.has(nh))) {
       // File Đông mát – Sữa – Kem -> BC ĐMSK (base T9 nếu vừa gõ "NẠP BASE ĐMSK", ngược lại là luỹ kế T10)
-      return laBaseDmsk ? napBaseDmsk(sheets, header, dataRows, fileName) : napT10Dmsk(sheets, header, dataRows, fileName);
+      return laBaseDmsk ? napBaseDmsk(sheets, header, dataRows, fileName) : napT10Dmsk(sheets, header, dataRows, fileName, ngayChiDinh);
     }
     const ngayKey = ngayChiDinh || ngayTuTenFile(fileName);
     // Gửi bù bằng lệnh NẠP NGÀY = file đủ cả ngày -> coi như xuất lúc 23h
@@ -1393,42 +1393,113 @@ async function napBaseDmsk(sheets, header, dataRows, fileName) {
   return { loai: 'dmsk_base', soDong: ds.length, tong: ds.reduce((s, x) => s + x.dt, 0) };
 }
 
-async function napT10Dmsk(sheets, header, dataRows, fileName) {
-  const ds = tongDtTheoST(header, dataRows);
-  // Số ngày đã chạy: theo ngày + giờ xuất file (6h mở cửa -> 21h đủ ngày)
-  const ngay = ngayTuTenFile(fileName);
-  const gio = gioTuTenFile(fileName);
+// DOANH THU T10 CHO BC ĐMSK — mỗi ngày chỉ cần đổ file 1 NGÀY, bot tự cộng dồn tháng.
+//  - DMSK_T10  = mốc luỹ kế (file luỹ kế từ 01/10). Gửi kèm "NẠP NGÀY dd/mm" = luỹ kế đến HẾT ngày đó.
+//  - DMSK_NGAY = DT từng ngày (file chỉ 1 ngày; gửi nhiều lần trong ngày thì lấy bản mới nhất).
+//  Luỹ kế = mốc + tổng các ngày sau mốc. Cột "Hôm nay" = file ngày mới nhất.
+const TAB_DMSK_NGAY = 'DMSK_NGAY';
+function soNgayChayDmsk(ngay, gio) {
   const d = Number(ngay.slice(8, 10));
-  const soNgay = Math.max(0.1, d - 1 + (gio == null ? 1 : Math.min(1, Math.max(0, (gio - 6) / 15))));
-  const ngayThang = new Date(Number(ngay.slice(0, 4)), Number(ngay.slice(5, 7)), 0).getDate();
-  await ghiDeTab(sheets, TAB_DMSK_T10, ['Mã siêu thị', 'Tên siêu thị', 'DT luỹ kế', 'Cập nhật', 'Số ngày đã chạy', 'Số ngày trong tháng'],
-    ds.map((x) => [x.ma, x.ten, Math.round(x.dt), capNhatTuTen(fileName), Math.round(soNgay * 100) / 100, ngayThang]));
-  return { loai: 'dmsk', soDong: ds.length };
+  return Math.max(0.1, d - 1 + (gio == null || gio === '' ? 1 : Math.min(1, Math.max(0, (Number(gio) - 6) / 15))));
+}
+async function tinhLuyKeDmsk(sheets) {
+  const t10 = (await docTabAnToan(sheets, TAB_DMSK_T10)).slice(1);
+  const ng = (await docTabAnToan(sheets, TAB_DMSK_NGAY)).slice(1).filter((r) => r[0]);
+  if (!t10.length && !ng.length) return null;
+  const m = new Map();
+  const add = (ma, ten, v) => { const o = m.get(ma) || { ten, dt: 0 }; o.dt += v; if (!o.ten) o.ten = ten; m.set(ma, o); };
+  for (const r of t10) add(chuanHoaMaST(r[0]), String(r[1] || ''), soGV(r[2]));
+  const aNgay = t10.length ? String(t10[0][6] || '') : '';
+  const aDu = t10.length ? Number(t10[0][7] || 0) === 1 : false;
+  const cacNgay = [...new Set(ng.map((r) => String(r[0])))].sort();
+  // mốc cũ không ghi ngày -> không cộng thêm ngày nào (tránh cộng trùng)
+  const sau = t10.length ? (aNgay ? cacNgay.filter((x) => x > aNgay) : []) : cacNgay;
+  for (const r of ng) if (sau.includes(String(r[0]))) add(chuanHoaMaST(r[1]), String(r[2] || ''), soGV(r[3]));
+  let ngayMoi = aNgay, gioMoi = aDu ? 23 : t10.length ? t10[0][8] : null, capNhat = t10.length ? String(t10[0][3] || '') : '';
+  let soNgay = t10.length && !aNgay ? soGV(t10[0][4]) || 1 : null;
+  const ngayCuoi = cacNgay[cacNgay.length - 1];
+  if (ngayCuoi && (!aNgay || ngayCuoi >= aNgay) && (sau.length || ngayCuoi === aNgay || !t10.length)) {
+    const rr = ng.filter((r) => String(r[0]) === ngayCuoi);
+    if (sau.includes(ngayCuoi) || !t10.length) { ngayMoi = ngayCuoi; gioMoi = rr[0][5]; capNhat = String(rr[0][4] || ''); }
+  }
+  if (ngayMoi) soNgay = soNgayChayDmsk(ngayMoi, gioMoi);
+  const keyThang = ngayMoi || homNayVN();
+  const ngayThang = t10.length && !aNgay ? soGV(t10[0][5]) || 31 : new Date(Number(keyThang.slice(0, 4)), Number(keyThang.slice(5, 7)), 0).getDate();
+  // Hôm nay = file 1 ngày của ngày mới nhất
+  let homNay = null, nhanHN = '';
+  const ngayHN = ngayMoi && cacNgay.includes(ngayMoi) ? ngayMoi : null;
+  if (ngayHN) {
+    const rr = ng.filter((r) => String(r[0]) === ngayHN);
+    homNay = new Map(rr.map((r) => [chuanHoaMaST(r[1]), soGV(r[3])]));
+    nhanHN = String(rr[0][4] || '');
+  }
+  return { m, soNgay: soNgay || 1, ngayThang, capNhat, homNay, nhanHN, ngayMoi, aNgay, aDu };
+}
+
+async function napT10Dmsk(sheets, header, dataRows, fileName, ngayChiDinh) {
+  const ds = tongDtTheoST(header, dataRows);
+  const ngay = ngayChiDinh || ngayTuTenFile(fileName);
+  const gio = ngayChiDinh ? 23 : gioTuTenFile(fileName);
+  const tong = ds.reduce((s2, x) => s2 + x.dt, 0);
+  const cap = ngayChiDinh ? `hết ${ngay.slice(8, 10)}/${ngay.slice(5, 7)}` : capNhatTuTen(fileName);
+  // File 1 ngày hay luỹ kế? So với nhịp bán TB/ngày đang có
+  const hien = await tinhLuyKeDmsk(sheets);
+  let motNgay = false;
+  if (hien) {
+    const tongLK = [...hien.m.values()].reduce((s2, x) => s2 + x.dt, 0);
+    const tb = tongLK / Math.max(1, hien.soNgay);
+    motNgay = tong < tb * 2.5 && tong < tongLK * 0.6;
+  }
+  // File luỹ kế mà tổng NHỎ HƠN luỹ kế hiện có (đã gồm hôm nay) -> là luỹ kế đến HẾT HÔM QUA
+  let ngayMoc = ngay, du = !!ngayChiDinh;
+  if (!motNgay && hien && !ngayChiDinh) {
+    const tongLK = [...hien.m.values()].reduce((s2, x) => s2 + x.dt, 0);
+    if (tong < tongLK * 0.995) { ngayMoc = taoKeyNgayLuiDmsk(ngay, 1); du = true; }
+  }
+  if (motNgay) {
+    const cu = (await docTabAnToan(sheets, TAB_DMSK_NGAY)).slice(1)
+      .filter((r) => r[0] && String(r[0]) !== ngay && String(r[0]).slice(0, 7) === ngay.slice(0, 7));
+    for (const x of ds) cu.push([ngay, x.ma, x.ten, Math.round(x.dt), cap, gio == null ? '' : Math.round(gio * 100) / 100]);
+    await ghiDeTab(sheets, TAB_DMSK_NGAY, ['Ngày', 'Mã siêu thị', 'Tên siêu thị', 'DT ngày', 'Cập nhật', 'Giờ'], cu);
+    return { loai: 'dmsk', soDong: ds.length, motNgay: true, ngay };
+  }
+  const capMoc = du ? `hết ${ngayMoc.slice(8, 10)}/${ngayMoc.slice(5, 7)}` : cap;
+  const gioMoc = du ? 23 : gio;
+  const ngayThang = new Date(Number(ngayMoc.slice(0, 4)), Number(ngayMoc.slice(5, 7)), 0).getDate();
+  await ghiDeTab(sheets, TAB_DMSK_T10,
+    ['Mã siêu thị', 'Tên siêu thị', 'DT luỹ kế', 'Cập nhật', 'Số ngày đã chạy', 'Số ngày trong tháng', 'Ngày', 'Đủ ngày', 'Giờ'],
+    ds.map((x) => [x.ma, x.ten, Math.round(x.dt), capMoc, Math.round(soNgayChayDmsk(ngayMoc, gioMoc) * 100) / 100, ngayThang, ngayMoc, du ? 1 : 0, gioMoc == null ? '' : Math.round(gioMoc * 100) / 100]));
+  return { loai: 'dmsk', soDong: ds.length, motNgay: false, ngay: ngayMoc, du };
+}
+function taoKeyNgayLuiDmsk(key, n) {
+  const t = new Date(key + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() - n);
+  return t.toISOString().slice(0, 10);
 }
 
 async function docDuLieuDmsk() {
   const sheets = getSheetsClient();
   const base = (await docTabAnToan(sheets, TAB_DMSK_BASE)).slice(1);
-  const t10 = (await docTabAnToan(sheets, TAB_DMSK_T10)).slice(1);
   if (!base.length) throw new Error('Chưa có base tháng 9. Anh @tag em gõ "NẠP BASE ĐMSK" rồi gửi file Doanh Thu Theo Model tháng 9 trong 3 phút.');
-  if (!t10.length) throw new Error('Chưa có doanh thu tháng 10. Anh gửi file Doanh Thu Theo Model Đông mát – Sữa – Kem tháng 10 vào group.');
-  const soNgay = soGV(t10[0][4]) || 1, ngayThang = soGV(t10[0][5]) || 31;
+  const lk = await tinhLuyKeDmsk(sheets);
+  if (!lk) throw new Error('Chưa có doanh thu tháng 10. Anh gửi file Doanh Thu Theo Model Đông mát – Sữa – Kem tháng 10 vào group.');
+  const { soNgay, ngayThang } = lk;
   const tienDo = Math.min(1, soNgay / ngayThang);
   const mBase = new Map(base.map((r) => [chuanHoaMaST(r[0]), { ten: String(r[1]), dt9: soGV(r[2]), mt: soGV(r[3]) }]));
   const dong = [];
-  const daCo = new Set();
-  for (const r of t10) {
-    const ma = chuanHoaMaST(r[0]); daCo.add(ma);
+  for (const [ma, o] of lk.m) {
     const b = mBase.get(ma);
-    const dt = soGV(r[2]);
-    dong.push({ ma, ten: String(r[1]) || (b && b.ten), dt9: b ? b.dt9 : 0, mt: b ? b.mt : 0, dt, p: b && b.mt > 0 ? (dt / b.mt) * 100 : null });
+    dong.push({ ma, ten: o.ten || (b && b.ten), dt9: b ? b.dt9 : 0, mt: b ? b.mt : 0, dt: o.dt, p: b && b.mt > 0 ? (o.dt / b.mt) * 100 : null });
   }
-  for (const [ma, b] of mBase) if (!daCo.has(ma)) dong.push({ ma, ten: b.ten, dt9: b.dt9, mt: b.mt, dt: 0, p: 0 });
+  for (const [ma, b] of mBase) if (!lk.m.has(ma)) dong.push({ ma, ten: b.ten, dt9: b.dt9, mt: b.mt, dt: 0, p: 0 });
   for (const x of dong) x.dk = x.p == null ? null : x.p / tienDo; // dự kiến % cuối tháng nếu giữ nhịp
+  for (const x of dong) x.hn = lk.homNay ? lk.homNay.get(x.ma) || 0 : null;
   const coMT = dong.filter((x) => x.p != null).sort((a, b) => b.p - a.p);
   const khongMT = dong.filter((x) => x.p == null).sort((a, b) => b.dt - a.dt);
   const tongMT = coMT.reduce((s, x) => s + x.mt, 0), tongDT = dong.reduce((s, x) => s + x.dt, 0), tongDT9 = coMT.reduce((s, x) => s + x.dt9, 0);
-  return { dong: [...coMT, ...khongMT], tongMT, tongDT, tongDT9, soNgay, ngayThang, tienDo, capNhat: String(t10[0][3] || ''), capBase: String(base[0][4] || '') };
+  return {
+    dong: [...coMT, ...khongMT], tongMT, tongDT, tongDT9, soNgay, ngayThang, tienDo, capNhat: lk.capNhat, capBase: String(base[0][4] || ''),
+    coHomNay: !!lk.homNay, nhanHomNay: lk.nhanHN, tongHN: lk.homNay ? dong.reduce((s2, x) => s2 + (x.hn || 0), 0) : 0,
+  };
 }
 
 function veSvgDmsk(d) {
@@ -1463,20 +1534,22 @@ function veSvgDmsk(d) {
 
   // Cột: MT T10 | DT LK | % đạt | TB/ngày | Cần/ngày còn lại | DK tháng (tr) | DK %
   const conLai = Math.max(0.5, d.ngayThang - d.soNgay);
-  const cot = { stt: PAD + 30, ten: PAD + 44, mt: 420, dt: 510, p: 595, tb: 680, can: 775, dkTr: 875, dk: W - PAD - 10 };
+  // Thứ tự: Hôm nay | Cần/ngày | Dự kiến tháng | Dự kiến % | MT T10 | DT LK T10 | % đạt
+  const cot = { stt: PAD + 30, ten: PAD + 44, hn: 425, can: 525, dkTr: 625, dk: 725, mt: 830, dt: 940, p: W - PAD - 10 };
+  const nhanHN = d.coHomNay ? (d.nhanHomNay.split(' ')[0] || 'realtime') : 'realtime';
   p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="48" rx="6" fill="${C.nen}"/>`);
   const td = (x, a1, a2, al) => { p.push(t(x, y + 20, a1, { size: 13, bold: true, fill: C.xanhDam, anchor: al || 'end' })); if (a2) p.push(t(x, y + 38, a2, { size: 13, bold: true, fill: C.xanhDam, anchor: al || 'end' })); };
   td(cot.stt, '#', ''); td(cot.ten, 'Siêu thị', '', 'start');
-  td(cot.mt, 'MT', 'T10'); td(cot.dt, 'DT T10', 'luỹ kế'); td(cot.p, '%', 'đạt');
-  td(cot.tb, 'TB/ngày', 'hiện tại'); td(cot.can, 'Cần/ngày', 'để đạt'); td(cot.dkTr, 'Dự kiến', 'tháng'); td(cot.dk, 'Dự kiến', '% tháng');
+  td(cot.mt, 'MT', 'T10'); td(cot.dt, 'DT T10', 'luỹ kế'); td(cot.hn, 'Hôm nay', nhanHN); td(cot.p, '%', 'đạt');
+  td(cot.can, 'Cần/ngày', 'để đạt'); td(cot.dkTr, 'Dự kiến', 'tháng'); td(cot.dk, 'Dự kiến', '% tháng');
   const yTop = y; y += 48;
   // dòng tổng KV
   const tbKV = d.tongDT / d.soNgay, canKV = Math.max(0, (d.tongMT - d.dong.filter((x) => x.p != null).reduce((s2, x) => s2 + x.dt, 0)) / conLai);
   p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 2}" fill="${C.xanh}"/>`);
   const w = { fill: '#FFFFFF', bold: true, anchor: 'end' };
   p.push(t(cot.ten, y + 21, 'TỔNG KHU VỰC', { fill: '#FFFFFF', bold: true }));
-  p.push(t(cot.mt, y + 21, nguyen(d.tongMT / 1e6), w)); p.push(t(cot.dt, y + 21, nguyen(d.tongDT / 1e6), w));
-  p.push(t(cot.p, y + 21, fmtPhanTram(pKV), w)); p.push(t(cot.tb, y + 21, nguyen(tbKV / 1e6), w));
+  p.push(t(cot.mt, y + 21, nguyen(d.tongMT / 1e6), w)); p.push(t(cot.dt, y + 21, nguyen(d.tongDT / 1e6), w)); p.push(t(cot.hn, y + 21, d.coHomNay ? nguyen(d.tongHN / 1e6) : '–', w));
+  p.push(t(cot.p, y + 21, fmtPhanTram(pKV), w));
   p.push(t(cot.can, y + 21, nguyen(canKV / 1e6), w)); p.push(t(cot.dkTr, y + 21, nguyen((tbKV * d.ngayThang) / 1e6), w));
   p.push(t(cot.dk, y + 21, fmtPhanTram(pKV / d.tienDo), w));
   y += ROW + 2;
@@ -1488,8 +1561,8 @@ function veSvgDmsk(d) {
     p.push(t(cot.ten, yt, rutGonTen(x.ten, 26) + (coMT ? '' : ' (mới)'), { fill: coMT ? '#1a1a1a' : C.phu }));
     p.push(t(cot.mt, yt, coMT ? nguyen(x.mt / 1e6) : '–', { fill: C.phu, anchor: 'end' }));
     p.push(t(cot.dt, yt, nguyen(x.dt / 1e6), { bold: true, anchor: 'end' }));
+    p.push(t(cot.hn, yt, x.hn == null ? '–' : nguyen(x.hn / 1e6), { bold: true, fill: x.hn != null && coMT && x.hn >= can ? C.xanh : '#1a1a1a', anchor: 'end' }));
     p.push(t(cot.p, yt, pct(x.p), { bold: true, fill: coMT ? mau(x.p, chuan) : C.phu, anchor: 'end' }));
-    p.push(t(cot.tb, yt, nguyen(tb / 1e6), { anchor: 'end' }));
     p.push(t(cot.can, yt, coMT ? nguyen(can / 1e6) : '–', { bold: true, fill: coMT ? (can > tb * 1.1 ? C.do : can > tb ? C.cam : C.xanh) : C.phu, anchor: 'end' }));
     p.push(t(cot.dkTr, yt, nguyen(dkTr / 1e6), { anchor: 'end' }));
     p.push(t(cot.dk, yt, pct(x.dk), { bold: true, fill: coMT ? mau(x.dk, 100) : C.phu, anchor: 'end' }));
@@ -1497,7 +1570,7 @@ function veSvgDmsk(d) {
   });
   p.push(`<rect x="${PAD}" y="${yTop}" width="${W - PAD * 2}" height="${y - yTop}" rx="6" fill="none" stroke="${C.vien}"/>`);
   y += 24;
-  p.push(t(PAD, y, `TB/ngày = DT luỹ kế ÷ ${String(Math.round(d.soNgay * 10) / 10).replace('.', ',')} ngày · Cần/ngày = (MT − DT) ÷ ${String(Math.round(conLai * 10) / 10).replace('.', ',')} ngày còn lại (đỏ: cần hơn nhịp hiện tại >10%) · Dự kiến tháng = TB/ngày × ${d.ngayThang}.`, { size: 12, fill: C.phu }));
+  p.push(t(PAD, y, `Hôm nay xanh = đã bán đủ Cần/ngày · Cần/ngày = (MT − DT) ÷ ${String(Math.round(conLai * 10) / 10).replace('.', ',')} ngày còn lại (đỏ: cao hơn nhịp đang bán >10%) · Dự kiến tháng = DT luỹ kế ÷ ${String(Math.round(d.soNgay * 10) / 10).replace('.', ',')} ngày × ${d.ngayThang}.`, { size: 12, fill: C.phu }));
   const H = y + PAD - 4;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
 }
