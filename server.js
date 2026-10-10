@@ -324,7 +324,7 @@ function gopDoanhThuModel(header, dataRows, ngayKey, gioXuat) {
 }
 
 // ---- Nạp file vào Sheet ----
-async function napFileVaoSheet(fileName, buffer, ngayChiDinh) {
+async function napFileVaoSheet(fileName, buffer, ngayChiDinh, laBaseDmsk) {
   const wb = XLSX.read(buffer, { type: 'buffer' });
   const sheets = getSheetsClient();
 
@@ -352,7 +352,8 @@ async function napFileVaoSheet(fileName, buffer, ngayChiDinh) {
     const iNH = header.indexOf('Mã ngành hàng');
     const nhFile = new Set(dataRows.map((r) => String(r[iNH] ?? '').trim()).filter(Boolean));
     if (nhFile.size && [...nhFile].every((nh) => NH_TAT.has(nh))) {
-      return { loai: 'bo_qua', soDong: 0, thongBao: 'ℹ️ Báo cáo Đông mát – Sữa – Kem đã tắt nên em không nạp file này.' };
+      // File Đông mát – Sữa – Kem -> BC ĐMSK (base T9 nếu vừa gõ "NẠP BASE ĐMSK", ngược lại là luỹ kế T10)
+      return laBaseDmsk ? napBaseDmsk(sheets, header, dataRows, fileName) : napT10Dmsk(sheets, header, dataRows, fileName);
     }
     const ngayKey = ngayChiDinh || ngayTuTenFile(fileName);
     // Gửi bù bằng lệnh NẠP NGÀY = file đủ cả ngày -> coi như xuất lúc 23h
@@ -1362,6 +1363,146 @@ async function generateSuaReport() {
   return { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?loai=sua`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?loai=sua&nho=1` };
 }
 
+// ---------------------------------------------------------------------------
+// BÁO CÁO "BC ĐMSK" — Đông mát – Sữa – Kem (NH 990, 1056, 1354, 1355) T10 so mục tiêu = T9 × 120%
+//  - "@bot NẠP BASE ĐMSK" rồi gửi file Doanh Thu Theo Model THÁNG 9 trong 3 phút -> tab DMSK_BASE
+//  - Gửi file Doanh Thu Theo Model ĐMSK bình thường = luỹ kế THÁNG 10            -> tab DMSK_T10 (ghi đè)
+// ---------------------------------------------------------------------------
+const TAB_DMSK_BASE = 'DMSK_BASE';
+const TAB_DMSK_T10 = 'DMSK_T10';
+const HE_SO_DMSK = 1.2;
+const cho_NapBaseDmsk = new Map(); // targetId -> hạn
+
+function tongDtTheoST(header, dataRows) {
+  const iST = header.indexOf('Mã siêu thị'), iTen = header.indexOf('Tên siêu thị'), iDT = header.indexOf('Tổng doanh thu');
+  const m = new Map();
+  for (const r of dataRows) {
+    const ma = chuanHoaMaST(r[iST]);
+    if (!ma) continue;
+    const x = m.get(ma) || { ma, ten: tenNganSieuThi(r[iTen]), dt: 0 };
+    x.dt += soGV(r[iDT]);
+    m.set(ma, x);
+  }
+  return [...m.values()];
+}
+
+async function napBaseDmsk(sheets, header, dataRows, fileName) {
+  const ds = tongDtTheoST(header, dataRows);
+  await ghiDeTab(sheets, TAB_DMSK_BASE, ['Mã siêu thị', 'Tên siêu thị', 'DT tháng base', `MT (×${HE_SO_DMSK * 100}%)`, 'Cập nhật'],
+    ds.map((x) => [x.ma, x.ten, Math.round(x.dt), Math.round(x.dt * HE_SO_DMSK), capNhatTuTen(fileName)]));
+  return { loai: 'dmsk_base', soDong: ds.length, tong: ds.reduce((s, x) => s + x.dt, 0) };
+}
+
+async function napT10Dmsk(sheets, header, dataRows, fileName) {
+  const ds = tongDtTheoST(header, dataRows);
+  // Số ngày đã chạy: theo ngày + giờ xuất file (6h mở cửa -> 21h đủ ngày)
+  const ngay = ngayTuTenFile(fileName);
+  const gio = gioTuTenFile(fileName);
+  const d = Number(ngay.slice(8, 10));
+  const soNgay = Math.max(0.1, d - 1 + (gio == null ? 1 : Math.min(1, Math.max(0, (gio - 6) / 15))));
+  const ngayThang = new Date(Number(ngay.slice(0, 4)), Number(ngay.slice(5, 7)), 0).getDate();
+  await ghiDeTab(sheets, TAB_DMSK_T10, ['Mã siêu thị', 'Tên siêu thị', 'DT luỹ kế', 'Cập nhật', 'Số ngày đã chạy', 'Số ngày trong tháng'],
+    ds.map((x) => [x.ma, x.ten, Math.round(x.dt), capNhatTuTen(fileName), Math.round(soNgay * 100) / 100, ngayThang]));
+  return { loai: 'dmsk', soDong: ds.length };
+}
+
+async function docDuLieuDmsk() {
+  const sheets = getSheetsClient();
+  const base = (await docTabAnToan(sheets, TAB_DMSK_BASE)).slice(1);
+  const t10 = (await docTabAnToan(sheets, TAB_DMSK_T10)).slice(1);
+  if (!base.length) throw new Error('Chưa có base tháng 9. Anh @tag em gõ "NẠP BASE ĐMSK" rồi gửi file Doanh Thu Theo Model tháng 9 trong 3 phút.');
+  if (!t10.length) throw new Error('Chưa có doanh thu tháng 10. Anh gửi file Doanh Thu Theo Model Đông mát – Sữa – Kem tháng 10 vào group.');
+  const soNgay = soGV(t10[0][4]) || 1, ngayThang = soGV(t10[0][5]) || 31;
+  const tienDo = Math.min(1, soNgay / ngayThang);
+  const mBase = new Map(base.map((r) => [chuanHoaMaST(r[0]), { ten: String(r[1]), dt9: soGV(r[2]), mt: soGV(r[3]) }]));
+  const dong = [];
+  const daCo = new Set();
+  for (const r of t10) {
+    const ma = chuanHoaMaST(r[0]); daCo.add(ma);
+    const b = mBase.get(ma);
+    const dt = soGV(r[2]);
+    dong.push({ ma, ten: String(r[1]) || (b && b.ten), dt9: b ? b.dt9 : 0, mt: b ? b.mt : 0, dt, p: b && b.mt > 0 ? (dt / b.mt) * 100 : null });
+  }
+  for (const [ma, b] of mBase) if (!daCo.has(ma)) dong.push({ ma, ten: b.ten, dt9: b.dt9, mt: b.mt, dt: 0, p: 0 });
+  for (const x of dong) x.dk = x.p == null ? null : x.p / tienDo; // dự kiến % cuối tháng nếu giữ nhịp
+  const coMT = dong.filter((x) => x.p != null).sort((a, b) => b.p - a.p);
+  const khongMT = dong.filter((x) => x.p == null).sort((a, b) => b.dt - a.dt);
+  const tongMT = coMT.reduce((s, x) => s + x.mt, 0), tongDT = dong.reduce((s, x) => s + x.dt, 0), tongDT9 = coMT.reduce((s, x) => s + x.dt9, 0);
+  return { dong: [...coMT, ...khongMT], tongMT, tongDT, tongDT9, soNgay, ngayThang, tienDo, capNhat: String(t10[0][3] || ''), capBase: String(base[0][4] || '') };
+}
+
+function veSvgDmsk(d) {
+  const W = 1000, PAD = 24, ROW = 30;
+  const C = { xanh: '#0B8A3E', xanhDam: '#0B6E35', nen: '#E6F4EC', chan: '#F3F7F5', vien: '#D5E3DA', phu: '#666666', do: '#D0312D', cam: '#E08A00' };
+  const t = (x, y, s, o = {}) =>
+    `<text x="${x}" y="${y}" font-size="${o.size || 15}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1a1a1a'}" text-anchor="${o.anchor || 'start'}">${escXml(s)}</text>`;
+  const chuan = d.tienDo * 100;
+  const mau = (p, c) => (p >= c ? C.xanh : p >= c * 0.9 ? C.cam : C.do);
+  const pct = (v) => (v == null ? '–' : fmtPhanTram(v));
+  const pKV = d.tongMT > 0 ? (d.tongDT / d.tongMT) * 100 : 0;
+  const p = [];
+  p.push(`<rect x="0" y="0" width="${W}" height="96" fill="${C.xanh}"/>`);
+  p.push(t(PAD, 38, 'BC ĐMSK · ĐÔNG MÁT – SỮA – KEM T10', { size: 26, bold: true, fill: '#FFFFFF' }));
+  p.push(t(PAD, 64, `Mục tiêu T10 = DT T9 × ${Math.round(HE_SO_DMSK * 100)}% · NH 990 · 1056 · 1354 · 1355`, { size: 15, fill: '#E3F5EA' }));
+  p.push(t(PAD, 86, `DT T10 cập nhật ${d.capNhat} · đã chạy ${String(Math.round(d.soNgay * 10) / 10).replace('.', ',')}/${d.ngayThang} ngày · ĐVT: triệu`, { size: 13, fill: '#E3F5EA' }));
+  let y = 112;
+  const oW = (W - PAD * 2 - 36) / 4, oH = 74;
+  const o = (i, nhan, gt, mauGt, phu) => {
+    const x = PAD + i * (oW + 12);
+    p.push(`<rect x="${x}" y="${y}" width="${oW}" height="${oH}" rx="10" fill="#F2F8F4"/>`);
+    p.push(t(x + 12, y + 22, nhan, { size: 13, fill: '#777777' }));
+    p.push(t(x + 12, y + 54, gt, { size: 24, bold: true, fill: mauGt || '#1a1a1a' }));
+    if (phu) p.push(t(x + oW - 12, y + 54, phu, { size: 12, fill: '#777777', anchor: 'end' }));
+  };
+  o(0, 'Mục tiêu T10 KV', fmtTrieu(d.tongMT / 1e6), null, `T9 ${fmtTrieu(d.tongDT9 / 1e6)}`);
+  o(1, 'DT T10 luỹ kế', fmtTrieu(d.tongDT / 1e6));
+  o(2, '% đạt mục tiêu', fmtPhanTram(pKV), mau(pKV, chuan), `chuẩn ${fmtPhanTram(chuan)}`);
+  o(3, 'Dự kiến cuối tháng', fmtPhanTram(pKV / d.tienDo), mau(pKV / d.tienDo, 100), 'nếu giữ nhịp');
+  y += oH + 16;
+
+  const cot = { stt: PAD + 30, ten: PAD + 44, dt9: 470, mt: 580, dt: 690, p: 800, dk: W - PAD - 10 };
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="34" rx="6" fill="${C.nen}"/>`);
+  [['#', cot.stt], ['Siêu thị', cot.ten, 'start'], ['DT T9', cot.dt9], ['MT T10', cot.mt], ['DT T10 LK', cot.dt], ['% đạt', cot.p], ['Dự kiến cuối tháng', cot.dk]]
+    .forEach(([s, x, a]) => p.push(t(x, y + 22, s, { size: 13, bold: true, fill: C.xanhDam, anchor: a || 'end' })));
+  const yTop = y; y += 34;
+  d.dong.forEach((x, k) => {
+    if (k % 2 === 1) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${C.chan}"/>`);
+    const yt = y + 20, coMT = x.p != null;
+    p.push(t(cot.stt, yt, k + 1, { fill: C.phu, anchor: 'end' }));
+    p.push(t(cot.ten, yt, rutGonTen(x.ten, 32) + (coMT ? '' : ' (chưa có base)'), { fill: coMT ? '#1a1a1a' : C.phu }));
+    p.push(t(cot.dt9, yt, coMT ? fmtTrieu(x.dt9 / 1e6) : '–', { fill: C.phu, anchor: 'end' }));
+    p.push(t(cot.mt, yt, coMT ? fmtTrieu(x.mt / 1e6) : '–', { fill: C.phu, anchor: 'end' }));
+    p.push(t(cot.dt, yt, fmtTrieu(x.dt / 1e6), { bold: true, anchor: 'end' }));
+    p.push(t(cot.p, yt, pct(x.p), { bold: true, fill: coMT ? mau(x.p, chuan) : C.phu, anchor: 'end' }));
+    p.push(t(cot.dk, yt, pct(x.dk), { bold: true, fill: coMT ? mau(x.dk, 100) : C.phu, anchor: 'end' }));
+    y += ROW;
+  });
+  p.push(`<rect x="${PAD}" y="${yTop}" width="${W - PAD * 2}" height="${y - yTop}" rx="6" fill="none" stroke="${C.vien}"/>`);
+  y += 24;
+  p.push(t(PAD, y, `% đạt xanh khi ≥ tiến độ chuẩn ${fmtPhanTram(chuan)} (${String(Math.round(d.soNgay * 10) / 10).replace('.', ',')}/${d.ngayThang} ngày) · Dự kiến cuối tháng = % đạt ÷ tiến độ, xanh khi ≥ 100%.`, { size: 12, fill: C.phu }));
+  const H = y + PAD - 4;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
+}
+
+function laTriggerDmsk(text) {
+  return coTuKhoa(text, ['bc đmsk', 'bc dmsk', 'đmsk', 'dmsk']) && !laLenhNapBaseDmsk(text);
+}
+function laLenhNapBaseDmsk(text) {
+  return /n[ạa]p\s*base/i.test((text || '').normalize('NFC'));
+}
+
+async function veAnhDmsk() {
+  const svg = veSvgDmsk(await docDuLieuDmsk());
+  return { png: svgThanhPng(svg, 1500), preview: svgThanhPng(svg, 600) };
+}
+
+async function generateDmskReport() {
+  const { png, preview } = await veAnhDmsk();
+  const id = `dmsk-${Date.now().toString(36)}`;
+  luuAnh(id, png, preview);
+  return { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?loai=dmsk`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?loai=dmsk&nho=1` };
+}
+
 // "ĐẶT MỨC T3 M3" (hoặc "ĐẶT MỨC 3" = áp cho tuần đang chạy theo ngày hôm nay)
 async function datMucThiDua(text) {
   const t = text.normalize('NFC').toUpperCase();
@@ -1388,6 +1529,7 @@ async function chayLenh(text) {
   if (laTriggerGiaVon(text)) return { ten: 'Giá Vốn', ket: await generateGiaVonReport(text) };
   if (laTriggerHuyMmkk(text)) return { ten: 'Huỷ MMKK', ket: await generateHuyMmkkReport(text) };
   if (laTriggerSua(text)) return { ten: 'BC Sữa', ket: await generateSuaReport() };
+  if (laTriggerDmsk(text)) return { ten: 'BC ĐMSK', ket: await generateDmskReport() };
   return null;
 }
 
@@ -1564,6 +1706,7 @@ async function traLoiCauHoiAI(event, targetId, question) {
         '• GIÁ VỐN\n' +
         '• HUỶ MMKK\n' +
         '• BC SỮA\n' +
+        '• BC ĐMSK (NẠP BASE ĐMSK để nạp tháng 9)\n' +
         '• ĐẶT MỨC T3 M3\n' +
         '• NẠP NGÀY 05/10 (rồi gửi file bù trong 3 phút)\n' +
         'Hoặc gửi file Excel vào group, em tự nhận và trả báo cáo.',
@@ -1628,7 +1771,11 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         if (Date.now() <= napNgay.expiresAt) ngayChiDinh = napNgay.ngay;
       }
 
-      const cauHoiCho = !ngayChiDinh && isGroup ? layVaXoaCoDangCho(targetId) : null;
+      let laBaseDmsk = false;
+      const hanBase = cho_NapBaseDmsk.get(targetId);
+      if (hanBase) { cho_NapBaseDmsk.delete(targetId); laBaseDmsk = Date.now() <= hanBase; }
+
+      const cauHoiCho = !ngayChiDinh && !laBaseDmsk && isGroup ? layVaXoaCoDangCho(targetId) : null;
       if (cauHoiCho && AI_ENABLED) {
         try {
           const buffer = await taiNoiDungFileLine(event.message.id);
@@ -1649,7 +1796,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
       console.log(`[webhook] nhận file "${fileName}", đang nạp vào Sheet...`);
       try {
         const buffer = await taiNoiDungFileLine(event.message.id);
-        const kq = await napFileVaoSheet(fileName, buffer, ngayChiDinh);
+        const kq = await napFileVaoSheet(fileName, buffer, ngayChiDinh, laBaseDmsk);
         console.log(`[webhook] đã nạp ${kq.soDong} dòng vào tab "${kq.tenTab}" (loại: ${kq.loai})`);
 
         if (kq.loai === 'muctieu') {
@@ -1658,6 +1805,19 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           if (ct.tuanBoQua.length) msg += `\n\nBỏ qua:\n• ${ct.tuanBoQua.join('\n• ')}`;
           msg += '\n\nGửi file "Doanh Thu Theo Model" rồi @bot gõ "DT NGÀNH HÀNG" để xem báo cáo.';
           await guiTraLoi(event, targetId, { type: 'text', text: msg });
+          continue;
+        }
+
+        if (kq.loai === 'dmsk_base') {
+          await guiTraLoi(event, targetId, { type: 'text', text: `✅ Đã nạp BASE tháng 9: ${kq.soDong} siêu thị, tổng ${fmtTrieu(kq.tong / 1e6)} tr.\nMục tiêu T10 = ×${Math.round(HE_SO_DMSK * 100)}% = ${fmtTrieu((kq.tong * HE_SO_DMSK) / 1e6)} tr.\nGiờ anh gửi file tháng 10 rồi gõ "BC ĐMSK".` });
+          continue;
+        }
+        if (kq.loai === 'dmsk') {
+          try {
+            await guiTraLoi(event, targetId, await generateDmskReport());
+          } catch (e) {
+            await guiTraLoi(event, targetId, { type: 'text', text: `✅ Đã nạp DT tháng 10 (${kq.soDong} siêu thị).\n⚠️ ${e.message}` });
+          }
           continue;
         }
 
@@ -1722,6 +1882,13 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
       if (question === null) continue; // group: không @tag bot -> bỏ qua
     }
 
+    if (laLenhNapBaseDmsk(question)) {
+      cho_NapBaseDmsk.set(targetId, Date.now() + THOI_GIAN_CHO_MS);
+      cho_AI_PhanTich.delete(targetId);
+      await guiTraLoi(event, targetId, { type: 'text', text: '📥 OK anh, file Doanh Thu Theo Model Đông mát – Sữa – Kem anh gửi tiếp theo (trong 3 phút) em sẽ lưu làm BASE tháng 9 (× 120% = mục tiêu T10).' });
+      continue;
+    }
+
     const ngayNap = laLenhNapNgay(question);
     if (ngayNap) {
       cho_NapNgay.set(targetId, { ngay: ngayNap, expiresAt: Date.now() + THOI_GIAN_CHO_MS });
@@ -1763,6 +1930,8 @@ app.get('/anh/:id.png', async (req, res) => {
       let ve;
       if (req.query.loai === 'gv') {
         ve = await veAnhGiaVon(String(req.query.st || ''));
+      } else if (req.query.loai === 'dmsk') {
+        ve = await veAnhDmsk();
       } else if (req.query.loai === 'sua') {
         ve = await veAnhSua();
       } else if (req.query.loai === 'mm') {
@@ -1798,4 +1967,4 @@ if (require.main === module) {
   })();
 }
 
-module.exports = { docDuLieuSua, veSvgSua, laTriggerSua, laTriggerDtNganhHang, laTriggerGiaVon, laTriggerHuyMmkk, docDuLieuHuyMmkk, veSvgHuyMmkk, datMucThiDua, veSvgGiaVon, docDuLieuGiaVon, generateGiaVonReport, gioTuTenFile, napFileVaoSheet, generateDtNganhHangReport, tinhDuLieuDtNH, veSvgDtNH, docFileThiDua, gopDoanhThuModel };
+module.exports = { docDuLieuDmsk, veSvgDmsk, laTriggerDmsk, laLenhNapBaseDmsk, docDuLieuSua, veSvgSua, laTriggerSua, laTriggerDtNganhHang, laTriggerGiaVon, laTriggerHuyMmkk, docDuLieuHuyMmkk, veSvgHuyMmkk, datMucThiDua, veSvgGiaVon, docDuLieuGiaVon, generateGiaVonReport, gioTuTenFile, napFileVaoSheet, generateDtNganhHangReport, tinhDuLieuDtNH, veSvgDtNH, docFileThiDua, gopDoanhThuModel };
