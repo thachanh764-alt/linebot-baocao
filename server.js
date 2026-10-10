@@ -53,6 +53,9 @@ const HEADER_MUCTIEU = ['Tuần', 'Từ ngày', 'Đến ngày', 'Tên thi đua',
 const TAB_CAUHINH = process.env.GOOGLE_SHEET_TAB_CAUHINH || 'CAUHINH';
 // Mức thi đua mặc định từng tuần (đổi được bằng lệnh "ĐẶT MỨC T3 M3"). Tuần không ghi = M2.
 const MUC_MAC_DINH = { T3: 3 };
+// Tuần thi đua ĐÃ TẮT (không báo cáo, không nạp file DT của ngành tuần đó). Mở lại: xoá tuần khỏi danh sách.
+const TUAN_TAT = new Set(['T2']); // T2 = Đông mát – Sữa – Kem
+const NH_TAT = new Set(['990', '1354', '1355', '1056']); // ngành của tuần đã tắt
 // Tab tuần không ghi "(NH ...)" trong tiêu đề -> đoán mã ngành theo tên
 const NH_THEO_TEN = [
   [/HÓA PHẨM|HOÁ PHẨM|CHĂM SÓC NHÀ CỬA/i, '1014'],
@@ -345,6 +348,12 @@ async function napFileVaoSheet(fileName, buffer, ngayChiDinh) {
   if (laFileDoanhThuModel(header) && (await laFileBanSua(sheets, header, dataRows))) return napFileBanSua(sheets, header, dataRows, fileName);
 
   if (laFileDoanhThuModel(header)) {
+    // File chỉ gồm ngành của tuần đã tắt (Đông mát – Sữa – Kem) -> không nạp
+    const iNH = header.indexOf('Mã ngành hàng');
+    const nhFile = new Set(dataRows.map((r) => String(r[iNH] ?? '').trim()).filter(Boolean));
+    if (nhFile.size && [...nhFile].every((nh) => NH_TAT.has(nh))) {
+      return { loai: 'bo_qua', soDong: 0, thongBao: 'ℹ️ Báo cáo Đông mát – Sữa – Kem đã tắt nên em không nạp file này.' };
+    }
     const ngayKey = ngayChiDinh || ngayTuTenFile(fileName);
     // Gửi bù bằng lệnh NẠP NGÀY = file đủ cả ngày -> coi như xuất lúc 23h
     const gioXuat = ngayChiDinh ? 23 : gioTuTenFile(fileName);
@@ -430,6 +439,10 @@ async function tinhDuLieuDtNH(text) {
     const m = kieuMoi ? { 1: Number(r[7]) || 0, 2: Number(r[8]) || 0, 3: Number(r[9]) || 0 } : { 1: 0, 2: Number(r[7]) || 0, 3: 0 };
     dsTuan.get(tuan).mucTieu.push({ maST: chuanHoaMaST(r[5]), ten: String(r[6] || ''), m });
   }
+
+  for (const tt of TUAN_TAT) dsTuan.delete(tt);
+  if (ts.tuan && TUAN_TAT.has(ts.tuan)) throw new Error(`Báo cáo tuần ${ts.tuan.slice(1)} đã tắt.`);
+  if (dsTuan.size === 0) throw new Error('Chưa có tuần thi đua nào đang chạy.');
 
   const dt = rowsDT
     .map((r) => ({ ngay: chuanHoaKeyNgay(r[0]), maST: chuanHoaMaST(r[1]), ten: String(r[2] || ''), maNH: String(r[3]).trim(), dt: Number(r[5]) || 0, gio: r[6] === '' || r[6] == null ? null : Number(r[6]) }))
@@ -1547,7 +1560,7 @@ async function traLoiCauHoiAI(event, targetId, question) {
       type: 'text',
       text:
         'Em chưa hiểu lệnh này ạ. Anh @tag em và gõ 1 trong các lệnh:\n' +
-        '• DT NGÀNH HÀNG (thêm T2/T3 hoặc ngày, vd "DT NGÀNH HÀNG T3")\n' +
+        '• DT NGÀNH HÀNG (thêm T3 hoặc ngày, vd "DT NGÀNH HÀNG T3")\n' +
         '• GIÁ VỐN\n' +
         '• HUỶ MMKK\n' +
         '• BC SỮA\n' +
@@ -1645,6 +1658,11 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           if (ct.tuanBoQua.length) msg += `\n\nBỏ qua:\n• ${ct.tuanBoQua.join('\n• ')}`;
           msg += '\n\nGửi file "Doanh Thu Theo Model" rồi @bot gõ "DT NGÀNH HÀNG" để xem báo cáo.';
           await guiTraLoi(event, targetId, { type: 'text', text: msg });
+          continue;
+        }
+
+        if (kq.loai === 'bo_qua') {
+          await guiTraLoi(event, targetId, { type: 'text', text: kq.thongBao });
           continue;
         }
 
