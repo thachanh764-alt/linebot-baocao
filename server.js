@@ -1432,7 +1432,7 @@ async function docDuLieuDmsk() {
 }
 
 function veSvgDmsk(d) {
-  const W = 1000, PAD = 24, ROW = 30;
+  const W = 1100, PAD = 24, ROW = 30;
   const C = { xanh: '#0B8A3E', xanhDam: '#0B6E35', nen: '#E6F4EC', chan: '#F3F7F5', vien: '#D5E3DA', phu: '#666666', do: '#D0312D', cam: '#E08A00' };
   const t = (x, y, s, o = {}) =>
     `<text x="${x}" y="${y}" font-size="${o.size || 15}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1a1a1a'}" text-anchor="${o.anchor || 'start'}">${escXml(s)}</text>`;
@@ -1454,32 +1454,50 @@ function veSvgDmsk(d) {
     p.push(t(x + 12, y + 54, gt, { size: 24, bold: true, fill: mauGt || '#1a1a1a' }));
     if (phu) p.push(t(x + oW - 12, y + 54, phu, { size: 12, fill: '#777777', anchor: 'end' }));
   };
-  o(0, 'Mục tiêu T10 KV', fmtTrieu(d.tongMT / 1e6), null, `T9 ${fmtTrieu(d.tongDT9 / 1e6)}`);
-  o(1, 'DT T10 luỹ kế', fmtTrieu(d.tongDT / 1e6));
+  const nguyen = (v) => String(Math.ceil(v - 1e-9)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  o(0, 'Mục tiêu T10 KV', nguyen(d.tongMT / 1e6), null, `T9 ${nguyen(d.tongDT9 / 1e6)}`);
+  o(1, 'DT T10 luỹ kế', nguyen(d.tongDT / 1e6));
   o(2, '% đạt mục tiêu', fmtPhanTram(pKV), mau(pKV, chuan), `chuẩn ${fmtPhanTram(chuan)}`);
   o(3, 'Dự kiến cuối tháng', fmtPhanTram(pKV / d.tienDo), mau(pKV / d.tienDo, 100), 'nếu giữ nhịp');
   y += oH + 16;
 
-  const cot = { stt: PAD + 30, ten: PAD + 44, dt9: 470, mt: 580, dt: 690, p: 800, dk: W - PAD - 10 };
-  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="34" rx="6" fill="${C.nen}"/>`);
-  [['#', cot.stt], ['Siêu thị', cot.ten, 'start'], ['DT T9', cot.dt9], ['MT T10', cot.mt], ['DT T10 LK', cot.dt], ['% đạt', cot.p], ['Dự kiến cuối tháng', cot.dk]]
-    .forEach(([s, x, a]) => p.push(t(x, y + 22, s, { size: 13, bold: true, fill: C.xanhDam, anchor: a || 'end' })));
-  const yTop = y; y += 34;
+  // Cột: MT T10 | DT LK | % đạt | TB/ngày | Cần/ngày còn lại | DK tháng (tr) | DK %
+  const conLai = Math.max(0.5, d.ngayThang - d.soNgay);
+  const cot = { stt: PAD + 30, ten: PAD + 44, mt: 420, dt: 510, p: 595, tb: 680, can: 775, dkTr: 875, dk: W - PAD - 10 };
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="48" rx="6" fill="${C.nen}"/>`);
+  const td = (x, a1, a2, al) => { p.push(t(x, y + 20, a1, { size: 13, bold: true, fill: C.xanhDam, anchor: al || 'end' })); if (a2) p.push(t(x, y + 38, a2, { size: 13, bold: true, fill: C.xanhDam, anchor: al || 'end' })); };
+  td(cot.stt, '#', ''); td(cot.ten, 'Siêu thị', '', 'start');
+  td(cot.mt, 'MT', 'T10'); td(cot.dt, 'DT T10', 'luỹ kế'); td(cot.p, '%', 'đạt');
+  td(cot.tb, 'TB/ngày', 'hiện tại'); td(cot.can, 'Cần/ngày', 'để đạt'); td(cot.dkTr, 'Dự kiến', 'tháng'); td(cot.dk, 'Dự kiến', '% tháng');
+  const yTop = y; y += 48;
+  // dòng tổng KV
+  const tbKV = d.tongDT / d.soNgay, canKV = Math.max(0, (d.tongMT - d.dong.filter((x) => x.p != null).reduce((s2, x) => s2 + x.dt, 0)) / conLai);
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 2}" fill="${C.xanh}"/>`);
+  const w = { fill: '#FFFFFF', bold: true, anchor: 'end' };
+  p.push(t(cot.ten, y + 21, 'TỔNG KHU VỰC', { fill: '#FFFFFF', bold: true }));
+  p.push(t(cot.mt, y + 21, nguyen(d.tongMT / 1e6), w)); p.push(t(cot.dt, y + 21, nguyen(d.tongDT / 1e6), w));
+  p.push(t(cot.p, y + 21, fmtPhanTram(pKV), w)); p.push(t(cot.tb, y + 21, nguyen(tbKV / 1e6), w));
+  p.push(t(cot.can, y + 21, nguyen(canKV / 1e6), w)); p.push(t(cot.dkTr, y + 21, nguyen((tbKV * d.ngayThang) / 1e6), w));
+  p.push(t(cot.dk, y + 21, fmtPhanTram(pKV / d.tienDo), w));
+  y += ROW + 2;
   d.dong.forEach((x, k) => {
     if (k % 2 === 1) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${C.chan}"/>`);
     const yt = y + 20, coMT = x.p != null;
+    const tb = x.dt / d.soNgay, dkTr = tb * d.ngayThang, can = coMT ? Math.max(0, (x.mt - x.dt) / conLai) : null;
     p.push(t(cot.stt, yt, k + 1, { fill: C.phu, anchor: 'end' }));
-    p.push(t(cot.ten, yt, rutGonTen(x.ten, 32) + (coMT ? '' : ' (chưa có base)'), { fill: coMT ? '#1a1a1a' : C.phu }));
-    p.push(t(cot.dt9, yt, coMT ? fmtTrieu(x.dt9 / 1e6) : '–', { fill: C.phu, anchor: 'end' }));
-    p.push(t(cot.mt, yt, coMT ? fmtTrieu(x.mt / 1e6) : '–', { fill: C.phu, anchor: 'end' }));
-    p.push(t(cot.dt, yt, fmtTrieu(x.dt / 1e6), { bold: true, anchor: 'end' }));
+    p.push(t(cot.ten, yt, rutGonTen(x.ten, 26) + (coMT ? '' : ' (mới)'), { fill: coMT ? '#1a1a1a' : C.phu }));
+    p.push(t(cot.mt, yt, coMT ? nguyen(x.mt / 1e6) : '–', { fill: C.phu, anchor: 'end' }));
+    p.push(t(cot.dt, yt, nguyen(x.dt / 1e6), { bold: true, anchor: 'end' }));
     p.push(t(cot.p, yt, pct(x.p), { bold: true, fill: coMT ? mau(x.p, chuan) : C.phu, anchor: 'end' }));
+    p.push(t(cot.tb, yt, nguyen(tb / 1e6), { anchor: 'end' }));
+    p.push(t(cot.can, yt, coMT ? nguyen(can / 1e6) : '–', { bold: true, fill: coMT ? (can > tb * 1.1 ? C.do : can > tb ? C.cam : C.xanh) : C.phu, anchor: 'end' }));
+    p.push(t(cot.dkTr, yt, nguyen(dkTr / 1e6), { anchor: 'end' }));
     p.push(t(cot.dk, yt, pct(x.dk), { bold: true, fill: coMT ? mau(x.dk, 100) : C.phu, anchor: 'end' }));
     y += ROW;
   });
   p.push(`<rect x="${PAD}" y="${yTop}" width="${W - PAD * 2}" height="${y - yTop}" rx="6" fill="none" stroke="${C.vien}"/>`);
   y += 24;
-  p.push(t(PAD, y, `% đạt xanh khi ≥ tiến độ chuẩn ${fmtPhanTram(chuan)} (${String(Math.round(d.soNgay * 10) / 10).replace('.', ',')}/${d.ngayThang} ngày) · Dự kiến cuối tháng = % đạt ÷ tiến độ, xanh khi ≥ 100%.`, { size: 12, fill: C.phu }));
+  p.push(t(PAD, y, `TB/ngày = DT luỹ kế ÷ ${String(Math.round(d.soNgay * 10) / 10).replace('.', ',')} ngày · Cần/ngày = (MT − DT) ÷ ${String(Math.round(conLai * 10) / 10).replace('.', ',')} ngày còn lại (đỏ: cần hơn nhịp hiện tại >10%) · Dự kiến tháng = TB/ngày × ${d.ngayThang}.`, { size: 12, fill: C.phu }));
   const H = y + PAD - 4;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
 }
