@@ -1192,7 +1192,10 @@ async function generateHuyMmkkReport(text, chiCacST) {
 // ---------------------------------------------------------------------------
 const TAB_SUA_TON = 'SUA_TON';
 const TAB_SUA_BAN = 'SUA_BAN';
-const MA_SUA_MAC_DINH = ['2609001221', '2609001223', '2609001656', '2609001657'];
+const MA_SUA_MAC_DINH = ['2609001221', '2609001223', '2609001656', '2609001657', /* C2 */ '2203000875', '2204000011', '2602001178', '2006000354'];
+// Nhóm hiển thị: tên có "C2" -> TRÀ C2, còn lại -> SỮA CELANO
+function nhomSua(ten) { return /(^|\s)C2(\s|$)/i.test(String(ten)) ? 'C2' : 'SUA'; }
+const NHOM_SUA = [{ k: 'SUA', ten: 'SỮA CELANO', dv: 'hộp' }, { k: 'C2', ten: 'TRÀ C2', dv: 'chai' }];
 
 function laFileTonModel(header) {
   return header.includes('Mã Model') && header.includes('Tồn kho siêu thị') && header.includes('Mã siêu thị');
@@ -1212,6 +1215,11 @@ async function laFileBanSua(sheets, header, dataRows) {
   return dataRows.every((r) => ma.has(String(r[iMa] ?? '').trim()));
 }
 
+function bayGioVN() {
+  const d = new Date(Date.now() + 7 * 3600 * 1000);
+  const z = (n) => String(n).padStart(2, '0');
+  return `${z(d.getUTCHours())}:${z(d.getUTCMinutes())} ${z(d.getUTCDate())}/${z(d.getUTCMonth() + 1)}`;
+}
 function capNhatTuTen(fileName) {
   const m = String(fileName || '').match(/(20\d{2})(\d{2})(\d{2})_(\d{2})(\d{2})/);
   return m ? `${m[4]}:${m[5]} ${m[3]}/${m[2]}` : '';
@@ -1223,7 +1231,7 @@ async function napFileTonSua(sheets, header, dataRows, fileName) {
   if (c.di === -1) c.di = header.findIndex((h) => /đi đường/i.test(h));
   const rows = dataRows
     .filter((r) => r[c.ma] != null && r[c.st] != null)
-    .map((r) => [String(r[c.ma]).trim(), String(r[c.ten] || ''), chuanHoaMaST(r[c.st]), tenNganSieuThi(r[c.tenST]), soGV(r[c.ton]), c.di === -1 ? 0 : soGV(r[c.di]), capNhatTuTen(fileName)]);
+    .map((r) => [String(r[c.ma]).trim(), String(r[c.ten] || ''), chuanHoaMaST(r[c.st]), tenNganSieuThi(r[c.tenST]), soGV(r[c.ton]), c.di === -1 ? 0 : soGV(r[c.di]), capNhatTuTen(fileName) || bayGioVN()]);
   if (rows.length > 2000) throw new Error('File tồn quá nhiều mã. Anh lọc đúng các mã sữa cần theo dõi rồi gửi lại giúp em.');
   await ghiDeTab(sheets, TAB_SUA_TON, ['Mã Model', 'Model', 'Mã siêu thị', 'Tên siêu thị', 'Tồn', 'Đang đi đường', 'Cập nhật'], rows);
   return { loai: 'sua', tenTab: TAB_SUA_TON, soDong: rows.length };
@@ -1232,21 +1240,19 @@ async function napFileTonSua(sheets, header, dataRows, fileName) {
 async function napFileBanSua(sheets, header, dataRows, fileName) {
   const i = (c) => header.indexOf(c);
   const c = { ma: i('Mã Model'), ten: i('Model'), st: i('Mã siêu thị'), tenST: i('Tên siêu thị'), sl: i('Tổng số lượng'), dt: i('Tổng doanh thu') };
-  const rows = dataRows.map((r) => [String(r[c.ma]).trim(), String(r[c.ten] || ''), chuanHoaMaST(r[c.st]), tenNganSieuThi(r[c.tenST]), soGV(r[c.sl]), soGV(r[c.dt]), capNhatTuTen(fileName)]);
+  const rows = dataRows.map((r) => [String(r[c.ma]).trim(), String(r[c.ten] || ''), chuanHoaMaST(r[c.st]), tenNganSieuThi(r[c.tenST]), soGV(r[c.sl]), soGV(r[c.dt]), capNhatTuTen(fileName) || bayGioVN()]);
   await ghiDeTab(sheets, TAB_SUA_BAN, ['Mã Model', 'Model', 'Mã siêu thị', 'Tên siêu thị', 'SL bán', 'Doanh thu', 'Cập nhật'], rows);
   return { loai: 'sua', tenTab: TAB_SUA_BAN, soDong: rows.length };
 }
 
 function tenNganSua(ten) {
-  return String(ten)
-    .replace(/^CELANO\s+/i, '')
-    .replace(/SỮA YẾN MẠCH VỊ\s*/i, '')
-    .replace(/T\.?\s*UỐNG\s*/i, '')
-    .replace(/\s*CÓ THẠCH/i, '')
-    .replace(/\s*\d+\s*ML.*$/i, '')
-    .trim()
-    .toLowerCase()
-    .replace(/(^|\s)\S/g, (x) => x.toUpperCase());
+  let x = String(ten);
+  if (nhomSua(x) === 'C2') {
+    x = (' ' + x + ' ').replace(/\s*CHAI.*$/i, ' ').replace(/\s(TRÀ|C2|FREEZE|HƯƠNG|VỊ)(?=\s)/gi, ' ').replace(/\s(TRÀ|C2|FREEZE|HƯƠNG|VỊ)(?=\s)/gi, ' ');
+  } else {
+    x = x.replace(/^CELANO\s+/i, '').replace(/SỮA YẾN MẠCH VỊ\s*/i, '').replace(/T\.?\s*UỐNG\s*/i, '').replace(/\s*CÓ THẠCH/i, '').replace(/\s*\d+\s*ML.*$/i, '');
+  }
+  return x.replace(/\s+/g, ' ').trim().toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
 }
 
 async function docDuLieuSua() {
@@ -1267,81 +1273,101 @@ async function docDuLieuSua() {
     const x = lay(String(r[2]), String(r[3]));
     x.ban[ma] = (x.ban[ma] || 0) + soGV(r[4]);
   }
-  const dsSP = [...sp.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([ma, ten]) => ({ ma, ten, ngan: tenNganSua(ten) }));
+  const dsSP = [...sp.entries()].map(([ma, ten]) => ({ ma, ten, ngan: tenNganSua(ten), nhom: nhomSua(ten) }))
+    .sort((a, b) => (a.nhom === b.nhom ? a.ngan.localeCompare(b.ngan) : a.nhom === 'SUA' ? -1 : 1));
   return { dsSP, dsST: [...st.values()], capTon: String((ton[0] || [])[6] || ''), capBan: String((ban[0] || [])[6] || '') };
 }
 
 function veSvgSua(d) {
+  // Ô trên: chi tiết từng sản phẩm (mỗi nhóm 1 hàng). Bảng: mỗi nhóm 1 cột dồn Tồn | Bán.
   const { dsSP } = d;
-  const nSP = dsSP.length;
-  const PAD = 24, ROW = 30, xTen = PAD + 44, wTen = 300, wCot = 66;
-  const W = Math.max(1000, xTen + wTen + (nSP + 1) * wCot * 2 + PAD + 10);
-  const C = { xanh: '#0B8A3E', xanhDam: '#0B6E35', nen: '#E6F4EC', chan: '#F3F7F5', vien: '#D5E3DA', phu: '#888888', do: '#D0312D', cam: '#E08A00' };
-  const t = (x, y, s, o = {}) =>
-    `<text x="${x}" y="${y}" font-size="${o.size || 15}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1a1a1a'}" text-anchor="${o.anchor || 'start'}">${escXml(s)}</text>`;
-  const fs = (v) => fmtTrieu(v).replace(/,0$/, '');
-  const tong = (x, k) => dsSP.reduce((s, p) => s + (x[k][p.ma] || 0), 0);
-  const rows = d.dsST.map((x) => ({ ...x, tTon: tong(x, 'ton'), tBan: tong(x, 'ban') })).sort((a, b) => b.tBan - a.tBan || b.tTon - a.tTon);
+  const nhom = NHOM_SUA.map((g) => ({ ...g, sp: dsSP.filter((s2) => s2.nhom === g.k) })).filter((g) => g.sp.length);
+  const W = 1000, PAD = 24, ROW = 30, xTen = PAD + 44;
+  const C = { xanh: '#0B8A3E', xanhDam: '#0B6E35', nen: '#E6F4EC', chan: '#F3F7F5', vien: '#D5E3DA', phu: '#888888', do: '#D0312D', cam: '#E08A00', vang: '#FFC20E' };
+  const t = (x, y, s2, o = {}) =>
+    `<text x="${x}" y="${y}" font-size="${o.size || 15}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1a1a1a'}" text-anchor="${o.anchor || 'start'}">${escXml(s2)}</text>`;
+  const fs = (v) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const tongNhom = (x, k, g) => g.sp.reduce((a2, p2) => a2 + (x[k][p2.ma] || 0), 0);
+  const rows = d.dsST.map((x) => {
+    const o = { ...x, g: {} };
+    for (const g of nhom) o.g[g.k] = { ton: tongNhom(x, 'ton', g), ban: tongNhom(x, 'ban', g) };
+    o.tBan = nhom.reduce((a2, g) => a2 + o.g[g.k].ban, 0);
+    return o;
+  }).sort((a2, b2) => b2.tBan - a2.tBan);
 
   const p = [];
   p.push(`<rect x="0" y="0" width="${W}" height="92" fill="${C.xanh}"/>`);
-  p.push(t(PAD, 38, 'BC SỮA · TỒN & BÁN THEO SIÊU THỊ', { size: 26, bold: true, fill: '#FFFFFF' }));
-  p.push(t(PAD, 64, `${nSP} sản phẩm: ${dsSP.map((s) => s.ngan).join(' · ')}${/CELANO/i.test(dsSP.map((s) => s.ten).join('')) ? ' (Celano)' : ''}`, { size: 14, fill: '#E3F5EA' }));
-  p.push(t(PAD, 84, `Tồn cập nhật ${d.capTon || '–'} · Bán theo file DT ${d.capBan || '–'} · ĐVT: hộp`, { size: 13, fill: '#E3F5EA' }));
+  p.push(t(PAD, 38, 'BC SỮA · TỒN & BÁN', { size: 26, bold: true, fill: '#FFFFFF' }));
+  p.push(t(PAD, 64, nhom.map((g) => `${g.ten} (${g.sp.length} mã)`).join(' · '), { size: 14, fill: '#E3F5EA' }));
+  p.push(t(PAD, 84, `Tồn cập nhật ${d.capTon || '–'} · Bán ${d.capBan || '–'} · ĐVT: ${nhom.map((g) => g.dv).join(' / ')}`, { size: 13, fill: '#E3F5EA' }));
+  { const bw = 260, bx = W - PAD - bw, by = 14;
+    p.push(`<rect x="${bx}" y="${by}" width="${bw}" height="64" rx="10" fill="#FFFFFF"/>`);
+    p.push(`<rect x="${bx}" y="${by}" width="8" height="64" rx="4" fill="${C.vang}"/>`);
+    p.push(t(bx + bw / 2 + 4, by + 24, 'KHU VỰC QLTP', { size: 13, bold: true, fill: C.phu, anchor: 'middle' }));
+    p.push(t(bx + bw / 2 + 4, by + 50, 'QUỐC NAM · 40909', { size: 20, bold: true, fill: C.xanh, anchor: 'middle' })); }
   let y = 108;
 
-  // Ô tổng mỗi sản phẩm
-  const oW = (W - PAD * 2 - 12 * nSP) / (nSP + 1), oH = 92;
-  [...dsSP, { ma: '*', ngan: 'TỔNG' }].forEach((s, k) => {
-    const x = PAD + k * (oW + 12);
-    const tTon = s.ma === '*' ? rows.reduce((a, r) => a + r.tTon, 0) : rows.reduce((a, r) => a + (r.ton[s.ma] || 0), 0);
-    const tBan = s.ma === '*' ? rows.reduce((a, r) => a + r.tBan, 0) : rows.reduce((a, r) => a + (r.ban[s.ma] || 0), 0);
-    const het = s.ma === '*' ? null : rows.filter((r) => (r.ton[s.ma] || 0) <= 0).length;
-    p.push(`<rect x="${x}" y="${y}" width="${oW}" height="${oH}" rx="10" fill="${s.ma === '*' ? '#E6F4EC' : '#F2F8F4'}"/>`);
-    // Tồn và Bán xuống 2 dòng riêng để không bị dính chữ
-    p.push(t(x + 12, y + 20, rutGonTen(s.ngan, 22), { size: 13, bold: true, fill: C.xanhDam }));
-    p.push(t(x + 12, y + 44, 'Tồn', { size: 13, fill: C.phu }));
-    p.push(t(x + oW - 12, y + 44, fs(tTon), { size: 17, bold: true, anchor: 'end' }));
-    p.push(t(x + 12, y + 66, 'Bán', { size: 13, fill: C.phu }));
-    p.push(t(x + oW - 12, y + 66, fs(tBan), { size: 17, bold: true, fill: C.xanh, anchor: 'end' }));
-    if (het != null) p.push(t(x + 12, y + 84, het ? `${het} ST hết hàng` : 'Không ST nào hết', { size: 11, fill: het ? C.do : C.phu }));
-  });
-  y += oH + 16;
+  // Ô chi tiết từng sản phẩm, mỗi nhóm 1 hàng
+  const soO = Math.max(...nhom.map((g) => g.sp.length));
+  const oW = (W - PAD * 2 - 12 * (soO - 1)) / soO, oH = 92;
+  for (const g of nhom) {
+    p.push(t(PAD, y + 14, `${g.ten} · chi tiết từng mã (${g.dv})`, { size: 14, bold: true, fill: C.xanhDam }));
+    y += 22;
+    g.sp.forEach((s2, k) => {
+      const x = PAD + k * (oW + 12);
+      const tTon = rows.reduce((a2, r) => a2 + (r.ton[s2.ma] || 0), 0);
+      const tBan = rows.reduce((a2, r) => a2 + (r.ban[s2.ma] || 0), 0);
+      const het = rows.filter((r) => (r.ton[s2.ma] || 0) <= 0).length;
+      p.push(`<rect x="${x}" y="${y}" width="${oW}" height="${oH}" rx="10" fill="#F2F8F4"/>`);
+      p.push(t(x + 12, y + 20, rutGonTen(s2.ngan, 24), { size: 13, bold: true, fill: C.xanhDam }));
+      p.push(t(x + 12, y + 44, 'Tồn', { size: 13, fill: C.phu }));
+      p.push(t(x + oW - 12, y + 44, fs(tTon), { size: 17, bold: true, anchor: 'end' }));
+      p.push(t(x + 12, y + 66, 'Bán', { size: 13, fill: C.phu }));
+      p.push(t(x + oW - 12, y + 66, fs(tBan), { size: 17, bold: true, fill: C.xanh, anchor: 'end' }));
+      p.push(t(x + 12, y + 84, het ? `${het} ST hết hàng` : 'Không ST nào hết', { size: 11, fill: het ? C.do : C.phu }));
+    });
+    y += oH + 14;
+  }
+  y += 4;
 
-  // Tiêu đề bảng 2 tầng
-  const xCot = (k, j) => xTen + wTen + k * wCot * 2 + j * wCot + wCot - 8; // mép phải
-  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="54" rx="6" fill="${C.nen}"/>`);
-  [...dsSP, { ngan: 'TỔNG' }].forEach((s, k) => {
-    const x0 = xTen + wTen + k * wCot * 2;
-    p.push(t(x0 + wCot, y + 21, rutGonTen(s.ngan, 16), { size: 13, bold: true, fill: C.xanhDam, anchor: 'middle' }));
-    p.push(t(xCot(k, 0), y + 44, 'Tồn', { size: 13, bold: true, fill: C.xanhDam, anchor: 'end' }));
-    p.push(t(xCot(k, 1), y + 44, 'Bán', { size: 13, bold: true, fill: C.xanhDam, anchor: 'end' }));
+  // Bảng: mỗi nhóm 1 cột dồn (Tồn | Bán)
+  const xNhom0 = 480, wNhom = (W - PAD - xNhom0) / nhom.length;
+  const xc = (gi, j) => xNhom0 + gi * wNhom + (j === 0 ? wNhom * 0.5 : wNhom) - 18;
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="62" rx="6" fill="${C.nen}"/>`);
+  nhom.forEach((g, gi) => {
+    const x1 = xNhom0 + gi * wNhom;
+    p.push(`<rect x="${x1 + 8}" y="${y + 6}" width="${wNhom - 16}" height="22" rx="4" fill="${C.xanh}"/>`);
+    p.push(t(x1 + wNhom / 2, y + 22, `${g.ten} (${g.dv})`, { size: 13, bold: true, fill: '#FFFFFF', anchor: 'middle' }));
+    p.push(t(xc(gi, 0), y + 50, 'Tồn', { size: 13, bold: true, fill: C.xanhDam, anchor: 'end' }));
+    p.push(t(xc(gi, 1), y + 50, 'Bán', { size: 13, bold: true, fill: C.xanhDam, anchor: 'end' }));
   });
-  p.push(t(PAD + 30, y + 44, '#', { size: 13, bold: true, fill: C.xanhDam, anchor: 'end' }));
-  p.push(t(xTen, y + 44, 'Siêu thị', { size: 13, bold: true, fill: C.xanhDam }));
-  const yTop = y; y += 54;
-
+  p.push(t(PAD + 30, y + 50, '#', { size: 13, bold: true, fill: C.xanhDam, anchor: 'end' }));
+  p.push(t(xTen, y + 50, 'Siêu thị', { size: 13, bold: true, fill: C.xanhDam }));
+  const yTop = y; y += 62;
+  // dòng tổng KV
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 2}" fill="${C.xanh}"/>`);
+  p.push(t(xTen, y + 21, 'TỔNG KHU VỰC', { fill: '#FFFFFF', bold: true }));
+  nhom.forEach((g, gi) => {
+    p.push(t(xc(gi, 0), y + 21, fs(rows.reduce((a2, r) => a2 + r.g[g.k].ton, 0)), { fill: '#FFFFFF', bold: true, anchor: 'end' }));
+    p.push(t(xc(gi, 1), y + 21, fs(rows.reduce((a2, r) => a2 + r.g[g.k].ban, 0)), { fill: '#FFFFFF', bold: true, anchor: 'end' }));
+  });
+  y += ROW + 2;
   rows.forEach((r, i) => {
     if (i % 2 === 1) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${C.chan}"/>`);
     const yt = y + 20;
     p.push(t(PAD + 30, yt, i + 1, { fill: C.phu, anchor: 'end' }));
     p.push(t(xTen, yt, `${r.ma} · ${rutGonTen(r.ten, 30)}`));
-    dsSP.forEach((s, k) => {
-      const ton = r.ton[s.ma] || 0, ban = r.ban[s.ma] || 0;
-      p.push(t(xCot(k, 0), yt, fs(ton), { anchor: 'end', bold: ton <= 0, fill: ton <= 0 ? C.do : '#1a1a1a' }));
-      p.push(t(xCot(k, 1), yt, ban ? fs(ban) : '–', { anchor: 'end', bold: ban > 0, fill: ban > 0 ? C.xanh : C.phu }));
+    nhom.forEach((g, gi) => {
+      const { ton, ban } = r.g[g.k];
+      p.push(t(xc(gi, 0), yt, fs(ton), { anchor: 'end', bold: ton <= 0, fill: ton <= 0 ? C.do : '#1a1a1a' }));
+      p.push(t(xc(gi, 1), yt, ban ? fs(ban) : '–', { anchor: 'end', bold: ban > 0, fill: ban > 0 ? C.xanh : C.phu }));
     });
-    p.push(t(xCot(nSP, 0), yt, fs(r.tTon), { anchor: 'end', bold: true }));
-    p.push(t(xCot(nSP, 1), yt, r.tBan ? fs(r.tBan) : '–', { anchor: 'end', bold: true, fill: r.tBan > 0 ? C.xanh : C.phu }));
     y += ROW;
   });
-  for (let k = 0; k <= nSP; k++) {
-    const x = xTen + wTen + k * wCot * 2 - 4;
-    p.push(`<line x1="${x}" y1="${yTop + 6}" x2="${x}" y2="${y}" stroke="${C.vien}" stroke-width="${k === nSP ? 2 : 1}"/>`);
-  }
+  nhom.forEach((g, gi) => { const x = xNhom0 + gi * wNhom; p.push(`<line x1="${x}" y1="${yTop + 30}" x2="${x}" y2="${y}" stroke="#9DBFAA" stroke-width="1.5"/>`); });
   p.push(`<rect x="${PAD}" y="${yTop}" width="${W - PAD * 2}" height="${y - yTop}" rx="6" fill="none" stroke="${C.vien}"/>`);
   y += 24;
-  p.push(t(PAD, y, 'Xếp theo tổng bán giảm dần · Tồn đỏ = hết hàng (0) · Bán "–" = chưa bán.', { size: 12, fill: C.phu }));
+  p.push(t(PAD, y, 'Mỗi nhóm cộng dồn các mã ở trên · Xếp theo tổng bán giảm dần · Tồn đỏ = hết hàng · "–" = chưa bán.', { size: 12, fill: C.phu }));
   const H = y + PAD - 4;
   return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`, W };
 }
@@ -1514,6 +1540,12 @@ function veSvgDmsk(d) {
   const p = [];
   p.push(`<rect x="0" y="0" width="${W}" height="96" fill="${C.xanh}"/>`);
   p.push(t(PAD, 38, 'BC ĐMSK · ĐÔNG MÁT – SỮA – KEM T10', { size: 26, bold: true, fill: '#FFFFFF' }));
+  // Huy hiệu khu vực góc phải header
+  { const bw = 290, bx = W - PAD - bw, by = 16;
+    p.push(`<rect x="${bx}" y="${by}" width="${bw}" height="64" rx="10" fill="#FFFFFF"/>`);
+    p.push(`<rect x="${bx}" y="${by}" width="8" height="64" rx="4" fill="#FFC20E"/>`);
+    p.push(t(bx + bw / 2 + 4, by + 24, 'KHU VỰC QLTP', { size: 13, bold: true, fill: C.phu, anchor: 'middle' }));
+    p.push(t(bx + bw / 2 + 4, by + 50, 'QUỐC NAM · 40909', { size: 22, bold: true, fill: C.xanh, anchor: 'middle' })); }
   p.push(t(PAD, 64, `Mục tiêu T10 = DT T9 × ${Math.round(HE_SO_DMSK * 100)}% · NH 990 · 1056 · 1354 · 1355`, { size: 15, fill: '#E3F5EA' }));
   p.push(t(PAD, 86, `DT T10 cập nhật ${d.capNhat} · đã chạy ${String(Math.round(d.soNgay * 10) / 10).replace('.', ',')}/${d.ngayThang} ngày · ĐVT: triệu`, { size: 13, fill: '#E3F5EA' }));
   let y = 112;
