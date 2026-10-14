@@ -1492,9 +1492,11 @@ async function tinhLuyKeDmsk(sheets, tabLK = TAB_DMSK_T10, tabNgay = TAB_DMSK_NG
 async function napT10Dmsk(sheets, header, dataRows, fileName, ngayChiDinh, dsSan, tabLK = TAB_DMSK_T10, tabNgay = TAB_DMSK_NGAY) {
   const ds = dsSan || tongDtTheoST(header, dataRows);
   const ngay = ngayChiDinh || ngayTuTenFile(fileName);
-  const gio = ngayChiDinh ? 23 : gioTuTenFile(fileName);
+  // Tên file không có giờ xuất -> lấy giờ bot nhận file
+  const gioVN = () => { const d = new Date(Date.now() + 7 * 3600 * 1000); return d.getUTCHours() + d.getUTCMinutes() / 60; };
+  const gio = ngayChiDinh ? 23 : (gioTuTenFile(fileName) ?? gioVN());
   const tong = ds.reduce((s2, x) => s2 + x.dt, 0);
-  const cap = ngayChiDinh ? `hết ${ngay.slice(8, 10)}/${ngay.slice(5, 7)}` : capNhatTuTen(fileName);
+  const cap = ngayChiDinh ? `hết ${ngay.slice(8, 10)}/${ngay.slice(5, 7)}` : capNhatTuTen(fileName) || bayGioVN();
   // File 1 ngày hay luỹ kế? So với nhịp bán TB/ngày đang có
   const hien = await tinhLuyKeDmsk(sheets, tabLK, tabNgay);
   let motNgay = false;
@@ -1793,10 +1795,10 @@ function veSvgBnnb(d) {
   let y = 112;
 
   // 3 ô: từng ngành + tổng
-  const o3 = [...d.nhom.map((g) => ({ ten: g.ten, ...g.tong })), { ten: 'TỔNG BNNB', ...d.T }];
+  const o3 = d.nhom.map((g) => ({ ten: g.ten, ...g.tong }));
   const oW = (W - PAD * 2 - 12 * (o3.length - 1)) / o3.length, oH = 104;
   o3.forEach((o, k) => {
-    const x = PAD + k * (oW + 12), tong = k === o3.length - 1;
+    const x = PAD + k * (oW + 12), tong = false;
     p.push(`<rect x="${x}" y="${y}" width="${oW}" height="${oH}" rx="10" fill="${tong ? C.xanhNhat : '#F2F8F4'}"/>`);
     p.push(t(x + 14, y + 22, o.ten, { size: 14, bold: true, fill: C.xanhDam }));
     p.push(t(x + oW - 14, y + 22, `chuẩn ${fmtPhanTram(chuan)}`, { size: 12, fill: C.phu, anchor: 'end' }));
@@ -1835,10 +1837,6 @@ function veSvgBnnb(d) {
     p.push(t(cot.dkTr, yy, tr(o.dkTr), w || { anchor: 'end' }));
     p.push(t(cot.dk, yy, pct(o.dk), w || { bold: true, fill: mau(o.dk, 100), anchor: 'end' }));
   };
-  // Tổng BNNB
-  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 2}" fill="${C.xanhDam}"/>`);
-  p.push(t(cot.ten, y + 21, 'TỔNG BNNB', { fill: '#FFFFFF', bold: true }));
-  dongSo(null, y + 21, d.T, true); y += ROW + 2;
   let stt = 0;
   for (const g of d.nhom) {
     p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 2}" fill="${C.xanh}"/>`);
