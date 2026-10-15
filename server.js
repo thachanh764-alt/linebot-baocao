@@ -1199,10 +1199,14 @@ const TAB_SUA_TON = 'SUA_TON';
 const TAB_SUA_BAN = 'SUA_BAN';
 const TAB_SUA_TON_CU = 'SUA_TON_CU'; // tồn của ngày trước để so chênh lệch
 const ngayCuaCapNhat = (c) => { const m = String(c || '').match(/(\d{2})\/(\d{2})\s*$/); return m ? `${m[2]}-${m[1]}` : ''; };
-const MA_SUA_MAC_DINH = ['2609001221', '2609001223', '2609001656', '2609001657', /* C2 */ '2203000875', '2204000011', '2602001178', '2006000354'];
+const MA_SUA_MAC_DINH = ['2609001221', '2609001223', '2609001656', '2609001657', /* C2 */ '2203000875', '2204000011', '2602001178', '2006000354', /* C2 355ML */ '1607002174'];
 // Nhóm hiển thị: tên có "C2" -> TRÀ C2, còn lại -> SỮA CELANO
-function nhomSua(ten) { return /(^|\s)C2(\s|$)/i.test(String(ten)) ? 'C2' : 'SUA'; }
-const NHOM_SUA = [{ k: 'SUA', ten: 'SỮA CELANO', dv: 'hộp' }, { k: 'C2', ten: 'TRÀ C2', dv: 'chai' }];
+function nhomSua(ten) {
+  const s = String(ten);
+  if (!/(^|\s)C2(\s|$)/i.test(s)) return 'SUA';
+  return /35[05]\s*ML|360\s*ML/i.test(s) ? 'C2N' : 'C2';
+}
+const NHOM_SUA = [{ k: 'SUA', ten: 'SỮA CELANO', dv: 'hộp' }, { k: 'C2', ten: 'C2 455ML', dv: 'chai' }, { k: 'C2N', ten: 'C2 355ML', dv: 'chai' }];
 
 function laFileTonModel(header) {
   return header.includes('Mã Model') && header.includes('Tồn kho siêu thị') && header.includes('Mã siêu thị');
@@ -1240,12 +1244,10 @@ async function napFileTonSua(sheets, header, dataRows, fileName) {
     .filter((r) => r[c.ma] != null && r[c.st] != null)
     .map((r) => [String(r[c.ma]).trim(), String(r[c.ten] || ''), chuanHoaMaST(r[c.st]), tenNganSieuThi(r[c.tenST]), soGV(r[c.ton]), c.di === -1 ? 0 : soGV(r[c.di]), capNhatTuTen(fileName) || bayGioVN()]);
   if (rows.length > 2000) throw new Error('File tồn quá nhiều mã. Anh lọc đúng các mã sữa cần theo dõi rồi gửi lại giúp em.');
-  // Tồn đang có thuộc ngày khác ngày file mới -> chuyển sang SUA_TON_CU làm mốc so sánh
-  const tonDangCo = await docTabAnToan(sheets, TAB_SUA_TON);
-  if (tonDangCo.length > 1 && rows.length) {
-    const ngayCu = ngayCuaCapNhat(tonDangCo[1][6]), ngayMoi = ngayCuaCapNhat(rows[0][6]);
-    if (ngayCu && ngayMoi && ngayCu !== ngayMoi) await ghiDeTab(sheets, TAB_SUA_TON_CU, tonDangCo[0], tonDangCo.slice(1));
-  }
+  // Gộp theo mã: chỉ thay các mã có trong file mới, giữ nguyên mã khác (VD file riêng C2 355ML)
+  const maMoi = new Set(rows.map((r) => r[0]));
+  const giuLai = (await docTabAnToan(sheets, TAB_SUA_TON)).slice(1).filter((r) => !maMoi.has(String(r[0]).trim()));
+  rows.unshift(...giuLai);
   await ghiDeTab(sheets, TAB_SUA_TON, ['Mã Model', 'Model', 'Mã siêu thị', 'Tên siêu thị', 'Tồn', 'Đang đi đường', 'Cập nhật'], rows);
   return { loai: 'sua', tenTab: TAB_SUA_TON, soDong: rows.length };
 }
@@ -1254,14 +1256,16 @@ async function napFileBanSua(sheets, header, dataRows, fileName) {
   const i = (c) => header.indexOf(c);
   const c = { ma: i('Mã Model'), ten: i('Model'), st: i('Mã siêu thị'), tenST: i('Tên siêu thị'), sl: i('Tổng số lượng'), dt: i('Tổng doanh thu') };
   const rows = dataRows.map((r) => [String(r[c.ma]).trim(), String(r[c.ten] || ''), chuanHoaMaST(r[c.st]), tenNganSieuThi(r[c.tenST]), soGV(r[c.sl]), soGV(r[c.dt]), capNhatTuTen(fileName) || bayGioVN()]);
+  const maMoiBan = new Set(rows.map((r) => r[0]));
+  rows.unshift(...(await docTabAnToan(sheets, TAB_SUA_BAN)).slice(1).filter((r) => !maMoiBan.has(String(r[0]).trim())));
   await ghiDeTab(sheets, TAB_SUA_BAN, ['Mã Model', 'Model', 'Mã siêu thị', 'Tên siêu thị', 'SL bán', 'Doanh thu', 'Cập nhật'], rows);
   return { loai: 'sua', tenTab: TAB_SUA_BAN, soDong: rows.length };
 }
 
 function tenNganSua(ten) {
   let x = String(ten);
-  if (nhomSua(x) === 'C2') {
-    x = (' ' + x + ' ').replace(/\s*CHAI.*$/i, ' ').replace(/\s(TRÀ|C2|FREEZE|HƯƠNG|VỊ)(?=\s)/gi, ' ').replace(/\s(TRÀ|C2|FREEZE|HƯƠNG|VỊ)(?=\s)/gi, ' ');
+  if (nhomSua(x) !== 'SUA') {
+    x = (' ' + x + ' ').replace(/\s*CHAI.*$/i, ' ').replace(/\s(NƯỚC|TRÀ|C2|FREEZE|HƯƠNG|VỊ)(?=\s)/gi, ' ').replace(/\s(NƯỚC|TRÀ|C2|FREEZE|HƯƠNG|VỊ)(?=\s)/gi, ' ');
   } else {
     x = x.replace(/^CELANO\s+/i, '').replace(/SỮA YẾN MẠCH VỊ\s*/i, '').replace(/T\.?\s*UỐNG\s*/i, '').replace(/\s*CÓ THẠCH/i, '').replace(/\s*\d+\s*ML.*$/i, '');
   }
@@ -1282,7 +1286,7 @@ async function docDuLieuSua() {
     const x = lay(String(r[2]), String(r[3]));
     x.ton[ma] = (x.ton[ma] || 0) + soGV(r[4]); x.di[ma] = (x.di[ma] || 0) + soGV(r[5]);
   }
-  const coCu = tonCu.length > 0;
+  const coCu = false; // đã bỏ cột ± tồn theo yêu cầu
   for (const r of tonCu) {
     const ma = String(r[0]); if (!sp.has(ma)) continue;
     const x = st.get(String(r[2])); if (!x) continue;
@@ -1294,7 +1298,7 @@ async function docDuLieuSua() {
     x.ban[ma] = (x.ban[ma] || 0) + soGV(r[4]);
   }
   const dsSP = [...sp.entries()].map(([ma, ten]) => ({ ma, ten, ngan: tenNganSua(ten), nhom: nhomSua(ten) }))
-    .sort((a, b) => (a.nhom === b.nhom ? a.ngan.localeCompare(b.ngan) : a.nhom === 'SUA' ? -1 : 1));
+    .sort((a, b) => (a.nhom === b.nhom ? a.ngan.localeCompare(b.ngan) : ['SUA', 'C2', 'C2N'].indexOf(a.nhom) - ['SUA', 'C2', 'C2N'].indexOf(b.nhom)));
   return { dsSP, dsST: [...st.values()], capTon: String((ton[0] || [])[6] || ''), capBan: String((ban[0] || [])[6] || ''), coCu, capCu: String((tonCu[0] || [])[6] || '') };
 }
 
@@ -1353,7 +1357,7 @@ function veSvgSua(d) {
   y += 4;
 
   // Bảng: mỗi nhóm 1 cột dồn (Tồn | Bán)
-  const xNhom0 = 480, wNhom = (W - PAD - xNhom0) / nhom.length;
+  const xNhom0 = 430, wNhom = (W - PAD - xNhom0) / nhom.length;
   const nCot = d.coCu ? 3 : 2; // Tồn | ± hôm qua | Bán
   const xc = (gi, j) => xNhom0 + gi * wNhom + (wNhom * (j + 1)) / nCot - 14;
   const jBan = nCot - 1;
