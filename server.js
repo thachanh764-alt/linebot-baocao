@@ -1896,25 +1896,33 @@ async function generateBnnbReport() {
 const THST_NHOM = [
   { k: 'TS', ten: 'THUỶ HẢI SẢN', ngan: 'Thuỷ hải sản', hs: 1.1, khop: (nh, mn) => nh === '1254' },
   { k: 'TR', ten: 'TRỨNG GIA CẦM', ngan: 'Trứng', hs: 1.1, khop: (nh, mn) => mn === '2856' },
+  { k: 'TN', ten: 'THỊT NHẬP KHẨU', ngan: 'Thịt NK', hs: 1.1, khop: (nh, mn, ten) => nh === '1236' && laThitNhapKhau(ten) },
 ];
+// Thịt nhập khẩu: nhận theo tên model (NHẬP KHẨU, NK, MỸ, (ĐỨC), (TBN), (BRAZIL), (NGA)...)
+function laThitNhapKhau(ten) {
+  const s = ` ${String(ten || '').toUpperCase()} `;
+  return /NHẬP KHẨU|[\s(]NK[\s)]|[\s(](MỸ|ĐỨC|TBN|TÂY BAN NHA|BRAZIL|NGA|ÚC|CANADA|BA LAN|HÀ LAN|ĐAN MẠCH|PHÁP|ẤN ĐỘ|ARGENTINA)[\s)]/.test(s);
+}
 const TAB_THST_BASE = 'THST_BASE';
 const cho_NapBaseThst = new Map(); // targetId -> hạn (nhận nhiều file trong 3 phút)
 const thstTab = (k, loai) => `THST_${k}_${loai}`;
-function nhomThstCua(nh, mn) { return THST_NHOM.find((g) => g.khop(String(nh ?? '').trim(), String(mn ?? '').trim())); }
+function nhomThstCua(nh, mn, ten) { return THST_NHOM.find((g) => g.khop(String(nh ?? '').trim(), String(mn ?? '').trim(), ten)); }
 
 function laFileThst(header, dataRows) {
   const iNH = header.indexOf('Mã ngành hàng'), iMN = header.indexOf('Mã nhóm hàng'), iST = header.indexOf('Mã siêu thị');
   if (iNH < 0 || iMN < 0 || iST < 0 || !dataRows.length) return false;
   const st = new Set(dataRows.map((r) => String(r[iST] ?? '').trim()).filter(Boolean));
-  return st.size === 1 && dataRows.every((r) => nhomThstCua(r[iNH], r[iMN]));
+  const iTen = header.indexOf('Model');
+  const trongPhamVi = (r) => { const nh = String(r[iNH] ?? '').trim(); return nh === '1254' || nh === '1236' || String(r[iMN] ?? '').trim() === '2856'; };
+  return st.size === 1 && dataRows.every(trongPhamVi) && dataRows.some((r) => nhomThstCua(r[iNH], r[iMN], r[iTen]));
 }
 
 function tongThstTheoNhom(header, dataRows) {
   const i = (c) => header.indexOf(c);
-  const c = { nh: i('Mã ngành hàng'), mn: i('Mã nhóm hàng'), tn: i('Nhóm hàng'), dt: i('Tổng doanh thu'), st: i('Mã siêu thị'), tst: i('Tên siêu thị') };
+  const c = { nh: i('Mã ngành hàng'), mn: i('Mã nhóm hàng'), tn: i('Nhóm hàng'), dt: i('Tổng doanh thu'), st: i('Mã siêu thị'), tst: i('Tên siêu thị'), md: i('Model') };
   const out = new Map();
   for (const r of dataRows) {
-    const g = nhomThstCua(r[c.nh], r[c.mn]); if (!g) continue;
+    const g = nhomThstCua(r[c.nh], r[c.mn], r[c.md]); if (!g) continue;
     if (!out.has(g.k)) out.set(g.k, { m: new Map(), st: { ma: chuanHoaMaST(r[c.st]), ten: tenNganSieuThi(r[c.tst]) } });
     const o = out.get(g.k), ma = String(r[c.mn] ?? '').trim();
     const x = o.m.get(ma) || { ma, ten: String(r[c.tn] || ''), dt: 0 };
@@ -2011,7 +2019,7 @@ function veSvgThst(d) {
   const soNg = (v) => String(Math.round(v * 10) / 10).replace('.', ',');
   const p = [];
   p.push(`<rect x="0" y="0" width="${W}" height="96" fill="${C.xanh}"/>`);
-  p.push(t(PAD, 38, 'BÁO CÁO THUỶ HẢI SẢN – TRỨNG T10', { size: 26, bold: true, fill: '#FFFFFF' }));
+  p.push(t(PAD, 38, 'BÁO CÁO CÁ – TRỨNG – THỊT NK T10', { size: 26, bold: true, fill: '#FFFFFF' }));
   p.push(t(PAD, 64, `Mục tiêu T10: ${d.nhom.map((g) => `${g.ngan} = T9 × ${Math.round(g.hs * 100)}%`).join(' · ')}`, { size: 15, fill: '#E3F5EA' }));
   p.push(t(PAD, 86, `Cập nhật ${d.capNhat || '–'} · đã chạy ${soNg(d.soNgay)}/${d.ngayThang} ngày · ĐVT: triệu`, { size: 13, fill: '#E3F5EA' }));
   { const bw = 300, bx = W - PAD - bw, by = 16;
@@ -2022,7 +2030,7 @@ function veSvgThst(d) {
   let y = 112;
 
   // 3 ô: từng ngành + tổng
-  const o3 = [...d.nhom.map((g) => ({ ten: g.ten, ...g.tong })), { ten: 'TỔNG THS + TRỨNG', ...d.T }];
+  const o3 = [...d.nhom.map((g) => ({ ten: g.ten, ...g.tong })), { ten: 'TỔNG 3 NGÀNH', ...d.T }];
   const oW = (W - PAD * 2 - 12 * (o3.length - 1)) / o3.length, oH = 104;
   o3.forEach((o, k) => {
     const x = PAD + k * (oW + 12), tong = k === o3.length - 1;
@@ -2066,7 +2074,7 @@ function veSvgThst(d) {
   };
   // Chỉ hiện tổng từng ngành + tổng chung (không chi tiết nhóm hàng)
   p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 8}" fill="${C.xanhDam}"/>`);
-  p.push(t(cot.ten, y + 25, 'TỔNG THS + TRỨNG', { fill: '#FFFFFF', bold: true, size: 16 }));
+  p.push(t(cot.ten, y + 25, 'TỔNG CÁ + TRỨNG + THỊT NK', { fill: '#FFFFFF', bold: true, size: 16 }));
   dongSo(null, y + 25, d.T, true); y += ROW + 8;
   d.nhom.forEach((g, k) => {
     p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 8}" fill="${k % 2 ? C.chan : '#FFFFFF'}"/>`);
@@ -2879,7 +2887,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
     if (laLenhNapBaseThst(question)) {
       cho_NapBaseThst.set(targetId, Date.now() + THOI_GIAN_CHO_MS);
       cho_AI_PhanTich.delete(targetId);
-      await guiTraLoi(event, targetId, { type: 'text', text: '📥 OK anh, các file Doanh Thu Theo Model tháng 9 (Thuỷ hải sản + Trứng) anh gửi trong 3 phút tới em sẽ lưu làm BASE (× 110% = mục tiêu T10).' });
+      await guiTraLoi(event, targetId, { type: 'text', text: '📥 OK anh, các file Doanh Thu Theo Model tháng 9 (Thuỷ hải sản + Trứng) anh gửi trong 3 phút tới em sẽ lưu làm BASE Cá / Trứng / Thịt nhập khẩu (× 110% = mục tiêu T10).' });
       continue;
     }
 
