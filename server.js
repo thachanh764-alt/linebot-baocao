@@ -1686,7 +1686,9 @@ const cho_NapBaseBnnb = new Map(); // targetId -> hạn (nhận nhiều file tro
 const bnnbTab = (k, loai) => `BNNB_${k}_${loai}`;
 function nhomBnnbCuaNH(nh) { return BNNB_NHOM.find((g) => g.nh.includes(String(nh ?? '').trim())); }
 
+const BNNB_BAT = false; // Báo cáo BNNB: ĐÃ TẮT (21/10). Bật lại: đổi thành true.
 function laFileBnnb(header, dataRows) {
+  if (!BNNB_BAT) return false;
   const iNH = header.indexOf('Mã ngành hàng'), iST = header.indexOf('Mã siêu thị');
   if (iNH < 0 || iST < 0) return false;
   const nh = new Set(dataRows.map((r) => String(r[iNH] ?? '').trim()).filter(Boolean));
@@ -1908,9 +1910,11 @@ function veSvgBnnb(d) {
 }
 
 function laTriggerBnnb(text) {
+  if (!BNNB_BAT) return false;
   return coTuKhoa(text, ['báo cáo bnnb', 'bao cao bnnb', 'bc bnnb', 'bnnb']) && !laLenhNapBaseBnnb(text);
 }
 function laLenhNapBaseBnnb(text) {
+  if (!BNNB_BAT) return false;
   const s = (text || '').normalize('NFC');
   return /n[ạa]p\s*base/i.test(s) && /bnnb/i.test(s);
 }
@@ -2703,7 +2707,6 @@ async function traLoiCauHoiAI(event, targetId, question) {
         '• HUỶ MMKK\n' +
         '• BC SỮA\n' +
         '• BC ĐMSK (NẠP BASE ĐMSK để nạp tháng 9)\n' +
-        '• Báo Cáo BNNB (NẠP BASE BNNB để nạp tháng 9)\n' +
         '• BC THS TRỨNG (NẠP BASE THS để nạp tháng 9)\n' +
         '• DTLK (doanh thu luỹ kế; MT DTLK 3500 để đặt mục tiêu)\n' +
         '• DT HÔM NAY (ảnh vuông số hôm nay cho nhân viên)\n' +
