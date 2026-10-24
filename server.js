@@ -1460,6 +1460,7 @@ async function napBaseDmsk(sheets, header, dataRows, fileName) {
 //  - DMSK_NGAY = DT từng ngày (file chỉ 1 ngày; gửi nhiều lần trong ngày thì lấy bản mới nhất).
 //  Luỹ kế = mốc + tổng các ngày sau mốc. Cột "Hôm nay" = file ngày mới nhất.
 const TAB_DMSK_NGAY = 'DMSK_NGAY';
+const KIEU_FILE_ROBOT = { v: null }; // robot gửi file: 'ngay' | 'luyke' (null = tự đoán như gửi tay)
 function soNgayChayDmsk(ngay, gio) {
   const d = Number(ngay.slice(8, 10));
   return Math.max(0.1, d - 1 + (gio == null || gio === '' ? 1 : Math.min(1, Math.max(0, (Number(gio) - 6) / 15))));
@@ -1509,7 +1510,9 @@ async function napT10Dmsk(sheets, header, dataRows, fileName, ngayChiDinh, dsSan
   // File 1 ngày hay luỹ kế? So với nhịp bán TB/ngày đang có
   const hien = await tinhLuyKeDmsk(sheets, tabLK, tabNgay);
   let motNgay = false;
-  if (hien) {
+  if (KIEU_FILE_ROBOT.v === 'ngay') motNgay = true; // robot báo rõ: file chỉ 1 ngày
+  else if (KIEU_FILE_ROBOT.v === 'luyke') motNgay = false; // robot báo rõ: file luỹ kế
+  else if (hien) {
     const tongLK = [...hien.m.values()].reduce((s2, x) => s2 + x.dt, 0);
     const tb = tongLK / Math.max(1, hien.soNgay);
     motNgay = tong < tb * 2.5 && tong < tongLK * 0.6;
@@ -2706,8 +2709,10 @@ async function taoMenuFlex() {
           hangNut([nutMenu('DT hôm nay KV', 'DT HÔM NAY', cam), nutMenu(`DT hôm nay ${st}`, `DT HÔM NAY ${st}`, cam)]),
           tieuDeMuc('💰', 'DOANH THU LUỸ KẾ', 'tự cập nhật'),
           hangNut([nutMenu('DTLK KV', 'DTLK', xanh), nutMenu(`DTLK ${st}`, `DTLK ${st}`, xanh)]),
+          tieuDeMuc('🏆', 'THI ĐUA NGÀNH HÀNG', 'tự cập nhật'),
+          hangNut([nutMenu('THS + Trứng', 'BC THS TRỨNG', xanh), nutMenu('Đông mát Sữa Kem', 'BC ĐMSK', xanh)]),
+          hangNut([nutMenu('Sữa Celano + C2', 'BC SỮA', xanh)]),
           tieuDeMuc('📁', 'BÁO CÁO GỬI FILE', 'số lần gửi file gần nhất'),
-          hangNut([nutMenu('THS + Trứng', 'BC THS TRỨNG', xam), nutMenu('Đông mát Sữa Kem', 'BC ĐMSK', xam)]),
           hangNut([nutMenu('Giá vốn', 'GIÁ VỐN', xam), nutMenu('Huỷ + MMKK', 'HUỶ MMKK', xam)]),
         ],
       },
@@ -3172,15 +3177,36 @@ app.get('/anh/:id.png', async (req, res) => {
 app.post('/robot/nap', express.raw({ type: '*/*', limit: '20mb' }), async (req, res) => {
   if (!kiemTraKhoaRobot(req, res)) return;
   const fileName = String(req.query.ten || 'robot.xlsx');
+  const ngayChiDinh = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.ngay || '')) ? String(req.query.ngay) : null;
   try {
     if (!req.body || !req.body.length) throw new Error('Không nhận được file');
-    const kq = await napFileVaoSheet(fileName, req.body, null, false, false, false);
+    KIEU_FILE_ROBOT.v = ['ngay', 'luyke'].includes(req.query.kieu) ? req.query.kieu : null;
+    let kq;
+    try { kq = await napFileVaoSheet(fileName, req.body, ngayChiDinh, false, false, false); } finally { KIEU_FILE_ROBOT.v = null; }
     const capNhat = capNhatTuTen(fileName) || bayGioVN();
     await ghiCauHinhRobot(kq.loai === 'dtlk' ? { capNhatDtst: capNhat } : { [`capNhat_${kq.loai}`]: capNhat });
     console.log(`[robot] nạp "${fileName}": ${kq.soDong} dòng (loại ${kq.loai})`);
     res.json({ ok: true, loai: kq.loai, soDong: kq.soDong });
   } catch (err) {
     console.error('[robot] lỗi nạp:', err);
+    res.status(500).json({ ok: false, loi: err.message });
+  }
+});
+
+// ---- Robot hỏi: cần lấy mã sữa nào, siêu thị nào cho từng báo cáo ----
+app.get('/robot/cau-hinh', async (req, res) => {
+  if (!kiemTraKhoaRobot(req, res)) return;
+  try {
+    const sheets = getSheetsClient();
+    const cot = async (tab, i) => [...new Set((await docTabAnToan(sheets, tab)).slice(1).map((r) => chuanHoaMaST(r[i])).filter((x) => /^\d+$/.test(x)))];
+    res.json({
+      ok: true,
+      maSua: [...(await dsMaSua(sheets))],
+      stSua: await cot(TAB_SUA_TON, 2),
+      stDmsk: await cot(TAB_DMSK_BASE, 0),
+      stThst: (await cot(TAB_THST_BASE, 5))[0] || MENU_MA_ST,
+    });
+  } catch (err) {
     res.status(500).json({ ok: false, loi: err.message });
   }
 });
