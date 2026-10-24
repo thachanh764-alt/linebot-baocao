@@ -685,19 +685,20 @@ function veSvgDtNH(d) {
 // ---- Dấu chìm trên mọi ảnh báo cáo: logo + mã nhân viên, lặp chéo, mờ ----
 //  MA_NV (mặc định 197042). Có file logo.png ở thư mục gốc dự án thì dùng logo đó, không thì vẽ huy hiệu chữ.
 const MA_NV = (process.env.MA_NV || '197042').trim();
-let LOGO_DATA = null;
-try { LOGO_DATA = 'data:image/png;base64,' + require('fs').readFileSync(path.join(__dirname, 'logo.png')).toString('base64'); } catch (_) { /* chưa có logo */ }
+// Ai bấm/gõ lệnh thì dấu chìm là mã NV của người đó (giữ theo từng lượt xử lý, không lẫn giữa các người)
+const { AsyncLocalStorage } = require('async_hooks');
+const ngCanhNV = new AsyncLocalStorage();
+const nvHienTai = () => String((ngCanhNV.getStore() || {}).nv || MA_NV).slice(0, 40);
 function themDauChim(svg) {
   const m = svg.match(/<svg[^>]*\swidth="([\d.]+)"[^>]*\sheight="([\d.]+)"/);
-  if (!m || !MA_NV) return svg;
+  const chu = nvHienTai();
+  if (!m || !chu) return svg;
   const W = Number(m[1]), H = Number(m[2]);
+  const co = chu.length > 10 ? 40 : 64; // tên dài thì chữ nhỏ lại
   const xam = '#7F868C', buocX = 460, buocY = 300, o = [];
   for (let y = 120, hang = 0; y < H + buocY; y += buocY, hang++) {
     for (let x = (hang % 2) * (buocX / 2) - 80; x < W + buocX; x += buocX) {
-      const logo = LOGO_DATA
-        ? `<image href="${LOGO_DATA}" x="-62" y="-46" width="54" height="54" preserveAspectRatio="xMidYMid meet"/>`
-        : `<circle cx="-34" cy="-19" r="25" fill="none" stroke="${xam}" stroke-width="4"/><text x="-34" y="-12" font-size="19" font-weight="700" fill="${xam}" text-anchor="middle">BHX</text>`;
-      o.push(`<g transform="translate(${x} ${y}) rotate(-35)">${logo}<text x="6" y="0" font-size="64" font-weight="700" fill="${xam}">${escXml(MA_NV)}</text></g>`);
+      o.push(`<g transform="translate(${x} ${y}) rotate(-35)"><text x="0" y="0" font-size="${co}" font-weight="700" fill="${xam}">${escXml(chu)}</text></g>`);
     }
   }
   return svg.replace(/<\/svg>\s*$/, `<g opacity="0.2" pointer-events="none">${o.join('')}</g></svg>`);
@@ -2787,6 +2788,7 @@ function chiTietLoiLine(err) {
 
 // Trả lời: thử reply, lỗi thì push thẳng
 async function guiTraLoi(event, targetId, message) {
+  message = ganNVVaoLink(message);
   try {
     await client.replyMessage(event.replyToken, message);
   } catch (err) {
@@ -2798,6 +2800,59 @@ async function guiTraLoi(event, targetId, message) {
       console.error('[webhook] Kích thước JSON tin nhắn (ký tự):', JSON.stringify(message).length);
     }
   }
+}
+
+// ---- Mã nhân viên của từng người (đăng ký 1 lần: "@bot mã nv 123456") ----
+const TAB_NHANVIEN = 'NHANVIEN';
+let khoNV = null; // userId -> mã NV
+async function docKhoNV() {
+  if (khoNV) return khoNV;
+  khoNV = new Map();
+  for (const r of (await docTabAnToan(getSheetsClient(), TAB_NHANVIEN)).slice(1)) if (r[0] && r[1]) khoNV.set(String(r[0]), String(r[1]));
+  return khoNV;
+}
+const tenLineCache = new Map();
+async function layNVCuaNguoiGui(event) {
+  const uid = event.source?.userId;
+  if (!uid) return MA_NV;
+  try { const kho = await docKhoNV(); if (kho.has(uid)) return kho.get(uid); } catch (_) { /* đọc Sheet lỗi */ }
+  if (tenLineCache.has(uid)) return tenLineCache.get(uid);
+  let ten = '';
+  try {
+    const p = event.source.groupId ? await client.getGroupMemberProfile(event.source.groupId, uid)
+      : event.source.roomId ? await client.getRoomMemberProfile(event.source.roomId, uid) : await client.getProfile(uid);
+    ten = (p && p.displayName) || '';
+  } catch (_) { /* không lấy được tên */ }
+  // Tên LINE kiểu "HHN_Thảo_91092" / "STR_HHN_Anh_197042" -> lấy mã NV ở cuối tên
+  const maTuTen = ten.match(/(?:^|[_\s\-.])(\d{4,8})\s*$/);
+  const kq = maTuTen ? maTuTen[1] : ten || MA_NV;
+  tenLineCache.set(uid, kq);
+  return kq;
+}
+function laLenhMaNV(text) {
+  const m = (text || '').normalize('NFC').match(/^\s*(?:mã\s*nv|ma\s*nv|msnv|mã\s*nhân\s*viên|ma\s*nhan\s*vien)\s*[:\-]?\s*(\d{3,8})\s*$/i);
+  return m ? m[1] : null;
+}
+async function luuMaNV(event, ma) {
+  const uid = event.source?.userId;
+  if (!uid) throw new Error('Không xác định được tài khoản LINE của anh/chị.');
+  const kho = await docKhoNV();
+  kho.set(uid, ma);
+  let ten = '';
+  try { ten = (await (event.source.groupId ? client.getGroupMemberProfile(event.source.groupId, uid) : client.getProfile(uid))).displayName || ''; } catch (_) { /* bỏ qua */ }
+  const sheets = getSheetsClient();
+  const cu = (await docTabAnToan(sheets, TAB_NHANVIEN)).slice(1).filter((r) => String(r[0]) !== uid);
+  await ghiDeTab(sheets, TAB_NHANVIEN, ['LINE userId', 'Mã NV', 'Tên LINE', 'Cập nhật'], [...cu, [uid, ma, ten, bayGioVN()]]);
+  tenLineCache.delete(uid);
+  return ten;
+}
+// Gắn mã NV vào link ảnh, để Render khởi động lại vẫn vẽ đúng dấu chìm
+function ganNVVaoLink(message) {
+  const nv = nvHienTai();
+  const sua = (m) => (m && m.type === 'image' && !/[?&]nv=/.test(m.originalContentUrl)
+    ? { ...m, originalContentUrl: `${m.originalContentUrl}&nv=${encodeURIComponent(nv)}`, previewImageUrl: `${m.previewImageUrl}&nv=${encodeURIComponent(nv)}` }
+    : m);
+  return Array.isArray(message) ? message.map(sua) : sua(message);
 }
 
 function extractMentionQuestion(event) {
@@ -2884,6 +2939,8 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
   for (const event of events) {
     const isGroup = event.source?.type === 'group' || event.source?.type === 'room';
     const targetId = event.source?.groupId || event.source?.roomId || event.source?.userId;
+    // Dấu chìm trên ảnh = mã NV (hoặc tên LINE) của người vừa bấm / vừa gõ
+    ngCanhNV.enterWith({ nv: await layNVCuaNguoiGui(event).catch(() => MA_NV) });
 
     // ---------------- BẤM NÚT MENU (postback) ----------------
     if (event.type === 'postback') {
@@ -3093,6 +3150,16 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
       await guiTraLoi(event, targetId, await taoMenuFlex());
       continue;
     }
+    const maNVMoi = laLenhMaNV(question);
+    if (maNVMoi) {
+      try {
+        const ten = await luuMaNV(event, maNVMoi);
+        await guiTraLoi(event, targetId, { type: 'text', text: `✅ Đã lưu mã NV ${maNVMoi}${ten ? ` cho ${ten}` : ''}. Từ giờ ảnh báo cáo anh/chị mở sẽ có dấu chìm ${maNVMoi}.` });
+      } catch (err) {
+        await guiTraLoi(event, targetId, { type: 'text', text: `⚠️ Chưa lưu được mã NV: ${err.message}` });
+      }
+      continue;
+    }
     if (laLenhRobotNhom(question)) {
       try {
         await ghiCauHinhRobot({ nhomId: targetId });
@@ -3157,6 +3224,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
 
 // Link ảnh báo cáo cho LINE tải về
 app.get('/anh/:id.png', async (req, res) => {
+  ngCanhNV.enterWith({ nv: String(req.query.nv || MA_NV).slice(0, 40) });
   try {
     const nho = req.query.nho === '1';
     let anh = khoAnh.get(req.params.id);
