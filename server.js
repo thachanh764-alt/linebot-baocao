@@ -2626,6 +2626,119 @@ const app = express();
 const client = new line.Client(config);
 let botUserId = null;
 
+// ---------------------------------------------------------------------------
+// ROBOT POS + MENU NÚT BẤM
+//  - Robot trên MacBook tự lấy số POS mỗi giờ (phút 17) rồi gửi file vào /robot/nap
+//  - Gõ "menu" trong group (không cần @tag) -> thẻ menu, bấm nút là ra báo cáo
+//  - "@bot robot nhóm" trong group -> robot báo lỗi (hết phiên đăng nhập POS...) vào nhóm đó
+// Biến môi trường: ROBOT_KEY (mật mã riêng giữa robot và bot), MENU_MA_ST (mặc định 8104)
+// ---------------------------------------------------------------------------
+const ROBOT_KEY = (process.env.ROBOT_KEY || '').trim();
+const MENU_MA_ST = (process.env.MENU_MA_ST || '8104').trim();
+const TAB_ROBOT = 'ROBOT_CFG';
+
+async function docCauHinhRobot() {
+  const rows = (await docTabAnToan(getSheetsClient(), TAB_ROBOT)).slice(1);
+  const cfg = {};
+  for (const r of rows) if (r[0]) cfg[String(r[0])] = String(r[1] ?? '');
+  return cfg;
+}
+async function ghiCauHinhRobot(capNhat) {
+  const sheets = getSheetsClient();
+  const cfg = {};
+  for (const r of (await docTabAnToan(sheets, TAB_ROBOT)).slice(1)) if (r[0]) cfg[String(r[0])] = String(r[1] ?? '');
+  Object.assign(cfg, capNhat);
+  await ghiDeTab(sheets, TAB_ROBOT, ['Khoá', 'Giá trị'], Object.entries(cfg));
+}
+
+function laLenhMenu(text) {
+  return /^\s*(menu|mênu|bảng lệnh|bang lenh)\s*$/i.test((text || '').normalize('NFC'));
+}
+function laLenhRobotNhom(text) {
+  return /robot\s*(nh[oó]m|đăng ký|dang ky)/i.test((text || '').normalize('NFC'));
+}
+
+function nutMenu(nhan, lenh, mau) {
+  return {
+    type: 'box', layout: 'vertical', flex: 1, cornerRadius: '10px', paddingAll: '10px',
+    backgroundColor: mau.nen, borderColor: mau.vien, borderWidth: '1px', justifyContent: 'center',
+    action: { type: 'postback', label: nhan.slice(0, 20), data: `lenh=${lenh}`, displayText: nhan },
+    contents: [{ type: 'text', text: nhan, weight: 'bold', size: 'sm', color: mau.chu, align: 'center', wrap: true }],
+  };
+}
+function hangNut(nuts) {
+  return { type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'sm', contents: nuts };
+}
+function tieuDeMuc(icon, ten, ghiChu) {
+  return {
+    type: 'box', layout: 'horizontal', margin: 'lg',
+    contents: [
+      { type: 'text', text: `${icon} ${ten}`, weight: 'bold', size: 'xs', color: '#444444', flex: 0 },
+      { type: 'text', text: ghiChu || ' ', size: 'xxs', color: '#999999', align: 'end', gravity: 'center' },
+    ],
+  };
+}
+
+async function taoMenuFlex() {
+  let cfg = {};
+  try { cfg = await docCauHinhRobot(); } catch (_) { /* chưa có tab */ }
+  const cam = { nen: '#FFF5EA', vien: '#F2C08A', chu: '#C2570C' };
+  const xanh = { nen: '#F1F8F3', vien: '#BFDCC8', chu: '#0B8A3E' };
+  const xam = { nen: '#F5F5F5', vien: '#DDDDDD', chu: '#555555' };
+  const st = MENU_MA_ST;
+  const capNhat = cfg.capNhatDtst ? `robot nạp lúc ${cfg.capNhatDtst}` : 'chưa có lần robot nạp';
+  return {
+    type: 'flex',
+    altText: 'Menu báo cáo — bấm nút để xem',
+    contents: {
+      type: 'bubble', size: 'mega',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#0B8A3E', paddingAll: '16px',
+        contents: [
+          { type: 'text', text: 'MENU BÁO CÁO', weight: 'bold', size: 'lg', color: '#FFFFFF' },
+          { type: 'text', text: `Tự cập nhật mỗi giờ, phút 17 · ${capNhat}`, size: 'xxs', color: '#D7F0DF', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '14px', spacing: 'none',
+        contents: [
+          tieuDeMuc('⏱', 'REALTIME HÔM NAY', 'tự cập nhật'),
+          hangNut([nutMenu('DT hôm nay KV', 'DT HÔM NAY', cam), nutMenu(`DT hôm nay ${st}`, `DT HÔM NAY ${st}`, cam)]),
+          tieuDeMuc('💰', 'DOANH THU LUỸ KẾ', 'tự cập nhật'),
+          hangNut([nutMenu('DTLK KV', 'DTLK', xanh), nutMenu(`DTLK ${st}`, `DTLK ${st}`, xanh)]),
+          tieuDeMuc('📁', 'BÁO CÁO GỬI FILE', 'số lần gửi file gần nhất'),
+          hangNut([nutMenu('THS + Trứng', 'BC THS TRỨNG', xam), nutMenu('Đông mát Sữa Kem', 'BC ĐMSK', xam)]),
+          hangNut([nutMenu('Giá vốn', 'GIÁ VỐN', xam), nutMenu('Huỷ + MMKK', 'HUỶ MMKK', xam)]),
+        ],
+      },
+      footer: {
+        type: 'box', layout: 'vertical', backgroundColor: '#FAFAF7', paddingAll: '12px',
+        contents: [
+          { type: 'text', text: 'Tra siêu thị khác: @bot + lệnh + mã ST', size: 'xxs', color: '#666666', wrap: true },
+          { type: 'text', text: 'vd: @bot dtlk 5818 · @bot dt hôm nay 7661', size: 'xxs', color: '#666666', wrap: true },
+        ],
+      },
+    },
+  };
+}
+
+// Gửi tin cho nhóm đã đăng ký (robot báo lỗi / báo đã nạp)
+async function guiNhomRobot(message) {
+  const cfg = await docCauHinhRobot();
+  if (!cfg.nhomId) return false;
+  await client.pushMessage(cfg.nhomId, message);
+  return true;
+}
+
+function kiemTraKhoaRobot(req, res) {
+  if (!ROBOT_KEY || req.get('x-robot-key') !== ROBOT_KEY) {
+    res.status(401).json({ ok: false, loi: 'Sai hoặc thiếu ROBOT_KEY' });
+    return false;
+  }
+  return true;
+}
+
+
 async function taiNoiDungFileLine(messageId) {
   const res = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
     headers: { Authorization: `Bearer ${config.channelAccessToken}` },
@@ -2742,9 +2855,26 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
   console.log(`[webhook] nhận ${events.length} event(s)`);
 
   for (const event of events) {
-    if (event.type !== 'message') continue;
     const isGroup = event.source?.type === 'group' || event.source?.type === 'room';
     const targetId = event.source?.groupId || event.source?.roomId || event.source?.userId;
+
+    // ---------------- BẤM NÚT MENU (postback) ----------------
+    if (event.type === 'postback') {
+      const lenh = new URLSearchParams(event.postback?.data || '').get('lenh') || '';
+      if (!lenh) continue;
+      try {
+        if (laLenhMenu(lenh)) { await guiTraLoi(event, targetId, await taoMenuFlex()); continue; }
+        const kq = await chayLenh(lenh);
+        await guiTraLoi(event, targetId, kq ? kq.ket : { type: 'text', text: `Em chưa có lệnh "${lenh}".` });
+        console.log(`[menu] bấm nút "${lenh}"`);
+      } catch (err) {
+        console.error('[menu] lỗi:', err);
+        await guiTraLoi(event, targetId, { type: 'text', text: `⚠️ Không tạo được báo cáo: ${err.message}` });
+      }
+      continue;
+    }
+
+    if (event.type !== 'message') continue;
 
     // ---------------- ẢNH -> AI vision ----------------
     if (event.message.type === 'image') {
@@ -2921,9 +3051,29 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
     if (event.message.type !== 'text') continue;
     let question = event.message.text;
 
+    // Gõ "menu" (trong group không cần @tag) -> thẻ menu nút bấm
+    if (laLenhMenu(question)) {
+      try { await guiTraLoi(event, targetId, await taoMenuFlex()); } catch (err) { console.error('[menu] lỗi:', err); }
+      continue;
+    }
+
     if (isGroup) {
       question = extractMentionQuestion(event);
       if (question === null) continue; // group: không @tag bot -> bỏ qua
+    }
+
+    if (laLenhMenu(question)) {
+      await guiTraLoi(event, targetId, await taoMenuFlex());
+      continue;
+    }
+    if (laLenhRobotNhom(question)) {
+      try {
+        await ghiCauHinhRobot({ nhomId: targetId });
+        await guiTraLoi(event, targetId, { type: 'text', text: '✅ Đã đăng ký nhóm này. Khi robot POS gặp lỗi (vd hết phiên đăng nhập) em sẽ báo vào đây.' });
+      } catch (err) {
+        await guiTraLoi(event, targetId, { type: 'text', text: `⚠️ Lỗi: ${err.message}` });
+      }
+      continue;
     }
 
     if (laLenhNapBaseThst(question)) {
@@ -3015,6 +3165,36 @@ app.get('/anh/:id.png', async (req, res) => {
   } catch (err) {
     console.error('[anh] lỗi vẽ ảnh:', err);
     res.status(500).send('error');
+  }
+});
+
+// ---- Robot POS gửi file vào đây (thay cho việc gửi file vào group) ----
+app.post('/robot/nap', express.raw({ type: '*/*', limit: '20mb' }), async (req, res) => {
+  if (!kiemTraKhoaRobot(req, res)) return;
+  const fileName = String(req.query.ten || 'robot.xlsx');
+  try {
+    if (!req.body || !req.body.length) throw new Error('Không nhận được file');
+    const kq = await napFileVaoSheet(fileName, req.body, null, false, false, false);
+    const capNhat = capNhatTuTen(fileName) || bayGioVN();
+    await ghiCauHinhRobot(kq.loai === 'dtlk' ? { capNhatDtst: capNhat } : { [`capNhat_${kq.loai}`]: capNhat });
+    console.log(`[robot] nạp "${fileName}": ${kq.soDong} dòng (loại ${kq.loai})`);
+    res.json({ ok: true, loai: kq.loai, soDong: kq.soDong });
+  } catch (err) {
+    console.error('[robot] lỗi nạp:', err);
+    res.status(500).json({ ok: false, loi: err.message });
+  }
+});
+
+// ---- Robot báo lỗi / báo tin vào nhóm đã đăng ký ----
+app.post('/robot/bao', express.json({ limit: '100kb' }), async (req, res) => {
+  if (!kiemTraKhoaRobot(req, res)) return;
+  try {
+    const text = String(req.body?.text || '').slice(0, 4000);
+    if (!text) throw new Error('Thiếu nội dung');
+    const daGui = await guiNhomRobot({ type: 'text', text });
+    res.json({ ok: true, daGui });
+  } catch (err) {
+    res.status(500).json({ ok: false, loi: err.message });
   }
 });
 
