@@ -682,7 +682,29 @@ function veSvgDtNH(d) {
     `<rect width="${W}" height="${H}" fill="#FFFFFF"/>` + parts.join('') + `</svg>`;
 }
 
+// ---- Dấu chìm trên mọi ảnh báo cáo: logo + mã nhân viên, lặp chéo, mờ ----
+//  MA_NV (mặc định 197042). Có file logo.png ở thư mục gốc dự án thì dùng logo đó, không thì vẽ huy hiệu chữ.
+const MA_NV = (process.env.MA_NV || '197042').trim();
+let LOGO_DATA = null;
+try { LOGO_DATA = 'data:image/png;base64,' + require('fs').readFileSync(path.join(__dirname, 'logo.png')).toString('base64'); } catch (_) { /* chưa có logo */ }
+function themDauChim(svg) {
+  const m = svg.match(/<svg[^>]*\swidth="([\d.]+)"[^>]*\sheight="([\d.]+)"/);
+  if (!m || !MA_NV) return svg;
+  const W = Number(m[1]), H = Number(m[2]);
+  const xam = '#7F868C', buocX = 460, buocY = 300, o = [];
+  for (let y = 120, hang = 0; y < H + buocY; y += buocY, hang++) {
+    for (let x = (hang % 2) * (buocX / 2) - 80; x < W + buocX; x += buocX) {
+      const logo = LOGO_DATA
+        ? `<image href="${LOGO_DATA}" x="-62" y="-46" width="54" height="54" preserveAspectRatio="xMidYMid meet"/>`
+        : `<circle cx="-34" cy="-19" r="25" fill="none" stroke="${xam}" stroke-width="4"/><text x="-34" y="-12" font-size="19" font-weight="700" fill="${xam}" text-anchor="middle">BHX</text>`;
+      o.push(`<g transform="translate(${x} ${y}) rotate(-35)">${logo}<text x="6" y="0" font-size="64" font-weight="700" fill="${xam}">${escXml(MA_NV)}</text></g>`);
+    }
+  }
+  return svg.replace(/<\/svg>\s*$/, `<g opacity="0.2" pointer-events="none">${o.join('')}</g></svg>`);
+}
+
 function svgThanhPng(svg, rongPx) {
+  svg = themDauChim(svg);
   const { Resvg } = require('@resvg/resvg-js');
   const fs = require('fs');
   const fontFiles = fs.existsSync(FONT_DIR)
