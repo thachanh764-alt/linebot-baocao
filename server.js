@@ -2505,6 +2505,78 @@ function veSvgDtHomNay(d) {
   const H = y + 24;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
 }
+// ---- DT HÔM NAY KV · CHI TIẾT TỪNG SIÊU THỊ ----
+async function docDuLieuHnKV() {
+  const rows = (await docTabAnToan(getSheetsClient(), TAB_DTST)).slice(1).filter((r) => r[0] && r[1]);
+  if (!rows.length) throw new Error('Chưa có dữ liệu doanh thu siêu thị.');
+  const homNay = homNayVN(), thang = homNay.slice(0, 7), thangT = thangTruoc(thang), dHN = homNay.slice(8, 10);
+  const st = new Map();
+  let cap = '';
+  for (const r of rows) {
+    const k = String(r[0]), ma = String(r[1]);
+    const o = st.get(ma) || { ma, ten: String(r[2] || ma), hn: null, hnT: null, lk: 0, lkT: 0 };
+    const dt = soGV(r[3]) + soGV(r[4]), bill = soGV(r[5]);
+    if (k === homNay) { o.hn = { dt, bill, on: soGV(r[4]) }; if (r[7]) cap = String(r[7]); }
+    if (k === `${thangT}-${dHN}`) o.hnT = { dt, bill };
+    if (k.startsWith(thang) && k <= homNay) o.lk += dt;
+    if (k.startsWith(thangT) && k.slice(8, 10) <= dHN) o.lkT += dt;
+    st.set(ma, o);
+  }
+  const ds = [...st.values()].filter((o) => o.hn || o.lk).sort((a, b) => (b.hn ? b.hn.dt : 0) - (a.hn ? a.hn.dt : 0));
+  if (!ds.some((o) => o.hn)) throw new Error('Chưa có số hôm nay. Chờ robot nạp lần tới (phút 17).');
+  return { ds, homNay, thang, thangT, cap };
+}
+function veSvgHnKV(d) {
+  const W = 1320, PAD = 24, ROW = 30;
+  const C = { xanh: '#0B8A3E', xanhDam: '#0B6E35', nen: '#E6F4EC', nhat: '#F6FAF7', vien: '#D5E3DA', phu: '#777777', do: '#D0312D', cam: '#E08A00' };
+  const t = (x, y, s, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 15}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1a1a1a'}" text-anchor="${o.anchor || 'start'}">${escXml(s)}</text>`;
+  const tr = (v) => fmtTrieu(v / 1e6);
+  const so = (v) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const pct = (a, b) => (b ? (a / b) * 100 : null);
+  const mau = (p) => (p == null ? C.phu : p >= 100 ? C.xanh : p >= 90 ? C.cam : C.do);
+  const fp = (p) => (p == null ? '–' : fmtPhanTram(p));
+  const thT = Number(d.thangT.slice(5, 7)), th = Number(d.thang.slice(5, 7)), dd = `${d.homNay.slice(8, 10)}/${d.homNay.slice(5, 7)}`;
+  // cột: #, ST, HN, T-1 cùng ngày, %, bill, LK, LK T-1, %LK
+  const X = { stt: PAD + 34, st: PAD + 50, hn: 640, hnT: 770, p: 860, bill: 960, lk: 1090, lkT: 1200, plk: W - PAD - 6 };
+  const p = [];
+  p.push(`<rect x="0" y="0" width="${W}" height="96" fill="${C.xanh}"/>`);
+  p.push(t(PAD, 44, 'DOANH THU HÔM NAY · CHI TIẾT TỪNG SIÊU THỊ', { size: 28, bold: true, fill: '#FFFFFF' }));
+  p.push(t(PAD, 76, `${dd} · cập nhật ${d.cap ? d.cap.split(' ')[0] : '–'} · ${d.ds.length} siêu thị · ĐVT: triệu · so với T${thT} cùng ngày (cả ngày)`, { size: 16, fill: '#E3F5EA' }));
+  let y = 112;
+  // tổng
+  const T = d.ds.reduce((a, o) => ({ hn: a.hn + (o.hn ? o.hn.dt : 0), hnT: a.hnT + (o.hnT ? o.hnT.dt : 0), bill: a.bill + (o.hn ? o.hn.bill : 0), lk: a.lk + o.lk, lkT: a.lkT + o.lkT }), { hn: 0, hnT: 0, bill: 0, lk: 0, lkT: 0 });
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="44" fill="${C.xanhDam}"/>`);
+  const hd = [[X.st, 'Siêu thị', 'start'], [X.hn, 'Hôm nay'], [X.hnT, `T${thT} c.ngày`], [X.p, '%'], [X.bill, 'Bill'], [X.lk, `LK T${th}`], [X.lkT, `LK T${thT}`], [X.plk, '% LK']];
+  hd.forEach(([x, s2, a]) => p.push(t(x, y + 28, s2, { size: 15, bold: true, fill: '#FFFFFF', anchor: a || 'end' })));
+  y += 44;
+  const dongTong = { ten: 'TỔNG KV', hn: T.hn, hnT: T.hnT, bill: T.bill, lk: T.lk, lkT: T.lkT };
+  const veDong = (o, i, tong) => {
+    p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${tong ? C.nen : i % 2 ? C.nhat : '#FFFFFF'}"/>`);
+    const pHn = pct(o.hn, o.hnT), pLk = pct(o.lk, o.lkT);
+    if (!tong) p.push(t(X.stt, y + 21, String(i + 1), { size: 13, fill: C.phu, anchor: 'end' }));
+    p.push(t(X.st, y + 21, tong ? o.ten : `${o.ma} · ${rutGonTen(o.ten, 34)}`, { size: 15, bold: tong || o.ma === MENU_MA_ST, fill: o.ma === MENU_MA_ST ? C.xanhDam : '#1a1a1a' }));
+    p.push(t(X.hn, y + 21, tr(o.hn), { size: 16, bold: true, fill: C.xanhDam, anchor: 'end' }));
+    p.push(t(X.hnT, y + 21, o.hnT ? tr(o.hnT) : '–', { size: 15, fill: C.phu, anchor: 'end' }));
+    p.push(t(X.p, y + 21, fp(pHn), { size: 15, bold: true, fill: mau(pHn), anchor: 'end' }));
+    p.push(t(X.bill, y + 21, so(o.bill), { size: 15, anchor: 'end' }));
+    p.push(t(X.lk, y + 21, tr(o.lk), { size: 15, bold: true, anchor: 'end' }));
+    p.push(t(X.lkT, y + 21, o.lkT ? tr(o.lkT) : '–', { size: 15, fill: C.phu, anchor: 'end' }));
+    p.push(t(X.plk, y + 21, fp(pLk), { size: 15, bold: true, fill: mau(pLk), anchor: 'end' }));
+    y += ROW;
+  };
+  veDong(dongTong, 0, true);
+  d.ds.forEach((o, i) => veDong({ ma: o.ma, ten: o.ten, hn: o.hn ? o.hn.dt : 0, hnT: o.hnT ? o.hnT.dt : 0, bill: o.hn ? o.hn.bill : 0, lk: o.lk, lkT: o.lkT }, i, false));
+  p.push(`<rect x="${PAD}" y="112" width="${W - PAD * 2}" height="${y - 112}" fill="none" stroke="${C.xanhDam}" stroke-width="1.5"/>`);
+  y += 26;
+  p.push(t(PAD, y, `Xếp theo DT hôm nay giảm dần · % xanh ≥ 100%, cam 90–100%, đỏ < 90% · Hôm nay đang bán dở nên % sẽ tăng dần đến cuối ngày · LK T${thT} = cùng số ngày.`, { size: 13, fill: C.phu }));
+  const H = y + 20;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
+}
+async function veAnhHnKV() {
+  const svg = veSvgHnKV(await docDuLieuHnKV());
+  return { png: svgThanhPng(svg, 1600), preview: svgThanhPng(svg, 600) };
+}
+
 function laTriggerDtHomNay(text) {
   return coTuKhoa(text, ['dt hôm nay', 'dt hom nay', 'doanh thu hôm nay', 'doanh thu hom nay', 'bc hôm nay', 'hôm nay realtime']);
 }
@@ -2521,7 +2593,18 @@ async function generateDtHomNayReport(text) {
   const id = `hn-${Date.now().toString(36)}`;
   luuAnh(id, png, preview);
   const q = `loai=hn${maST ? `&st=${maST}` : ''}`;
-  return { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?${q}`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?${q}&nho=1` };
+  const tong = { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?${q}`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?${q}&nho=1` };
+  if (maST) return tong;
+  // Không gõ mã ST -> gửi thêm bảng chi tiết từng siêu thị
+  try {
+    const ct = await veAnhHnKV();
+    const id2 = `hnkv-${Date.now().toString(36)}`;
+    luuAnh(id2, ct.png, ct.preview);
+    return [tong, { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id2}.png?loai=hnkv`, previewImageUrl: `${PUBLIC_URL}/anh/${id2}.png?loai=hnkv&nho=1` }];
+  } catch (err) {
+    console.error('[hnkv] lỗi:', err.message);
+    return tong;
+  }
 }
 
 // "ĐẶT MỨC T3 M3" (hoặc "ĐẶT MỨC 3" = áp cho tuần đang chạy theo ngày hôm nay)
@@ -3233,6 +3316,8 @@ app.get('/anh/:id.png', async (req, res) => {
       let ve;
       if (req.query.loai === 'gv') {
         ve = await veAnhGiaVon(String(req.query.st || ''));
+      } else if (req.query.loai === 'hnkv') {
+        ve = await veAnhHnKV();
       } else if (req.query.loai === 'hn') {
         ve = await veAnhDtHomNay(String(req.query.st || ''));
       } else if (req.query.loai === 'dtlk') {
