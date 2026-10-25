@@ -1284,8 +1284,11 @@ async function napFileBanSua(sheets, header, dataRows, fileName) {
   const i = (c) => header.indexOf(c);
   const c = { ma: i('Mã Model'), ten: i('Model'), st: i('Mã siêu thị'), tenST: i('Tên siêu thị'), sl: i('Tổng số lượng'), dt: i('Tổng doanh thu') };
   const rows = dataRows.map((r) => [String(r[c.ma]).trim(), String(r[c.ten] || ''), chuanHoaMaST(r[c.st]), tenNganSieuThi(r[c.tenST]), soGV(r[c.sl]), soGV(r[c.dt]), capNhatTuTen(fileName) || bayGioVN()]);
-  const maMoiBan = new Set(rows.map((r) => r[0]));
-  rows.unshift(...(await docTabAnToan(sheets, TAB_SUA_BAN)).slice(1).filter((r) => !maMoiBan.has(String(r[0]).trim())));
+  // File robot = số bán hôm nay của TẤT CẢ mã đang theo dõi -> thay hẳn (mã chưa bán hôm nay = 0, không giữ số hôm trước)
+  if (!/_robot_/.test(String(fileName || ''))) {
+    const maMoiBan = new Set(rows.map((r) => r[0]));
+    rows.unshift(...(await docTabAnToan(sheets, TAB_SUA_BAN)).slice(1).filter((r) => !maMoiBan.has(String(r[0]).trim())));
+  }
   await ghiDeTab(sheets, TAB_SUA_BAN, ['Mã Model', 'Model', 'Mã siêu thị', 'Tên siêu thị', 'SL bán', 'Doanh thu', 'Cập nhật'], rows);
   return { loai: 'sua', tenTab: TAB_SUA_BAN, soDong: rows.length };
 }
@@ -1327,7 +1330,11 @@ async function docDuLieuSua() {
   }
   const dsSP = [...sp.entries()].map(([ma, ten]) => ({ ma, ten, ngan: tenNganSua(ten), nhom: nhomSua(ten) }))
     .sort((a, b) => (a.nhom === b.nhom ? a.ngan.localeCompare(b.ngan) : ['SUA', 'C2', 'C2N'].indexOf(a.nhom) - ['SUA', 'C2', 'C2N'].indexOf(b.nhom)));
-  return { dsSP, dsST: [...st.values()], capTon: String((ton[0] || [])[6] || ''), capBan: String((ban[0] || [])[6] || ''), coCu, capCu: String((tonCu[0] || [])[6] || '') };
+  const moiNhat = (ds) => ds.map((r) => String(r[6] || '')).filter(Boolean).sort((a, b) => {
+    const k = (x) => { const m = x.match(/(\d{2}):(\d{2})\s+(\d{2})\/(\d{2})/); return m ? `${m[4]}${m[3]}${m[1]}${m[2]}` : ''; };
+    return k(b).localeCompare(k(a));
+  })[0] || '';
+  return { dsSP, dsST: [...st.values()], capTon: moiNhat(ton), capBan: moiNhat(ban), coCu, capCu: String((tonCu[0] || [])[6] || '') };
 }
 
 function veSvgSua(d) {
