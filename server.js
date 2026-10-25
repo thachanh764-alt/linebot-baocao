@@ -734,8 +734,9 @@ function themDauChim(svg) {
   return svg.replace(/<\/svg>\s*$/, `<g opacity="0.2" pointer-events="none">${o.join('')}</g></svg>`);
 }
 
+const BAT_DAU_CHIM = false; // Dấu chìm mã NV trên ảnh: ĐÃ TẮT (25/10). Bật lại: đổi thành true.
 function svgThanhPng(svg, rongPx) {
-  svg = themDauChim(svg);
+  if (BAT_DAU_CHIM) svg = themDauChim(svg);
   const { Resvg } = require('@resvg/resvg-js');
   const fs = require('fs');
   const fontFiles = fs.existsSync(FONT_DIR)
