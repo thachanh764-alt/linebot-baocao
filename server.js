@@ -3618,8 +3618,23 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
     }
 
     if (isGroup) {
-      question = extractMentionQuestion(event);
-      if (question === null) continue; // group: không @tag bot -> bỏ qua
+      const daTag = extractMentionQuestion(event);
+      if (daTag === null) {
+        // Không @tag: vẫn trả lời nếu cả tin nhắn là ĐÚNG 1 lệnh báo cáo ngắn (vd "DT hôm nay 7665", "THS Trứng 7665").
+        // Lệnh đổi cài đặt (ĐẶT MỨC, MT DTLK) và câu hỏi tự do vẫn phải @tag.
+        const tin = String(event.message.text || '').normalize('NFC').trim();
+        if (!tin || tin.length > 40 || /đ[ặa]t\s*m[ứu]c|mt\s*dtlk|n[ạa]p|mã\s*nv|ma\s*nv/i.test(tin)) continue;
+        if (!/^(dt|bc|báo cáo|bao cao|ths|thủy|thuỷ|thuy|giá vốn|gia von|hủy|huỷ|huy|mmkk|đmsk|dmsk|dtlk|doanh thu|celano|sữa|sua|menu)(\s|$)/i.test(tin)) continue;
+        if (tin.split(/\s+/).length > 3 && !(await timMaST(tin))) continue; // câu dài mà không có mã/tên siêu thị = đang nói chuyện
+        let kq = null;
+        try { kq = await chayLenh(tin); } catch (err) {
+          await guiTraLoi(event, targetId, { type: 'text', text: `⚠️ Không tạo được báo cáo: ${err.message}` });
+          continue;
+        }
+        if (kq) { await guiTraLoi(event, targetId, kq.ket); console.log(`[webhook] lệnh không tag "${kq.ten}"`); }
+        continue;
+      }
+      question = daTag;
     }
 
     if (laLenhMenu(question)) {
