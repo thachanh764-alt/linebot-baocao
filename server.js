@@ -3254,7 +3254,7 @@ async function docDuLieuKm() {
 }
 const soCham = (v) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 function veSvgKmKV(d) {
-  const PAD = 24, ROW = 30, CW = 118, xTen = PAD + 44, xG0 = 470;
+  const PAD = 24, ROW = 30, CW = 118, xTen = PAD + 44, xG0 = 530;
   const W = xG0 + CW * (d.nhom.length + 1) + PAD;
   const C = { xanh: '#0B8A3E', xanhDam: '#0B6E35', nen: '#E6F4EC', nhat: '#F6FAF7', phu: '#777777', do: '#C00000', doNen: '#FFC7CE', vien: '#D5E3DA' };
   const t = (x, y, s2, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 15}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1a1a1a'}" text-anchor="${o.anchor || 'start'}">${escXml(s2)}</text>`;
@@ -3294,7 +3294,7 @@ function veSvgKmKV(d) {
       if (v > 0) p.push(t(cx(k), y + 21, soCham(v), { size: 15, anchor: 'middle' }));
       else { soChua++; p.push(`<rect x="${xG0 + CW * k + 1}" y="${y + 1}" width="${CW - 2}" height="${ROW - 2}" fill="${C.doNen}"/>`); p.push(t(cx(k), y + 21, '0', { size: 15, bold: true, fill: C.do, anchor: 'middle' })); }
     });
-    p.push(t(xTen, y + 21, `${o.ma} · ${rutGonTen(o.ten, 32)}`, { size: 15, bold: soChua > 0, fill: soChua === d.nhom.length ? C.do : '#1a1a1a' }));
+    p.push(t(xTen, y + 21, `${o.ma} · ${rutGonTen(o.ten.replace(/\(\s+/g, '('), 46)}`, { size: 15, bold: soChua > 0, fill: soChua === d.nhom.length ? C.do : '#1a1a1a' }));
     p.push(t(cx(d.nhom.length), y + 21, soChua ? String(soChua) : '–', { size: 15, bold: !!soChua, fill: soChua ? C.do : C.phu, anchor: 'middle' }));
     y += ROW;
   });
