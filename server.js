@@ -2918,6 +2918,13 @@ async function veAnhHnChiTiet(maST, ngayKey) {
   return { png: svgThanhPng(svg, 1000), preview: svgThanhPng(svg, 500) };
 }
 
+// "DT NGÀY 34610" / "BÁO CÁO THEO NGÀY 34610" -> thẻ chi tiết 1 siêu thị (không gõ mã = 8104)
+function laTriggerDtNgay(text) {
+  return coTuKhoa(text, ['dt ngày', 'dt ngay', 'doanh thu ngày', 'doanh thu ngay', 'báo cáo theo ngày', 'bao cao theo ngay', 'bc theo ngày']);
+}
+async function generateDtNgayReport(text) {
+  return generateDtHomNayReport((await timMaST(text)) ? text : `${text} ${MENU_MA_ST}`);
+}
 function laTriggerBcNgay(text) {
   return coTuKhoa(text, ['bc ngày', 'bc ngay', 'báo cáo ngày', 'bao cao ngay', 'doanh thu cuối ngày', 'doanh thu cuoi ngay', 'dt cuối ngày']);
 }
@@ -3002,6 +3009,7 @@ async function chayLenh(text) {
   if (datMuc) return { ten: 'Đặt mức', ket: datMuc };
   if (laLenhMtDtlk(text)) { const kq = await datMtDtlk(text); if (kq) return { ten: 'MT DTLK', ket: kq }; }
   if (laTriggerBcNgay(text)) return { ten: 'BC Ngày', ket: await generateBcNgayReport(text) };
+  if (laTriggerDtNgay(text)) return { ten: 'DT Ngày', ket: await generateDtNgayReport(text) };
   if (laTriggerDtHomNay(text)) return { ten: 'DT Hôm nay', ket: await generateDtHomNayReport(text) };
   if (laTriggerDtlk(text)) return { ten: 'Báo Cáo DTLK', ket: await generateDtlkReport(text) };
   if (laTriggerDtNganhHang(text)) return { ten: 'DT Ngành Hàng', ket: await generateDtNganhHangReport(text) };
@@ -3357,7 +3365,8 @@ async function traLoiCauHoiAI(event, targetId, question) {
         '• DT HÔM NAY 7665 · DT hôm nay Ngã Năm\n' +
         '   (không gõ mã = cả KV + bảng chi tiết từng ST)\n' +
         '• DTLK 7665 (doanh thu luỹ kế tháng)\n' +
-        '• BC NGÀY 7665 (DT cuối ngày FMCG/Fresh/Đông mát, bill)\n' +
+        '• BC NGÀY 7665 (bảng DT cả tháng FMCG/Fresh/Đông mát, bill)\n' +
+        '• DT NGÀY 7665 (thẻ chi tiết 1 ngày theo ngành; thêm 24/10 để xem ngày khác)\n' +
         '• THS TRỨNG 7665 (Thuỷ hải sản + Trứng)\n' +
         '• ĐMSK 7665 (Đông mát – Sữa – Kem)\n' +
         '• BC SỮA 7665 (Celano + C2)\n' +
