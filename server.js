@@ -341,6 +341,7 @@ async function napFileVaoSheet(fileName, buffer, ngayChiDinh, laBaseDmsk, laBase
   const header = allRows[0].map((h) => (h || '').toString().trim());
   const dataRows = allRows.slice(1).filter((r) => r && r.some((v) => v !== null && v !== ''));
 
+  if (laFileKmFmcg(header)) return napFileKmFmcg(sheets, header, dataRows);
   if (laFileThsKV(header)) return napFileThsKV(sheets, header, dataRows, fileName);
   if (laFileNganhBHX(header)) return napFileNganhBHX(sheets, header, dataRows, fileName);
   if (laFileCVST(header)) return napFileCVST(sheets, header, dataRows);
@@ -3173,11 +3174,248 @@ async function datMucThiDua(text) {
   return { type: 'text', text: `✅ Đã đặt tuần ${tuan.slice(1)} chạy theo MỨC ${m[2]} (M${m[2]}). Gõ "DT NGÀNH HÀNG" để xem.` };
 }
 
+// ---------------------------------------------------------------------------
+// ĐẶT HÀNG FMCG (file "Báo cáo đặt hàng khuyến mãi FMCG"): gửi file vào group -> tự nạp + gửi bảng
+// Danh sách SP theo dõi nằm ở tab KM_SP (Nhóm | Tên sản phẩm). Đổi SP: sửa tab đó, hoặc @bot SP KM MỚI ...
+// ---------------------------------------------------------------------------
+const TAB_KM = 'KMFMCG';
+const TAB_KM_SP = 'KM_SP';
+const KM_SP_MAC_DINH = [
+  ['Giấy Lency', 'GIẤY ĐA NĂNG RÚT ĐÁY LENCY 320 TỜ 4 LỚP'],
+  ['NRC Siêu Sạch', 'NƯỚC RỬA CHÉN SIÊU SẠCH HƯƠNG CHANH TÚI 3.5KG/3.2KG'],
+  ['NRC Siêu Sạch', 'NƯỚC RỬA CHÉN SIÊU SẠCH HƯƠNG TRÀ XANH TÚI 3.5KG/3.2KG'],
+  ['NGX 888', 'NƯỚC GIẶT XẢ 888 HƯƠNG PHẤN THƠM TÚI 3.2KG'],
+  ['KĐR P/S', 'KEM ĐÁNH RĂNG P/S BẢO VỆ 123 CHĂM SÓC TOÀN DIỆN 240G/230G'],
+  ['KĐR P/S', 'KEM ĐÁNH RĂNG P/S BAKING SODA & HƯƠNG THẢO 230G'],
+  ['KĐR P/S', 'KEM ĐÁNH RĂNG P/S MUỐI HỒNG VÀ HOA CÚC HỘP 230G'],
+  ['Gạo ST25 5KG', 'GẠO THƠM ST25 HƯƠNG SỮA TÚI 5KG'],
+  ['Gạo ST25 5KG', 'GẠO THƠM ĐẶC SẢN MÊ GẠO ST25 TÚI 5KG'],
+  ['Gạo ST25 5KG', 'GẠO THƠM A AN ST25 NGON + TÚI 5KG'],
+  ['Gạo ST25 5KG', 'GẠO THƠM NEPTUNE ST25 EXTRA TÚI 5KG'],
+  ['Gạo ST25 5KG', 'GẠO ST25 NHÀ MÌNH TÚI 5KG'],
+  ['C2', 'TRÀ XANH C2 HƯƠNG CHANH TUYẾT BẠC HÀ C2 FREEZE CHAI 455ML'],
+  ['C2', 'TRÀ HỒNG C2 VỊ VẢI CHAI 455ML'],
+  ['C2', 'TRÀ ĐEN HƯƠNG TẮC C2 CHAI 455ML'],
+  ['C2', 'TRÀ XANH C2 VỊ CHANH CHAI 225ML'],
+  ['C2', 'TRÀ ĐEN HƯƠNG DÂU ANH ĐÀO C2 FREEZE CHAI 455ML'],
+  ['C2', 'TRÀ ĐEN C2 HƯƠNG ĐÀO CHAI 225ML'],
+  ['C2', 'NƯỚC SÂM HOA CÚC THẢO MỘC C2 COOL CHAI 280ML'],
+  ['STT Vinamilk CĐ', 'STT VINAMILK CĐ BỊCH 220ML'],
+];
+const chuanSP = (s) => String(s ?? '').normalize('NFC').replace(/\s+/g, ' ').trim().toUpperCase();
+function laFileKmFmcg(header) { return ['Mã CTKM', 'Mã siêu thị', 'Tên sản phẩm', 'SL đề nghị', 'SL đặt'].every((c) => header.includes(c)); }
+async function docKmSP(sheets) {
+  const rows = (await docTabAnToan(sheets, TAB_KM_SP)).slice(1).filter((r) => r[0] && r[1]).map((r) => [String(r[0]).trim(), chuanSP(r[1])]);
+  if (rows.length) return rows;
+  await ghiDeTab(sheets, TAB_KM_SP, ['Nhóm', 'Tên sản phẩm'], KM_SP_MAC_DINH);
+  return KM_SP_MAC_DINH.map(([g, s]) => [g, chuanSP(s)]);
+}
+async function napFileKmFmcg(sheets, header, dataRows) {
+  const i = (c) => header.indexOf(c);
+  const c = { ngay: i('Thời gian gửi'), st: i('Mã siêu thị'), ten: i('Tên siêu thị'), sp: i('Tên sản phẩm'), dn: i('SL đề nghị'), dat: i('SL đặt') };
+  const rows = dataRows.map((r) => [String(r[c.ngay] ?? '').trim(), chuanHoaMaST(r[c.st]), tenNganSieuThi(r[c.ten]), chuanSP(r[c.sp]), soGV(r[c.dn]), soGV(r[c.dat])]).filter((r) => r[1] && r[3]);
+  if (!rows.length) throw new Error('File đặt hàng KM không có dòng nào');
+  await ghiDeTab(sheets, TAB_KM, ['Ngày', 'Mã siêu thị', 'Tên siêu thị', 'Tên sản phẩm', 'SL đề nghị', 'SL đặt'], rows);
+  const dsSP = await docKmSP(sheets);
+  const coTrongFile = new Set(rows.map((r) => r[3]));
+  const thieu = dsSP.filter(([, s]) => !khopSP(s, coTrongFile));
+  return { loai: 'kmfmcg', tenTab: TAB_KM, soDong: rows.length, thieu };
+}
+// Khớp đúng tên; không có thì khớp "chứa" (file đổi chút tên như thêm dung tích)
+function khopSP(spCauHinh, tapTen) {
+  if (tapTen.has(spCauHinh)) return spCauHinh;
+  for (const t of tapTen) if (t.includes(spCauHinh) || spCauHinh.includes(t)) return t;
+  return null;
+}
+async function docDuLieuKm() {
+  const sheets = getSheetsClient();
+  const rows = (await docTabAnToan(sheets, TAB_KM)).slice(1).filter((r) => r[1] && r[3]);
+  if (!rows.length) throw new Error('Chưa có số đặt hàng KM. Anh gửi file "Báo cáo đặt hàng khuyến mãi FMCG" vào group.');
+  const dsSP = await docKmSP(sheets);
+  const nhom = [...new Set(dsSP.map(([g]) => g))];
+  const tapTen = new Set(rows.map((r) => String(r[3])));
+  const spSangNhom = new Map(); // tên SP trong file -> nhóm
+  for (const [g, s] of dsSP) { const t = khopSP(s, tapTen); if (t && !spSangNhom.has(t)) spSangNhom.set(t, g); }
+  const st = new Map();
+  for (const r of rows) {
+    const ma = String(r[1]);
+    const o = st.get(ma) || { ma, ten: String(r[2] || ma), dat: new Map(), sku: [] };
+    st.set(ma, o);
+    const g = spSangNhom.get(String(r[3]));
+    if (!g) continue;
+    o.dat.set(g, (o.dat.get(g) || 0) + soGV(r[5]));
+    o.sku.push({ g, sp: String(r[3]), dn: soGV(r[4]), dat: soGV(r[5]) });
+  }
+  const ngay = String(rows[0][0] || '');
+  const ngayHien = /^\d{8}$/.test(ngay) ? `${ngay.slice(6, 8)}/${ngay.slice(4, 6)}/${ngay.slice(0, 4)}` : ngay;
+  const ds = [...st.values()].sort((a, b) => Number(a.ma) - Number(b.ma));
+  const thieu = dsSP.filter(([, s]) => !khopSP(s, tapTen)).map(([, s]) => s);
+  return { ds, nhom, ngayHien, thieu };
+}
+const soCham = (v) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+function veSvgKmKV(d) {
+  const PAD = 24, ROW = 30, CW = 118, xTen = PAD + 44, xG0 = 470;
+  const W = xG0 + CW * (d.nhom.length + 1) + PAD;
+  const C = { xanh: '#0B8A3E', xanhDam: '#0B6E35', nen: '#E6F4EC', nhat: '#F6FAF7', phu: '#777777', do: '#C00000', doNen: '#FFC7CE', vien: '#D5E3DA' };
+  const t = (x, y, s2, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 15}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1a1a1a'}" text-anchor="${o.anchor || 'start'}">${escXml(s2)}</text>`;
+  const cx = (k) => xG0 + CW * k + CW / 2;
+  const p = [];
+  p.push(`<rect x="0" y="0" width="${W}" height="96" fill="${C.xanh}"/>`);
+  p.push(t(W / 2, 46, 'ĐẶT HÀNG FMCG KV QLTP QUỐC NAM 40909', { size: 30, bold: true, fill: '#FFFFFF', anchor: 'middle' }));
+  p.push(t(W / 2, 78, `File KM ngày ${d.ngayHien} · ${d.ds.length} siêu thị · ô đỏ = chưa đặt (0)`, { size: 16, fill: '#E3F5EA', anchor: 'middle' }));
+  let y = 112;
+  const y0 = y;
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="52" fill="${C.xanhDam}"/>`);
+  p.push(t(xTen, y + 32, 'Siêu thị', { size: 15, bold: true, fill: '#FFFFFF' }));
+  [...d.nhom, 'Số nhóm chưa đặt'].forEach((g, k) => {
+    const tu = g.split(' '), l1 = [], l2 = [];
+    for (const w of tu) ((l1.join(' ') + ' ' + w).trim().length <= 12 && !l2.length ? l1 : l2).push(w);
+    if (l2.length) { p.push(t(cx(k), y + 22, l1.join(' '), { size: 14, bold: true, fill: '#FFFFFF', anchor: 'middle' })); p.push(t(cx(k), y + 41, rutGonTen(l2.join(' '), 14), { size: 14, bold: true, fill: '#FFFFFF', anchor: 'middle' })); }
+    else p.push(t(cx(k), y + 32, g, { size: 14, bold: true, fill: '#FFFFFF', anchor: 'middle' }));
+  });
+  y += 52;
+  const tong = d.nhom.map((g) => d.ds.reduce((a, o) => a + (o.dat.get(g) || 0), 0));
+  const chua = d.nhom.map((g) => d.ds.filter((o) => !(o.dat.get(g) > 0)).length);
+  const dongTong = (nhan, vals, mau) => {
+    p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 2}" fill="${C.nen}"/>`);
+    p.push(t(xTen, y + 22, nhan, { size: 16, bold: true, fill: mau }));
+    vals.forEach((v, k) => p.push(t(cx(k), y + 22, soCham(v), { size: 16, bold: true, fill: mau, anchor: 'middle' })));
+    y += ROW + 2;
+  };
+  dongTong('TỔNG SL ĐẶT', tong, '#1a1a1a');
+  dongTong('SỐ ST CHƯA ĐẶT', chua, C.do);
+  p.push(`<line x1="${PAD}" y1="${y}" x2="${W - PAD}" y2="${y}" stroke="${C.xanhDam}" stroke-width="2"/>`);
+  d.ds.forEach((o, i) => {
+    p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${i % 2 ? C.nhat : '#FFFFFF'}"/>`);
+    p.push(t(PAD + 34, y + 21, String(i + 1), { size: 13, fill: C.phu, anchor: 'end' }));
+    let soChua = 0;
+    d.nhom.forEach((g, k) => {
+      const v = o.dat.get(g) || 0;
+      if (v > 0) p.push(t(cx(k), y + 21, soCham(v), { size: 15, anchor: 'middle' }));
+      else { soChua++; p.push(`<rect x="${xG0 + CW * k + 1}" y="${y + 1}" width="${CW - 2}" height="${ROW - 2}" fill="${C.doNen}"/>`); p.push(t(cx(k), y + 21, '0', { size: 15, bold: true, fill: C.do, anchor: 'middle' })); }
+    });
+    p.push(t(xTen, y + 21, `${o.ma} · ${rutGonTen(o.ten, 32)}`, { size: 15, bold: soChua > 0, fill: soChua === d.nhom.length ? C.do : '#1a1a1a' }));
+    p.push(t(cx(d.nhom.length), y + 21, soChua ? String(soChua) : '–', { size: 15, bold: !!soChua, fill: soChua ? C.do : C.phu, anchor: 'middle' }));
+    y += ROW;
+  });
+  for (let k = 0; k <= d.nhom.length; k++) p.push(`<line x1="${xG0 + CW * k}" y1="${y0}" x2="${xG0 + CW * k}" y2="${y}" stroke="${C.vien}" stroke-width="1"/>`);
+  p.push(`<rect x="${PAD}" y="${y0}" width="${W - PAD * 2}" height="${y - y0}" fill="none" stroke="${C.xanhDam}" stroke-width="1.5"/>`);
+  y += 26;
+  p.push(t(PAD, y, 'Nhóm gộp nhiều SKU (NRC, KĐR, Gạo, C2) = tổng SL đặt các SKU trong nhóm · Gõ "ĐẶT HÀNG FMCG + mã ST" để xem từng SKU.', { size: 13, fill: C.phu }));
+  if (d.thieu.length) { y += 22; p.push(t(PAD, y, `⚠ Không thấy trong file: ${rutGonTen(d.thieu.join('; '), 150)}`, { size: 13, bold: true, fill: C.do })); }
+  const H = y + 20;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
+}
+function veSvgKmST(d, ma) {
+  const o = d.ds.find((x) => x.ma === String(ma));
+  if (!o) throw new Error(`File đặt hàng KM không có siêu thị ${ma}.`);
+  const W = 1100, PAD = 24, ROW = 30;
+  const C = { xanh: '#0B8A3E', xanhDam: '#0B6E35', nen: '#E6F4EC', nhat: '#F6FAF7', phu: '#777777', do: '#C00000', doNen: '#FFC7CE' };
+  const t = (x, y, s2, op = {}) => `<text x="${x}" y="${y}" font-size="${op.size || 15}" font-weight="${op.bold ? 700 : 400}" fill="${op.fill || '#1a1a1a'}" text-anchor="${op.anchor || 'start'}">${escXml(s2)}</text>`;
+  const X = { sp: PAD + 16, dn: 900, dat: W - PAD - 16 };
+  const p = [];
+  const soChua = d.nhom.filter((g) => !(o.dat.get(g) > 0)).length;
+  p.push(`<rect x="0" y="0" width="${W}" height="96" fill="${C.xanh}"/>`);
+  p.push(t(PAD, 44, `ĐẶT HÀNG FMCG · ${o.ma} - ${rutGonTen(o.ten, 30)}`, { size: 26, bold: true, fill: '#FFFFFF' }));
+  p.push(t(PAD, 78, `File KM ngày ${d.ngayHien} · ${soChua ? `chưa đặt ${soChua}/${d.nhom.length} nhóm` : `đã đặt đủ ${d.nhom.length} nhóm`}`, { size: 16, fill: '#E3F5EA' }));
+  let y = 112;
+  const y0 = y;
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="40" fill="${C.xanhDam}"/>`);
+  p.push(t(X.sp, y + 26, 'Sản phẩm', { bold: true, fill: '#FFFFFF' }));
+  p.push(t(X.dn, y + 26, 'SL đề nghị', { bold: true, fill: '#FFFFFF', anchor: 'end' }));
+  p.push(t(X.dat, y + 26, 'SL đặt', { bold: true, fill: '#FFFFFF', anchor: 'end' }));
+  y += 40;
+  for (const g of d.nhom) {
+    const sku = o.sku.filter((x) => x.g === g), v = o.dat.get(g) || 0;
+    p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${v > 0 ? C.nen : C.doNen}"/>`);
+    p.push(t(X.sp, y + 21, g.toUpperCase(), { size: 16, bold: true, fill: v > 0 ? C.xanhDam : C.do }));
+    p.push(t(X.dn, y + 21, soCham(sku.reduce((a, x) => a + x.dn, 0)), { size: 16, bold: true, anchor: 'end' }));
+    p.push(t(X.dat, y + 21, soCham(v), { size: 16, bold: true, fill: v > 0 ? '#1a1a1a' : C.do, anchor: 'end' }));
+    y += ROW;
+    if (!sku.length) { p.push(t(X.sp + 18, y + 21, 'Không có trong file của siêu thị này', { size: 14, fill: C.phu })); y += ROW; }
+    for (const x of sku) {
+      p.push(t(X.sp + 18, y + 21, rutGonTen(x.sp, 70), { size: 14 }));
+      p.push(t(X.dn, y + 21, soCham(x.dn), { size: 14, fill: C.phu, anchor: 'end' }));
+      if (!(x.dat > 0)) p.push(`<rect x="${X.dat - 70}" y="${y + 3}" width="76" height="${ROW - 6}" fill="${C.doNen}"/>`);
+      p.push(t(X.dat, y + 21, soCham(x.dat), { size: 14, bold: !(x.dat > 0), fill: x.dat > 0 ? '#1a1a1a' : C.do, anchor: 'end' }));
+      y += ROW;
+    }
+  }
+  p.push(`<rect x="${PAD}" y="${y0}" width="${W - PAD * 2}" height="${y - y0}" fill="none" stroke="${C.xanhDam}" stroke-width="1.5"/>`);
+  const H = y + 30;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
+}
+async function veAnhKm(maST) {
+  const d = await docDuLieuKm();
+  const svg = maST ? veSvgKmST(d, maST) : veSvgKmKV(d);
+  return { png: svgThanhPng(svg, maST ? 1100 : 1500), preview: svgThanhPng(svg, 600) };
+}
+function laTriggerKm(text) { return coTuKhoa(text, ['đặt hàng fmcg', 'dat hang fmcg', 'đặt hàng km', 'dat hang km', 'bc km', 'km fmcg', 'dh fmcg', 'đh fmcg']); }
+async function generateKmReport(text) {
+  const maST = await timMaST(text);
+  const { png, preview } = await veAnhKm(maST);
+  const id = `km-${maST || 'kv'}-${Date.now().toString(36)}`;
+  luuAnh(id, png, preview);
+  const q = `loai=km${maST ? `&st=${maST}` : ''}`;
+  return { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?${q}`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?${q}&nho=1` };
+}
+// Lệnh đổi danh sách SP:
+//  SP KM                         -> xem danh sách
+//  SP KM MỚI (xuống dòng) Nhóm: sp1; sp2 ...   -> thay cả danh sách (dòng không có ":" = 1 nhóm riêng)
+//  THÊM SP KM Nhóm: sp1; sp2      -> thêm vào nhóm
+//  XOÁ SP KM tên sp  /  XOÁ NHÓM KM tên nhóm
+function vanBanKmSP(ds) {
+  const m = new Map();
+  for (const [g, s] of ds) m.set(g, [...(m.get(g) || []), s]);
+  return [...m.entries()].map(([g, l], i) => `${i + 1}. ${g}${l.length > 1 ? ' (gộp)' : ''}\n${l.map((s) => '   • ' + s).join('\n')}`).join('\n');
+}
+async function lenhKmSP(text) {
+  const t = String(text || '').normalize('NFC').trim();
+  const thuong = boDau(t.split('\n')[0]);
+  const sheets = getSheetsClient();
+  const tachSP = (s) => s.split(/[;\n]/).map(chuanSP).filter((x) => x.length >= 3);
+  const docDong = (dong) => {
+    const out = [];
+    for (const d0 of dong) {
+      const d1 = d0.replace(/^[\s\-•*\d.)]+/, '').trim();
+      if (!d1) continue;
+      const k = d1.indexOf(':');
+      if (k > 0) { const g = d1.slice(0, k).trim(); for (const s of tachSP(d1.slice(k + 1))) out.push([g, s]); }
+      else out.push([rutGonTen(d1, 24), chuanSP(d1)]);
+    }
+    return out;
+  };
+  let ds = await docKmSP(sheets), bao = '';
+  if (/(^|\s)sp km (moi|thay)(\s|$)/.test(' ' + thuong)) {
+    const moi = docDong(t.split('\n').slice(1));
+    if (!moi.length) return { type: 'text', text: 'Anh gõ SP KM MỚI rồi xuống dòng, mỗi dòng 1 nhóm:\nNRC: NƯỚC RỬA CHÉN ... ; NƯỚC RỬA CHÉN ...\nC2: TRÀ XANH C2 ... ; TRÀ ĐEN C2 ...' };
+    ds = moi; bao = `✅ Đã thay danh sách SP mới (${new Set(moi.map(([g]) => g)).size} nhóm, ${moi.length} SP)`;
+  } else if (/(^|\s)them sp km(\s|$)/.test(' ' + thuong)) {
+    const moi = docDong([t.replace(/^.*?th[êe]m\s+sp\s+km\s*/i, ''), ...t.split('\n').slice(1)].filter(Boolean)).filter(([, s]) => !ds.some(([, x]) => x === s));
+    ds = [...ds, ...moi]; bao = `✅ Đã thêm ${moi.length} SP`;
+  } else if (/(^|\s)xo[a]? nhom km(\s|$)/.test(' ' + thuong)) {
+    const g = boDau(t.replace(/^.*?nh[óo]m\s+km\s*/i, ''));
+    const truoc = ds.length; ds = ds.filter(([x]) => boDau(x) !== g); bao = `✅ Đã xoá nhóm (${truoc - ds.length} SP)`;
+  } else if (/(^|\s)xo[a]? sp km(\s|$)/.test(' ' + thuong)) {
+    const s = boDau(t.replace(/^.*?sp\s+km\s*/i, ''));
+    const truoc = ds.length; ds = s.length >= 3 ? ds.filter(([, x]) => !boDau(x).includes(s)) : ds; bao = `✅ Đã xoá ${truoc - ds.length} SP`;
+  } else {
+    return { type: 'text', text: `DANH SÁCH SP ĐẶT HÀNG FMCG:\n${vanBanKmSP(ds)}\n\nĐổi SP: @bot SP KM MỚI (xuống dòng, mỗi dòng "Nhóm: sp1; sp2")\nhoặc @bot THÊM SP KM Nhóm: tên sp · @bot XOÁ SP KM tên sp · @bot XOÁ NHÓM KM tên nhóm\n(hoặc sửa thẳng tab ${TAB_KM_SP} trong Google Sheet)` };
+  }
+  await ghiDeTab(sheets, TAB_KM_SP, ['Nhóm', 'Tên sản phẩm'], ds);
+  const out = [{ type: 'text', text: `${bao}\n\n${vanBanKmSP(ds)}`.slice(0, 4900) }];
+  try { out.push(await generateKmReport('')); } catch (_) { /* chưa có file */ }
+  return out;
+}
+function laLenhKmSP(text) { const t = ' ' + boDau(text).split('\n')[0] + ' '; return /\s(them |xoa |xo )?sp km(\s|$)|\sxoa? nhom km\s/.test(t); }
+
 async function chayLenh(text) {
   text = (text || '').normalize('NFC');
   const datMuc = await datMucThiDua(text);
   if (datMuc) return { ten: 'Đặt mức', ket: datMuc };
   if (laLenhMtDtlk(text)) { const kq = await datMtDtlk(text); if (kq) return { ten: 'MT DTLK', ket: kq }; }
+  if (laLenhKmSP(text)) return { ten: 'SP KM', ket: await lenhKmSP(text) };
+  if (laTriggerKm(text)) return { ten: 'Đặt hàng FMCG', ket: await generateKmReport(text) };
   if (laTriggerCvst(text)) return { ten: 'BC CVST', ket: await generateCvstReport(text) };
   if (laTriggerBcNgay(text)) return { ten: 'BC Ngày', ket: await generateBcNgayReport(text) };
   if (laTriggerDtNgay(text)) return { ten: 'DT Ngày', ket: await generateDtNgayReport(text) };
@@ -3374,6 +3612,7 @@ async function taoMenuFlex() {
           hangNut([nutMenu('BC CVST KV', 'BC CVST', xanh), nutMenu(`BC CVST ${st}`, `BC CVST ${st}`, xanh)]),
           tieuDeMuc('📁', 'BÁO CÁO GỬI FILE', 'số lần gửi file gần nhất'),
           hangNut([nutMenu('Giá vốn', 'GIÁ VỐN', xam), nutMenu('Huỷ + MMKK', 'HUỶ MMKK', xam)]),
+          hangNut([nutMenu('Đặt hàng FMCG KV', 'ĐẶT HÀNG FMCG', xam), nutMenu(`Đặt hàng FMCG ${st}`, `ĐẶT HÀNG FMCG ${st}`, xam)]),
         ],
       },
       footer: {
@@ -3546,6 +3785,8 @@ async function traLoiCauHoiAI(event, targetId, question) {
         '• GIÁ VỐN 7665\n' +
         '• BC CVST · BC CVST 7665 (công việc chưa hoàn tất 100%)\n' +
         '• HUỶ MMKK 7665\n' +
+        '• ĐẶT HÀNG FMCG · ĐẶT HÀNG FMCG 7665 (gửi file đặt hàng KM vào là tự cập nhật)\n' +
+        '• @bot SP KM (xem/đổi danh sách SP theo dõi)\n' +
         '• DT NGÀNH HÀNG T3 · ĐẶT MỨC T3 M3\n' +
         '• MÃ NV 123456 (dấu chìm mã NV trên ảnh)\n' +
         'Số tự cập nhật mỗi giờ phút 17.',
@@ -3743,6 +3984,17 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           continue;
         }
 
+        if (kq.loai === 'kmfmcg') {
+          const canh = kq.thieu.length ? `⚠️ SP thay đổi: file mới KHÔNG có ${kq.thieu.length} SP trong danh sách theo dõi:\n${kq.thieu.map(([g, sp]) => `• [${g}] ${sp}`).join('\n')}\nAnh báo SP mới: @bot SP KM MỚI (hoặc @bot SP KM để xem danh sách).` : '';
+          try {
+            const anh = await generateKmReport('');
+            await guiTraLoi(event, targetId, canh ? [anh, { type: 'text', text: canh.slice(0, 4900) }] : anh);
+          } catch (e) {
+            await guiTraLoi(event, targetId, { type: 'text', text: `✅ Đã nạp đặt hàng KM (${kq.soDong} dòng).\n⚠️ ${e.message}` });
+          }
+          continue;
+        }
+
         if (kq.loai === 'cvst') {
           try {
             await guiTraLoi(event, targetId, await generateCvstReport(kq.dsST.length === 1 ? kq.dsST[0] : ''));
@@ -3807,7 +4059,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         // Lệnh đổi cài đặt (ĐẶT MỨC, MT DTLK) và câu hỏi tự do vẫn phải @tag.
         const tin = String(event.message.text || '').normalize('NFC').trim();
         if (!tin || tin.length > 40 || /đ[ặa]t\s*m[ứu]c|mt\s*dtlk|n[ạa]p|mã\s*nv|ma\s*nv/i.test(tin)) continue;
-        if (!/^(dt|bc|báo cáo|bao cao|ths|thủy|thuỷ|thuy|giá vốn|gia von|hủy|huỷ|huy|mmkk|đmsk|dmsk|dtlk|doanh thu|celano|sữa|sua|menu)(\s|$)/i.test(tin)) continue;
+        if (!/^(dt|bc|đặt hàng|dat hang|đh|dh|km|báo cáo|bao cao|ths|thủy|thuỷ|thuy|giá vốn|gia von|hủy|huỷ|huy|mmkk|đmsk|dmsk|dtlk|doanh thu|celano|sữa|sua|menu)(\s|$)/i.test(tin)) continue;
         if (tin.split(/\s+/).length > 3 && !(await timMaST(tin))) continue; // câu dài mà không có mã/tên siêu thị = đang nói chuyện
         let kq = null;
         try { kq = await chayLenh(tin); } catch (err) {
@@ -3907,6 +4159,8 @@ app.get('/anh/:id.png', async (req, res) => {
       let ve;
       if (req.query.loai === 'gv') {
         ve = await veAnhGiaVon(String(req.query.st || ''));
+      } else if (req.query.loai === 'km') {
+        ve = await veAnhKm(String(req.query.st || ''));
       } else if (req.query.loai === 'cvst') {
         ve = await veAnhCvst(String(req.query.st || ''));
       } else if (req.query.loai === 'hnct') {
