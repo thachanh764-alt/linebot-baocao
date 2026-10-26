@@ -343,6 +343,7 @@ async function napFileVaoSheet(fileName, buffer, ngayChiDinh, laBaseDmsk, laBase
 
   if (laFileThsKV(header)) return napFileThsKV(sheets, header, dataRows, fileName);
   if (laFileNganhBHX(header)) return napFileNganhBHX(sheets, header, dataRows, fileName);
+  if (laFileCVST(header)) return napFileCVST(sheets, header, dataRows);
   if (laFileDtSieuThi(header)) return napFileDtSieuThi(sheets, header, dataRows, fileName);
   if (laFileGiaVon(header)) return napFileGiaVon(sheets, header, dataRows, fileName);
   if (laFileFreshBan(header)) return napFileFreshBan(sheets, header, dataRows, fileName);
@@ -2946,6 +2947,175 @@ async function generateBcNgayReport(text, chiCacST) {
   return out.length === 1 ? out[0] : out;
 }
 
+// ---------------------------------------------------------------------------
+// BC CVST — Báo cáo công việc hằng ngày siêu thị (POS 939): việc nào chưa hoàn tất 100%, ngày nào, siêu thị nào
+// ---------------------------------------------------------------------------
+const TAB_CVST = 'CVST';
+const CV_COT = [['châm hàng', 'Châm hàng'], ['kiểm date', 'Kiểm date'], ['triển khai mkt', 'MKT'], ['pha lóc', 'Pha lóc'], ['kiểm kê fmcg', 'KK FMCG'], ['rổ thùng', 'Rổ thùng']];
+const tenNganCV = (ten) => { const k = String(ten || '').toLowerCase(); const x = CV_COT.find(([m]) => k.includes(m)); return x ? x[1] : 'Khác'; };
+function laFileCVST(header) { return header.includes('Tên công việc') && header.includes('Tỉ lệ hoàn tất') && header.includes('Mã siêu thị'); }
+async function napFileCVST(sheets, header, dataRows) {
+  const i = (c) => header.indexOf(c);
+  const c = { ngay: i('Ngày'), st: i('Mã siêu thị'), ten: i('Tên siêu thị'), cv: i('Tên công việc'), tl: i('Tỉ lệ hoàn tất'), khong: i('Tên người nhấn hoàn tất khống') };
+  const moi = dataRows.map((r) => [keyNgayExcel(r[c.ngay]), chuanHoaMaST(r[c.st]), tenNganSieuThi(r[c.ten]), String(r[c.cv] || '').trim(), soGV(r[c.tl]), c.khong >= 0 ? String(r[c.khong] || '') : ''])
+    .filter((r) => r[0] && r[1] && r[3]);
+  if (!moi.length) throw new Error('File công việc không có dòng nào');
+  const khoa = new Set(moi.map((r) => `${r[0]}|${r[1]}`));
+  const thang = moi.map((r) => r[0]).sort().pop().slice(0, 7);
+  const cu = (await docTabAnToan(sheets, TAB_CVST)).slice(1).filter((r) => String(r[0]).startsWith(thang) && !khoa.has(`${r[0]}|${r[1]}`));
+  const rows = [...cu, ...moi].sort((a, b) => String(a[0]).localeCompare(String(b[0])) || String(a[1]).localeCompare(String(b[1])));
+  await ghiDeTab(sheets, TAB_CVST, ['Ngày', 'Mã siêu thị', 'Tên siêu thị', 'Công việc', 'Tỉ lệ hoàn tất', 'Người nhấn hoàn tất khống'], rows);
+  return { loai: 'cvst', tenTab: TAB_CVST, soDong: moi.length, dsST: [...new Set(moi.map((r) => r[1]))] };
+}
+async function docDuLieuCVST() {
+  const homNay = homNayVN();
+  const rows = (await docTabAnToan(getSheetsClient(), TAB_CVST)).slice(1).filter((r) => r[0] && String(r[0]) < homNay); // hôm nay còn đang làm -> chưa tính
+  if (!rows.length) throw new Error('Chưa có số công việc. Anh gửi file "Báo cáo công việc hằng ngày siêu thị" (POS 939) vào group, hoặc chờ robot nạp.');
+  const ngays = [...new Set(rows.map((r) => String(r[0])))].sort();
+  const st = new Map();
+  for (const r of rows) {
+    const ma = String(r[1]);
+    const o = st.get(ma) || { ma, ten: String(r[2] || ma), dinh: [], khong: [], soViec: 0 };
+    o.soViec++;
+    if (soGV(r[4]) < 100) o.dinh.push({ ngay: String(r[0]), cv: String(r[3]), ngan: tenNganCV(r[3]), tl: soGV(r[4]) });
+    if (String(r[5] || '').trim()) o.khong.push({ ngay: String(r[0]), cv: String(r[3]), ai: String(r[5]) });
+    st.set(ma, o);
+  }
+  // Ngày rớt hàng loạt: cùng 1 việc, cùng 1 ngày, từ 10 siêu thị trở lên (thường do hệ thống)
+  const dem = new Map();
+  for (const o of st.values()) for (const x of o.dinh) { const k = `${x.ngay}|${x.ngan}`; dem.set(k, (dem.get(k) || 0) + 1); }
+  const hangLoat = [...dem.entries()].filter(([, n]) => n >= 10).map(([k, n]) => { const [ngay, ngan] = k.split('|'); return { ngay, ngan, n }; }).sort((a, b) => b.n - a.n);
+  return { st, ngays, tu: ngays[0], den: ngays[ngays.length - 1], hangLoat };
+}
+function veSvgCvstKV(d) {
+  const W = 1320, PAD = 24, ROW = 30;
+  const C = { xanh: '#0B8A3E', xanhDam: '#0B6E35', nen: '#E6F4EC', nhat: '#F6FAF7', phu: '#777777', do: '#D0312D', cam: '#E08A00', vien: '#D5E3DA' };
+  const t = (x, y, s2, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 15}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1a1a1a'}" text-anchor="${o.anchor || 'start'}">${escXml(s2)}</text>`;
+  const ds = [...d.st.values()];
+  const dinh = ds.filter((o) => o.dinh.length).sort((a, b) => b.dinh.length - a.dinh.length || a.ma.localeCompare(b.ma));
+  const tongDinh = dinh.reduce((a, o) => a + o.dinh.length, 0);
+  const homQua = d.den;
+  const dinhHQ = ds.filter((o) => o.dinh.some((x) => x.ngay === homQua));
+  const khong = ds.reduce((a, o) => a + o.khong.length, 0);
+  const p = [];
+  p.push(`<rect x="0" y="0" width="${W}" height="96" fill="${C.xanh}"/>`);
+  p.push(t(PAD, 42, 'BC CVST · CÔNG VIỆC HẰNG NGÀY SIÊU THỊ', { size: 28, bold: true, fill: '#FFFFFF' }));
+  p.push(t(PAD, 76, `Từ ${fmtNgay(d.tu)} đến ${fmtNgay(d.den)} (${d.ngays.length} ngày) · ${ds.length} siêu thị · việc chưa hoàn tất 100% (hôm nay đang làm, chưa tính)`, { size: 16, fill: '#E3F5EA' }));
+  let y = 112;
+  const oW = (W - PAD * 2 - 36) / 4, oH = 78;
+  const o = (i, nhan, gt, mau, phu) => {
+    const x = PAD + i * (oW + 12);
+    p.push(`<rect x="${x}" y="${y}" width="${oW}" height="${oH}" rx="10" fill="#F2F8F4"/>`);
+    p.push(t(x + 14, y + 24, nhan, { size: 14, fill: C.phu }));
+    p.push(t(x + 14, y + 60, gt, { size: 28, bold: true, fill: mau }));
+    if (phu) p.push(t(x + oW - 14, y + 60, phu, { size: 14, fill: C.phu, anchor: 'end' }));
+  };
+  o(0, 'Đầu việc chưa 100%', String(tongDinh), tongDinh ? C.do : C.xanh, `/ ${ds.reduce((a, x) => a + x.soViec, 0)} việc`);
+  o(1, 'Siêu thị bị dính', `${dinh.length}/${ds.length}`, dinh.length ? C.cam : C.xanh, `${ds.length - dinh.length} ST đạt 100%`);
+  o(2, `Hôm qua ${fmtNgay(homQua)}`, `${dinhHQ.length} ST`, dinhHQ.length ? C.do : C.xanh, dinhHQ.length ? `${dinhHQ.reduce((a, x) => a + x.dinh.filter((z) => z.ngay === homQua).length, 0)} việc` : 'đạt hết');
+  o(3, 'Hoàn tất khống', String(khong), khong ? C.do : C.xanh, khong ? 'cần kiểm tra' : 'không có');
+  y += oH + 22;
+  if (d.hangLoat.length) {
+    p.push(t(PAD, y, `⚠ Ngày rớt hàng loạt (≥10 ST cùng việc, có thể do hệ thống): ${d.hangLoat.slice(0, 4).map((x) => `${fmtNgay(x.ngay)} ${x.ngan} (${x.n} ST)`).join(' · ')}`, { size: 14, bold: true, fill: C.cam }));
+    y += 20;
+  }
+  // Bảng
+  const cotCV = ['Châm hàng', 'Kiểm date', 'MKT', 'Pha lóc', 'KK FMCG', 'Rổ thùng', 'Khác'];
+  const X = { stt: PAD + 30, st: PAD + 42, tong: 485 };
+  const xCV = (k) => 560 + k * 85;
+  const xGan = W - PAD - 10;
+  const yBang = y;
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="36" fill="${C.xanhDam}"/>`);
+  p.push(t(X.st, y + 24, 'Siêu thị', { bold: true, fill: '#FFFFFF' }));
+  p.push(t(X.tong, y + 24, 'Tổng', { bold: true, fill: '#FFFFFF', anchor: 'middle' }));
+  cotCV.forEach((c2, k) => p.push(t(xCV(k), y + 24, c2, { size: 14, bold: true, fill: '#FFFFFF', anchor: 'middle' })));
+  p.push(t(xGan, y + 24, 'Lần gần nhất', { bold: true, fill: '#FFFFFF', anchor: 'end' }));
+  y += 36;
+  dinh.forEach((s2, i) => {
+    const hq = s2.dinh.some((x) => x.ngay === homQua);
+    p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${s2.ma === MENU_MA_ST ? '#FFF6DA' : i % 2 ? C.nhat : '#FFFFFF'}"/>`);
+    p.push(t(X.stt, y + 21, String(i + 1), { size: 13, fill: C.phu, anchor: 'end' }));
+    p.push(t(X.st, y + 21, `${s2.ma} · ${rutGonTen(s2.ten, 34)}`, { bold: s2.ma === MENU_MA_ST, fill: hq ? C.do : '#1a1a1a' }));
+    p.push(t(X.tong, y + 21, String(s2.dinh.length), { size: 16, bold: true, fill: s2.dinh.length >= 5 ? C.do : s2.dinh.length >= 3 ? C.cam : '#1a1a1a', anchor: 'middle' }));
+    cotCV.forEach((c2, k) => { const n = s2.dinh.filter((x) => x.ngan === c2).length; p.push(t(xCV(k), y + 21, n ? String(n) : '·', { bold: n > 0, fill: n >= 3 ? C.do : n ? '#1a1a1a' : '#BBBBBB', anchor: 'middle' })); });
+    const gan = s2.dinh.map((x) => x.ngay).sort().pop();
+    p.push(t(xGan, y + 21, `${fmtNgay(gan)} · ${tenNganCV(s2.dinh.filter((x) => x.ngay === gan)[0].cv)}`, { size: 14, fill: hq ? C.do : C.phu, bold: hq, anchor: 'end' }));
+    y += ROW;
+  });
+  // Gạch thẳng chia cột
+  if (dinh.length) {
+    const ke = [452, xCV(0) - 42.5, ...cotCV.map((_, k) => xCV(k) + 42.5)];
+    for (const x of ke) p.push(`<line x1="${x}" y1="${yBang}" x2="${x}" y2="${y}" stroke="#C9D8CF" stroke-width="1.2"/>`);
+    p.push(`<rect x="${PAD}" y="${yBang}" width="${W - PAD * 2}" height="${y - yBang}" fill="none" stroke="${C.xanhDam}" stroke-width="1.5"/>`);
+  }
+  if (!dinh.length) { p.push(t(W / 2, y + 30, 'Tất cả siêu thị hoàn tất 100% công việc 👏', { size: 18, bold: true, fill: C.xanh, anchor: 'middle' })); y += 50; }
+  y += 24;
+  const dat = ds.filter((o2) => !o2.dinh.length).map((o2) => o2.ma);
+  if (dat.length) { p.push(t(PAD, y, `Đạt 100% cả kỳ (${dat.length} ST): ${dat.join(', ')}`, { size: 13, fill: C.xanhDam })); y += 20; }
+  p.push(t(PAD, y, 'Tên đỏ = có dính hôm qua · Tổng cam ≥ 3, đỏ ≥ 5 lần · Gõ "BC CVST + mã" để xem chi tiết từng ngày của 1 siêu thị.', { size: 13, fill: C.phu }));
+  const H = y + 20;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
+}
+function veSvgCvstST(d, ma) {
+  const s2 = d.st.get(String(ma));
+  if (!s2) throw new Error(`Không có số công việc của siêu thị ${ma}.`);
+  const W = 900, PAD = 24, ROW = 32;
+  const C = { xanh: '#0B8A3E', xanhDam: '#0B6E35', nhat: '#F6FAF7', phu: '#777777', do: '#D0312D', cam: '#E08A00' };
+  const t = (x, y, s3, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 16}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1a1a1a'}" text-anchor="${o.anchor || 'start'}">${escXml(s3)}</text>`;
+  const p = [];
+  p.push(`<rect x="0" y="0" width="${W}" height="96" fill="${C.xanh}"/>`);
+  p.push(t(PAD, 42, `BC CVST · ${s2.ma} - ${rutGonTen(s2.ten, 34)}`, { size: 26, bold: true, fill: '#FFFFFF' }));
+  p.push(t(PAD, 76, `Công việc hằng ngày từ ${fmtNgay(d.tu)} đến ${fmtNgay(d.den)} (${d.ngays.length} ngày) · hôm nay đang làm, chưa tính`, { size: 15, fill: '#E3F5EA' }));
+  let y = 128;
+  const soNgay = new Set(s2.dinh.map((x) => x.ngay)).size;
+  p.push(t(PAD, y, s2.dinh.length ? `${s2.dinh.length} việc chưa hoàn tất 100% · ${soNgay}/${d.ngays.length} ngày bị dính` : `Hoàn tất 100% tất cả ${s2.soViec} việc 👏`, { size: 22, bold: true, fill: s2.dinh.length ? C.do : C.xanh }));
+  y += 14;
+  if (s2.dinh.length) {
+    const theoCV = new Map();
+    for (const x of s2.dinh) theoCV.set(x.ngan, (theoCV.get(x.ngan) || 0) + 1);
+    y += 22;
+    p.push(t(PAD, y, [...theoCV.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k}: ${n}`).join('  ·  '), { size: 16, fill: C.cam, bold: true }));
+    y += 20;
+    const yBang = y;
+    p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="34" fill="${C.xanhDam}"/>`);
+    p.push(t(PAD + 14, y + 23, 'Ngày', { bold: true, fill: '#FFFFFF' }));
+    p.push(t(PAD + 150, y + 23, 'Công việc chưa hoàn tất', { bold: true, fill: '#FFFFFF' }));
+    p.push(t(W - PAD - 14, y + 23, 'Tỉ lệ', { bold: true, fill: '#FFFFFF', anchor: 'end' }));
+    y += 34;
+    const sx = [...s2.dinh].sort((a, b) => b.ngay.localeCompare(a.ngay) || a.cv.localeCompare(b.cv));
+    sx.forEach((x, i) => {
+      p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${i % 2 ? C.nhat : '#FFFFFF'}"/>`);
+      const thu = THU_VN[new Date(x.ngay + 'T00:00:00Z').getUTCDay()];
+      p.push(t(PAD + 14, y + 22, `${thu} ${fmtNgay(x.ngay)}`, { bold: true }));
+      p.push(t(PAD + 150, y + 22, rutGonTen(x.cv, 60)));
+      p.push(t(W - PAD - 14, y + 22, `${Math.round(x.tl)}%`, { bold: true, fill: C.do, anchor: 'end' }));
+      y += ROW;
+    });
+    for (const x of [PAD + 136, W - PAD - 90]) p.push(`<line x1="${x}" y1="${yBang}" x2="${x}" y2="${y}" stroke="#C9D8CF" stroke-width="1.2"/>`);
+    p.push(`<rect x="${PAD}" y="${yBang}" width="${W - PAD * 2}" height="${y - yBang}" fill="none" stroke="${C.xanhDam}" stroke-width="1.5"/>`);
+  }
+  if (s2.khong.length) {
+    y += 26;
+    p.push(t(PAD, y, `⚠ Hoàn tất khống: ${s2.khong.map((x) => `${fmtNgay(x.ngay)} ${tenNganCV(x.cv)} (${x.ai})`).join(' · ')}`, { size: 14, bold: true, fill: C.do }));
+  }
+  const H = y + 30;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
+}
+function laTriggerCvst(text) { return coTuKhoa(text, ['bc cvst', 'cvst', 'công việc siêu thị', 'cong viec sieu thi', 'bc công việc', 'bc cong viec']); }
+async function veAnhCvst(maST) {
+  const d = await docDuLieuCVST();
+  const svg = maST ? veSvgCvstST(d, maST) : veSvgCvstKV(d);
+  return { png: svgThanhPng(svg, maST ? 1100 : 1500), preview: svgThanhPng(svg, 600) };
+}
+async function generateCvstReport(text) {
+  const maST = await timMaST(text);
+  const { png, preview } = await veAnhCvst(maST);
+  const id = `cvst-${maST || 'kv'}-${Date.now().toString(36)}`;
+  luuAnh(id, png, preview);
+  const q = `loai=cvst${maST ? `&st=${maST}` : ''}`;
+  return { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?${q}`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?${q}&nho=1` };
+}
+
 function laTriggerDtHomNay(text) {
   return coTuKhoa(text, ['dt hôm nay', 'dt hom nay', 'doanh thu hôm nay', 'doanh thu hom nay', 'bc hôm nay', 'hôm nay realtime']);
 }
@@ -3008,6 +3178,7 @@ async function chayLenh(text) {
   const datMuc = await datMucThiDua(text);
   if (datMuc) return { ten: 'Đặt mức', ket: datMuc };
   if (laLenhMtDtlk(text)) { const kq = await datMtDtlk(text); if (kq) return { ten: 'MT DTLK', ket: kq }; }
+  if (laTriggerCvst(text)) return { ten: 'BC CVST', ket: await generateCvstReport(text) };
   if (laTriggerBcNgay(text)) return { ten: 'BC Ngày', ket: await generateBcNgayReport(text) };
   if (laTriggerDtNgay(text)) return { ten: 'DT Ngày', ket: await generateDtNgayReport(text) };
   if (laTriggerDtHomNay(text)) return { ten: 'DT Hôm nay', ket: await generateDtHomNayReport(text) };
@@ -3199,6 +3370,8 @@ async function taoMenuFlex() {
           tieuDeMuc('🏆', 'THI ĐUA NGÀNH HÀNG', 'tự cập nhật'),
           hangNut([nutMenu('THS + Trứng', 'BC THS TRỨNG', xanh), nutMenu('Đông mát Sữa Kem', 'BC ĐMSK', xanh)]),
           hangNut([nutMenu('Sữa Celano + C2', 'BC SỮA', xanh)]),
+          tieuDeMuc('📋', 'CÔNG VIỆC SIÊU THỊ', 'tự cập nhật'),
+          hangNut([nutMenu('BC CVST KV', 'BC CVST', xanh), nutMenu(`BC CVST ${st}`, `BC CVST ${st}`, xanh)]),
           tieuDeMuc('📁', 'BÁO CÁO GỬI FILE', 'số lần gửi file gần nhất'),
           hangNut([nutMenu('Giá vốn', 'GIÁ VỐN', xam), nutMenu('Huỷ + MMKK', 'HUỶ MMKK', xam)]),
         ],
@@ -3371,6 +3544,7 @@ async function traLoiCauHoiAI(event, targetId, question) {
         '• ĐMSK 7665 (Đông mát – Sữa – Kem)\n' +
         '• BC SỮA 7665 (Celano + C2)\n' +
         '• GIÁ VỐN 7665\n' +
+        '• BC CVST · BC CVST 7665 (công việc chưa hoàn tất 100%)\n' +
         '• HUỶ MMKK 7665\n' +
         '• DT NGÀNH HÀNG T3 · ĐẶT MỨC T3 M3\n' +
         '• MÃ NV 123456 (dấu chìm mã NV trên ảnh)\n' +
@@ -3569,6 +3743,15 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           continue;
         }
 
+        if (kq.loai === 'cvst') {
+          try {
+            await guiTraLoi(event, targetId, await generateCvstReport(kq.dsST.length === 1 ? kq.dsST[0] : ''));
+          } catch (e) {
+            await guiTraLoi(event, targetId, { type: 'text', text: `✅ Đã nạp công việc (${kq.soDong} dòng).\n⚠️ ${e.message}` });
+          }
+          continue;
+        }
+
         if (kq.loai === 'bcngay') {
           try {
             await guiTraLoi(event, targetId, await generateBcNgayReport('', kq.dsST));
@@ -3724,6 +3907,8 @@ app.get('/anh/:id.png', async (req, res) => {
       let ve;
       if (req.query.loai === 'gv') {
         ve = await veAnhGiaVon(String(req.query.st || ''));
+      } else if (req.query.loai === 'cvst') {
+        ve = await veAnhCvst(String(req.query.st || ''));
       } else if (req.query.loai === 'hnct') {
         ve = await veAnhHnChiTiet(String(req.query.st || ''), String(req.query.n || ''));
       } else if (req.query.loai === 'bcngay') {
