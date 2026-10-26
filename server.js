@@ -3033,9 +3033,9 @@ function veSvgCvstKV(d) {
   y += 36;
   dinh.forEach((s2, i) => {
     const hq = s2.dinh.some((x) => x.ngay === homQua);
-    p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${s2.ma === MENU_MA_ST ? '#FFF6DA' : i % 2 ? C.nhat : '#FFFFFF'}"/>`);
+    p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${i % 2 ? C.nhat : '#FFFFFF'}"/>`);
     p.push(t(X.stt, y + 21, String(i + 1), { size: 13, fill: C.phu, anchor: 'end' }));
-    p.push(t(X.st, y + 21, `${s2.ma} · ${rutGonTen(s2.ten, 34)}`, { bold: s2.ma === MENU_MA_ST, fill: hq ? C.do : '#1a1a1a' }));
+    p.push(t(X.st, y + 21, `${s2.ma} · ${rutGonTen(s2.ten, 34)}`, { fill: hq ? C.do : '#1a1a1a' }));
     p.push(t(X.tong, y + 21, String(s2.dinh.length), { size: 16, bold: true, fill: s2.dinh.length >= 5 ? C.do : s2.dinh.length >= 3 ? C.cam : '#1a1a1a', anchor: 'middle' }));
     cotCV.forEach((c2, k) => { const n = s2.dinh.filter((x) => x.ngan === c2).length; p.push(t(xCV(k), y + 21, n ? String(n) : '·', { bold: n > 0, fill: n >= 3 ? C.do : n ? '#1a1a1a' : '#BBBBBB', anchor: 'middle' })); });
     const gan = s2.dinh.map((x) => x.ngay).sort().pop();
