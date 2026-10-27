@@ -3409,11 +3409,171 @@ async function lenhKmSP(text) {
 }
 function laLenhKmSP(text) { const t = ' ' + boDau(text).split('\n')[0] + ' '; return /\s(them |xoa |xo )?sp km(\s|$)|\sxoa? nhom km\s/.test(t); }
 
+// ---------------------------------------------------------------------------
+// MỐC DOANH THU LÀM CHỦ: DT tháng so với BASE (TB ngày 6 tháng × số ngày) và các mốc +200tr / +500tr
+// Chỉ hiện doanh thu — KHÔNG hiện lương/thưởng. Base từng siêu thị ở tab BASE_LAMCHU (Mã ST | Base TB ngày).
+// ---------------------------------------------------------------------------
+const TAB_BASE_LAMCHU = 'BASE_LAMCHU';
+const BASE_LAMCHU_MAC_DINH = [['8104', 104921292.96]];
+const MOC_LAMCHU = [['ĐẠT BASE', 0], ['MỐC 1', 200e6], ['MỐC 2', 500e6]];
+async function docBaseLamChu(sheets) {
+  const rows = (await docTabAnToan(sheets, TAB_BASE_LAMCHU)).slice(1).filter((r) => r[0] && soGV(r[1]) > 0);
+  if (rows.length) return new Map(rows.map((r) => [String(r[0]).trim(), soGV(r[1])]));
+  await ghiDeTab(sheets, TAB_BASE_LAMCHU, ['Mã siêu thị', 'Base DT TB ngày'], BASE_LAMCHU_MAC_DINH);
+  return new Map(BASE_LAMCHU_MAC_DINH);
+}
+function laTriggerLamChu(text) { return coTuKhoa(text, ['làm chủ', 'lam chu', 'mốc dt', 'moc dt', 'mốc doanh thu', 'moc doanh thu']); }
+// @bot BASE LÀM CHỦ 7665 98.500.000  -> lưu base TB ngày của siêu thị
+function laLenhBaseLamChu(text) { return /^\s*base\s+l[àa]m\s+ch[ủu]/i.test(String(text || '').normalize('NFC')); }
+async function datBaseLamChu(text) {
+  const m = String(text).normalize('NFC').match(/(\d{4,5})\s+([\d.,]+)/);
+  if (!m) return { type: 'text', text: 'Anh gõ: @bot BASE LÀM CHỦ <mã ST> <DT TB ngày>\nvd: @bot BASE LÀM CHỦ 7665 98.500.000' };
+  let v = Number(m[2].replace(/[.,](?=\d{3}(\D|$))/g, '').replace(',', '.'));
+  if (v < 10000) v *= 1e6; // gõ theo triệu (vd 98,5)
+  const sheets = getSheetsClient();
+  const ds = await docBaseLamChu(sheets);
+  ds.set(m[1], v);
+  await ghiDeTab(sheets, TAB_BASE_LAMCHU, ['Mã siêu thị', 'Base DT TB ngày'], [...ds.entries()]);
+  return { type: 'text', text: `✅ Đã lưu base làm chủ ${m[1]}: ${fmtTrieu(v / 1e6)} tr/ngày. Gõ "LÀM CHỦ ${m[1]}" để xem.` };
+}
+async function docDuLieuLamChu(maST) {
+  const sheets = getSheetsClient();
+  const dsBase = await docBaseLamChu(sheets);
+  const ma = String(maST || MENU_MA_ST);
+  const base = dsBase.get(ma);
+  if (!base) throw new Error(`Chưa có base làm chủ của ${ma}. Gõ: @bot BASE LÀM CHỦ ${ma} <DT TB ngày>`);
+  const homNay = homNayVN(), thang = homNay.slice(0, 7);
+  const [y, m] = thang.split('-').map(Number);
+  const soNgay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const ngay = new Map();
+  let ten = ma, cap = '';
+  for (const r of (await docTabAnToan(sheets, TAB_DTST)).slice(1)) {
+    if (String(r[1]) !== ma || !String(r[0]).startsWith(thang) || String(r[0]) > homNay) continue;
+    ten = String(r[2] || ten);
+    ngay.set(String(r[0]), { dt: soGV(r[3]) + soGV(r[4]), bill: soGV(r[5]) });
+    if (String(r[0]) === homNay && r[7]) cap = String(r[7]);
+  }
+  const dHN = Number(homNay.slice(8, 10));
+  const lk = [...ngay.values()].reduce((a, o) => a + o.dt, 0);
+  const lkQua = [...ngay.entries()].filter(([k]) => k < homNay).reduce((a, [, o]) => a + o.dt, 0);
+  const soNgayQua = dHN - 1;
+  const tbQua = soNgayQua ? lkQua / soNgayQua : 0;
+  const duKien = soNgayQua ? tbQua * soNgay : 0;
+  const conLai = soNgay - dHN; // số ngày sau hôm nay
+  const hn = ngay.get(homNay);
+  const moc = MOC_LAMCHU.map(([nhan, them]) => {
+    const can = base * soNgay + them;
+    const thieu = Math.max(0, can - lk);
+    return { nhan, them, can, tbCan: can / soNgay, thieu, moiNgay: conLai > 0 ? thieu / conLai : thieu, dat: lk >= can };
+  });
+  return { ma, ten, base, thang, soNgay, dHN, lk, tbQua, duKien, conLai, hn, cap, moc, ngay, homNay };
+}
+function veSvgLamChu(d) {
+  const W = 1200, PAD = 24;
+  const C = { xanh: '#0B8A3E', xanhDam: '#0B6E35', nen: '#E6F4EC', nhat: '#F6FAF7', phu: '#777777', do: '#D0312D', cam: '#E08A00', vien: '#D5E3DA', vang: '#F2B705' };
+  const t = (x, y, s2, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 15}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1a1a1a'}" text-anchor="${o.anchor || 'start'}">${escXml(s2)}</text>`;
+  const tr = (v) => fmtTrieu(v / 1e6);
+  const [y0, m0] = d.thang.split('-');
+  const p = [];
+  p.push(`<rect x="0" y="0" width="${W}" height="100" fill="${C.xanh}"/>`);
+  p.push(t(PAD, 46, `MỐC DOANH THU THÁNG ${Number(m0)}/${y0}`, { size: 30, bold: true, fill: '#FFFFFF' }));
+  p.push(t(PAD, 80, `${d.ma} - ${rutGonTen(d.ten, 40)} · ngày ${d.dHN}/${d.soNgay}${d.cap ? ` · cập nhật ${d.cap.split(' ')[0]}` : ''} · ĐVT: triệu`, { size: 17, fill: '#E3F5EA' }));
+  let y = 122;
+  // 3 ô số
+  const pBase = d.tbQua ? (d.tbQua / d.base) * 100 : null;
+  const o3 = [
+    ['DT luỹ kế tháng', tr(d.lk), `base cả tháng ${tr(d.base * d.soNgay)}`, '#1a1a1a'],
+    ['TB/ngày (đến hôm qua)', d.tbQua ? tr(d.tbQua) : '–', `base ${tr(d.base)}/ngày · ${pBase == null ? '–' : fmtPhanTram(pBase)}`, pBase == null ? C.phu : pBase >= 100 ? C.xanh : C.do],
+    ['Dự kiến cuối tháng', d.duKien ? tr(d.duKien) : '–', d.duKien ? `${d.duKien >= d.base * d.soNgay ? 'vượt' : 'hụt'} base ${tr(Math.abs(d.duKien - d.base * d.soNgay))}` : 'chưa đủ ngày', d.duKien >= d.base * d.soNgay ? C.xanh : C.do],
+  ];
+  const ow = (W - PAD * 2 - 24) / 3;
+  o3.forEach(([a, b, c, mau], i) => {
+    const x = PAD + i * (ow + 12);
+    p.push(`<rect x="${x}" y="${y}" width="${ow}" height="104" rx="10" fill="${C.nhat}" stroke="${C.vien}"/>`);
+    p.push(t(x + 16, y + 28, a, { size: 15, fill: C.phu }));
+    p.push(t(x + 16, y + 66, b, { size: 32, bold: true, fill: mau }));
+    p.push(t(x + 16, y + 92, c, { size: 14, fill: C.phu }));
+  });
+  y += 128;
+  // thanh tiến độ với các mốc
+  const max = d.moc[d.moc.length - 1].can * 1.08;
+  const bx = PAD + 10, bw = W - PAD * 2 - 20, X = (v) => bx + Math.min(1, v / max) * bw;
+  p.push(t(PAD, y, 'TIẾN ĐỘ THÁNG', { size: 17, bold: true, fill: C.xanhDam }));
+  y += 58;
+  p.push(`<rect x="${bx}" y="${y}" width="${bw}" height="26" rx="13" fill="#EDEDED"/>`);
+  p.push(`<rect x="${bx}" y="${y}" width="${Math.max(26, X(d.lk) - bx)}" height="26" rx="13" fill="${C.xanh}"/>`);
+  if (d.duKien > d.lk) p.push(`<line x1="${X(d.duKien)}" y1="${y - 8}" x2="${X(d.duKien)}" y2="${y + 34}" stroke="${C.cam}" stroke-width="3" stroke-dasharray="5 4"/>`);
+  d.moc.forEach((o, i) => {
+    const x = X(o.can), le = i % 2 === 1; // mốc lẻ đẩy nhãn ra xa để khỏi chồng chữ
+    p.push(`<line x1="${x}" y1="${y - (le ? 26 : 6)}" x2="${x}" y2="${y + (le ? 52 : 32)}" stroke="${o.dat ? C.xanhDam : '#333'}" stroke-width="2"/>`);
+    p.push(t(x, y - (le ? 32 : 12), o.nhan, { size: 14, bold: true, fill: o.dat ? C.xanhDam : '#333', anchor: 'middle' }));
+    p.push(t(x, y + (le ? 70 : 50), tr(o.can), { size: 14, fill: C.phu, anchor: 'middle' }));
+  });
+  y += 96;
+  p.push(t(PAD, y, `▬ xanh = đã bán ${tr(d.lk)}   ┆ cam = dự kiến cuối tháng nếu giữ tốc độ hiện tại`, { size: 13, fill: C.phu }));
+  y += 30;
+  // bảng mốc
+  const X2 = { nhan: PAD + 16, can: 420, tb: 580, thieu: 760, mn: W - PAD - 16 };
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="52" fill="${C.xanhDam}"/>`);
+  [[X2.nhan, 'Mốc', 'start'], [X2.can, 'DT tháng cần'], [X2.tb, 'TB/ngày cần'], [X2.thieu, 'Còn thiếu']].forEach(([x, s2, a]) => p.push(t(x, y + 32, s2, { size: 16, bold: true, fill: '#FFFFFF', anchor: a || 'end' })));
+  p.push(t(X2.mn, y + 23, 'Mỗi ngày còn lại', { size: 16, bold: true, fill: '#FFFFFF', anchor: 'end' }));
+  p.push(t(X2.mn, y + 43, `phải bán (${d.conLai} ngày)`, { size: 13, fill: '#D7F0DF', anchor: 'end' }));
+  y += 52;
+  const y1 = y;
+  d.moc.forEach((o, i) => {
+    p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="48" fill="${o.dat ? C.nen : i % 2 ? C.nhat : '#FFFFFF'}"/>`);
+    p.push(t(X2.nhan, y + 30, o.nhan + (o.them ? ` (base + ${o.them / 1e6} tr)` : ''), { size: 17, bold: true, fill: o.dat ? C.xanhDam : '#1a1a1a' }));
+    p.push(t(X2.can, y + 30, tr(o.can), { size: 17, anchor: 'end' }));
+    p.push(t(X2.tb, y + 30, tr(o.tbCan), { size: 17, anchor: 'end' }));
+    p.push(t(X2.thieu, y + 30, o.dat ? '✓ ĐÃ ĐẠT' : tr(o.thieu), { size: 17, bold: true, fill: o.dat ? C.xanh : C.do, anchor: 'end' }));
+    const kho = !o.dat && d.tbQua && o.moiNgay > d.tbQua * 1.15;
+    p.push(t(X2.mn, y + 30, o.dat ? '–' : tr(o.moiNgay), { size: 20, bold: true, fill: o.dat ? C.phu : kho ? C.do : C.cam, anchor: 'end' }));
+    y += 48;
+  });
+  p.push(`<rect x="${PAD}" y="${y1 - 52}" width="${W - PAD * 2}" height="${y - y1 + 52}" fill="none" stroke="${C.xanhDam}" stroke-width="1.5"/>`);
+  y += 34;
+  // từng ngày
+  p.push(t(PAD, y, `TỪNG NGÀY (xanh ≥ base ${tr(d.base)} · đỏ < base)`, { size: 17, bold: true, fill: C.xanhDam }));
+  y += 14;
+  const ks = [...d.ngay.keys()].sort();
+  const cot = 8, cw = (W - PAD * 2) / cot, rh = 58;
+  ks.forEach((k, i) => {
+    const o = d.ngay.get(k), x = PAD + (i % cot) * cw, yy = y + Math.floor(i / cot) * rh;
+    const laHN = k === d.homNay, dat = o.dt >= d.base;
+    const thu = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][new Date(`${k}T00:00:00Z`).getUTCDay()];
+    p.push(`<rect x="${x + 3}" y="${yy + 3}" width="${cw - 6}" height="${rh - 6}" rx="6" fill="${laHN ? '#FFF6E0' : dat ? C.nen : '#FDECEC'}" stroke="${laHN ? C.cam : 'none'}"/>`);
+    p.push(t(x + 12, yy + 23, `${thu} ${k.slice(8, 10)}`, { size: 13, fill: C.phu }));
+    p.push(t(x + cw - 12, yy + 44, laHN ? `${tr(o.dt)}…` : tr(o.dt), { size: 17, bold: true, fill: laHN ? C.cam : dat ? C.xanhDam : C.do, anchor: 'end' }));
+  });
+  y += Math.ceil(ks.length / cot) * rh + 22;
+  p.push(t(PAD, y, `Base = TB ngày 6 tháng × ${d.soNgay} ngày · DT = offline + online chưa VAT · Base không tính SLL và TikTok nên số thật có thể thấp hơn chút.`, { size: 13, fill: C.phu }));
+  const H = y + 22;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
+}
+async function veAnhLamChu(maST) {
+  const svg = veSvgLamChu(await docDuLieuLamChu(maST));
+  return { png: svgThanhPng(svg, 1200), preview: svgThanhPng(svg, 600) };
+}
+async function generateLamChuReport(text) {
+  const maST = (await timMaST(text)) || MENU_MA_ST;
+  const { png, preview } = await veAnhLamChu(maST);
+  const id = `lamchu-${maST}-${Date.now().toString(36)}`;
+  luuAnh(id, png, preview);
+  const q = `loai=lamchu&st=${maST}`;
+  return { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?${q}`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?${q}&nho=1` };
+}
+
 async function chayLenh(text) {
   text = (text || '').normalize('NFC');
-  const datMuc = await datMucThiDua(text);
+  // TẮT 27/10: ĐMSK, THS + Trứng, DT NGÀNH HÀNG, ĐẶT MỨC, BNNB, BC NGÀY, DTLK KV
+  const tat = [[laTriggerBcNgay, 'BC NGÀY'], [laTriggerDtNganhHang, 'DT NGÀNH HÀNG'], [laTriggerThst, 'THS + Trứng'], [laTriggerBnnb, 'BNNB'], [laTriggerDmsk, 'ĐMSK'], [(x) => /đ[ặa]t\s*m[ứu]c/i.test(x), 'ĐẶT MỨC']].find(([f]) => f(text));
+  if (tat) return { ten: 'Đã tắt', ket: { type: 'text', text: `Báo cáo ${tat[1]} đã tắt. Gõ MENU để xem các báo cáo đang dùng.` } };
+  if (laTriggerDtlk(text) && !(await timMaST(text))) return { ten: 'Báo Cáo DTLK', ket: await generateDtlkReport(`dtlk ${MENU_MA_ST}`) };
+  const datMuc = null;
   if (datMuc) return { ten: 'Đặt mức', ket: datMuc };
   if (laLenhMtDtlk(text)) { const kq = await datMtDtlk(text); if (kq) return { ten: 'MT DTLK', ket: kq }; }
+  if (laLenhBaseLamChu(text)) return { ten: 'Base làm chủ', ket: await datBaseLamChu(text) };
+  if (laTriggerLamChu(text)) return { ten: 'Mốc DT làm chủ', ket: await generateLamChuReport(text) };
   if (laLenhKmSP(text)) return { ten: 'SP KM', ket: await lenhKmSP(text) };
   if (laTriggerKm(text)) return { ten: 'Đặt hàng FMCG', ket: await generateKmReport(text) };
   if (laTriggerCvst(text)) return { ten: 'BC CVST', ket: await generateCvstReport(text) };
@@ -3602,12 +3762,9 @@ async function taoMenuFlex() {
         contents: [
           tieuDeMuc('⏱', 'REALTIME HÔM NAY', 'tự cập nhật'),
           hangNut([nutMenu('DT hôm nay KV', 'DT HÔM NAY', cam), nutMenu(`DT hôm nay ${st}`, `DT HÔM NAY ${st}`, cam)]),
-          tieuDeMuc('💰', 'DOANH THU LUỸ KẾ', 'tự cập nhật'),
-          hangNut([nutMenu('DTLK KV', 'DTLK', xanh), nutMenu(`DTLK ${st}`, `DTLK ${st}`, xanh)]),
-          hangNut([nutMenu(`BC Ngày ${st}`, `BC NGÀY ${st}`, xanh)]),
-          tieuDeMuc('🏆', 'THI ĐUA NGÀNH HÀNG', 'tự cập nhật'),
-          hangNut([nutMenu('THS + Trứng', 'BC THS TRỨNG', xanh), nutMenu('Đông mát Sữa Kem', 'BC ĐMSK', xanh)]),
-          hangNut([nutMenu('Sữa Celano + C2', 'BC SỮA', xanh)]),
+          hangNut([nutMenu(`Mốc DT tháng ${st}`, `LÀM CHỦ ${st}`, cam)]),
+          tieuDeMuc('💰', 'LUỸ KẾ + THI ĐUA', 'tự cập nhật'),
+          hangNut([nutMenu(`DTLK ${st}`, `DTLK ${st}`, xanh), nutMenu('Sữa Celano + C2', 'BC SỮA', xanh)]),
           tieuDeMuc('📋', 'CÔNG VIỆC SIÊU THỊ', 'tự cập nhật'),
           hangNut([nutMenu('BC CVST KV', 'BC CVST', xanh), nutMenu(`BC CVST ${st}`, `BC CVST ${st}`, xanh)]),
           tieuDeMuc('📁', 'BÁO CÁO GỬI FILE', 'số lần gửi file gần nhất'),
@@ -3777,17 +3934,14 @@ async function traLoiCauHoiAI(event, targetId, question) {
         '• DT HÔM NAY 7665 · DT hôm nay Ngã Năm\n' +
         '   (không gõ mã = cả KV + bảng chi tiết từng ST)\n' +
         '• DTLK 7665 (doanh thu luỹ kế tháng)\n' +
-        '• BC NGÀY 7665 (bảng DT cả tháng FMCG/Fresh/Đông mát, bill)\n' +
         '• DT NGÀY 7665 (thẻ chi tiết 1 ngày theo ngành; thêm 24/10 để xem ngày khác)\n' +
-        '• THS TRỨNG 7665 (Thuỷ hải sản + Trứng)\n' +
-        '• ĐMSK 7665 (Đông mát – Sữa – Kem)\n' +
         '• BC SỮA 7665 (Celano + C2)\n' +
         '• GIÁ VỐN 7665\n' +
         '• BC CVST · BC CVST 7665 (công việc chưa hoàn tất 100%)\n' +
         '• HUỶ MMKK 7665\n' +
+        '• LÀM CHỦ 8104 (mốc DT tháng so base) · @bot BASE LÀM CHỦ 7665 98.500.000\n' +
         '• ĐẶT HÀNG FMCG · ĐẶT HÀNG FMCG 7665 (gửi file đặt hàng KM vào là tự cập nhật)\n' +
         '• @bot SP KM (xem/đổi danh sách SP theo dõi)\n' +
-        '• DT NGÀNH HÀNG T3 · ĐẶT MỨC T3 M3\n' +
         '• MÃ NV 123456 (dấu chìm mã NV trên ảnh)\n' +
         'Số tự cập nhật mỗi giờ phút 17.',
     });
@@ -4059,7 +4213,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         // Lệnh đổi cài đặt (ĐẶT MỨC, MT DTLK) và câu hỏi tự do vẫn phải @tag.
         const tin = String(event.message.text || '').normalize('NFC').trim();
         if (!tin || tin.length > 40 || /đ[ặa]t\s*m[ứu]c|mt\s*dtlk|n[ạa]p|mã\s*nv|ma\s*nv/i.test(tin)) continue;
-        if (!/^(dt|bc|đặt hàng|dat hang|đh|dh|km|báo cáo|bao cao|ths|thủy|thuỷ|thuy|giá vốn|gia von|hủy|huỷ|huy|mmkk|đmsk|dmsk|dtlk|doanh thu|celano|sữa|sua|menu)(\s|$)/i.test(tin)) continue;
+        if (!/^(dt|bc|làm chủ|lam chu|mốc|moc|đặt hàng|dat hang|đh|dh|km|báo cáo|bao cao|ths|thủy|thuỷ|thuy|giá vốn|gia von|hủy|huỷ|huy|mmkk|đmsk|dmsk|dtlk|doanh thu|celano|sữa|sua|menu)(\s|$)/i.test(tin)) continue;
         if (tin.split(/\s+/).length > 3 && !(await timMaST(tin))) continue; // câu dài mà không có mã/tên siêu thị = đang nói chuyện
         let kq = null;
         try { kq = await chayLenh(tin); } catch (err) {
@@ -4096,26 +4250,8 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
       continue;
     }
 
-    if (laLenhNapBaseThst(question)) {
-      cho_NapBaseThst.set(targetId, Date.now() + THOI_GIAN_CHO_MS);
-      cho_AI_PhanTich.delete(targetId);
-      await guiTraLoi(event, targetId, { type: 'text', text: '📥 OK anh, các file Doanh Thu Theo Model tháng 9 (Thuỷ hải sản + Trứng) anh gửi trong 3 phút tới em sẽ lưu làm BASE Thuỷ hải sản + Trứng (× 110% = mục tiêu T10).' });
-      continue;
-    }
 
-    if (laLenhNapBaseBnnb(question)) {
-      cho_NapBaseBnnb.set(targetId, Date.now() + THOI_GIAN_CHO_MS);
-      cho_AI_PhanTich.delete(targetId);
-      await guiTraLoi(event, targetId, { type: 'text', text: '📥 OK anh, file Doanh Thu Theo Model anh gửi trong 3 phút tới em sẽ lưu làm BASE BNNB: Bia nước = tháng 7 (× 125%), Gia vị = tháng 9 (× 120%). Gửi file nào thì chỉ thay base ngành đó.' });
-      continue;
-    }
 
-    if (laLenhNapBaseDmsk(question)) {
-      cho_NapBaseDmsk.set(targetId, Date.now() + THOI_GIAN_CHO_MS);
-      cho_AI_PhanTich.delete(targetId);
-      await guiTraLoi(event, targetId, { type: 'text', text: '📥 OK anh, file Doanh Thu Theo Model Đông mát – Sữa – Kem anh gửi tiếp theo (trong 3 phút) em sẽ lưu làm BASE tháng 9 (× 120% = mục tiêu T10).' });
-      continue;
-    }
 
     const ngayNap = laLenhNapNgay(question);
     if (ngayNap) {
@@ -4159,6 +4295,8 @@ app.get('/anh/:id.png', async (req, res) => {
       let ve;
       if (req.query.loai === 'gv') {
         ve = await veAnhGiaVon(String(req.query.st || ''));
+      } else if (req.query.loai === 'lamchu') {
+        ve = await veAnhLamChu(String(req.query.st || ''));
       } else if (req.query.loai === 'km') {
         ve = await veAnhKm(String(req.query.st || ''));
       } else if (req.query.loai === 'cvst') {
