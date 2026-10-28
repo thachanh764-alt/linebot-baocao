@@ -3720,7 +3720,7 @@ function nutMenu(nhan, lenh, mau) {
   return {
     type: 'box', layout: 'vertical', flex: 1, cornerRadius: '10px', paddingAll: '10px',
     backgroundColor: mau.nen, borderColor: mau.vien, borderWidth: '1px', justifyContent: 'center',
-    action: { type: 'postback', label: nhan.slice(0, 20), data: `lenh=${lenh}`, displayText: nhan },
+    action: { type: 'postback', label: nhan.slice(0, 20), data: `lenh=${lenh}` }, // không displayText -> bấm nút không hiện tin nhắn của người bấm
     contents: [{ type: 'text', text: nhan, weight: 'bold', size: 'sm', color: mau.chu, align: 'center', wrap: true }],
   };
 }
