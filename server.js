@@ -3566,9 +3566,8 @@ async function generateLamChuReport(text) {
 async function chayLenh(text) {
   text = (text || '').normalize('NFC');
   // TẮT 27/10: ĐMSK, THS + Trứng, DT NGÀNH HÀNG, ĐẶT MỨC, BNNB, BC NGÀY, DTLK KV
-  const tat = [[laTriggerBcNgay, 'BC NGÀY'], [laTriggerDtNganhHang, 'DT NGÀNH HÀNG'], [laTriggerThst, 'THS + Trứng'], [laTriggerBnnb, 'BNNB'], [laTriggerDmsk, 'ĐMSK'], [(x) => /đ[ặa]t\s*m[ứu]c/i.test(x), 'ĐẶT MỨC'], [laTriggerDtlk, 'DTLK'], [laTriggerGiaVon, 'GIÁ VỐN'], [laTriggerHuyMmkk, 'HUỶ MMKK']].find(([f]) => f(text));
+  const tat = [[laTriggerBcNgay, 'BC NGÀY'], [laTriggerDtNganhHang, 'DT NGÀNH HÀNG'], [laTriggerThst, 'THS + Trứng'], [laTriggerBnnb, 'BNNB'], [laTriggerDmsk, 'ĐMSK'], [(x) => /đ[ặa]t\s*m[ứu]c/i.test(x), 'ĐẶT MỨC'], [laTriggerDtlk, 'DTLK'], [laTriggerGiaVon, 'GIÁ VỐN'], [laTriggerHuyMmkk, 'HUỶ MMKK'], [laTriggerCvst, 'BC CVST']].find(([f]) => f(text));
   if (tat) return { ten: 'Đã tắt', ket: { type: 'text', text: `Báo cáo ${tat[1]} đã tắt. Gõ MENU để xem các báo cáo đang dùng.` } };
-  if (laTriggerCvst(text) && !(await timMaST(text))) return { ten: 'Đã tắt', ket: { type: 'text', text: 'Báo cáo BC CVST KV đã tắt. Gõ BC CVST + mã siêu thị (vd BC CVST 8104).' } };
   const datMuc = null;
   if (datMuc) return { ten: 'Đặt mức', ket: datMuc };
   if (laLenhMtDtlk(text)) { const kq = await datMtDtlk(text); if (kq) return { ten: 'MT DTLK', ket: kq }; }
@@ -3763,8 +3762,8 @@ async function taoMenuFlex() {
           tieuDeMuc('⏱', 'REALTIME HÔM NAY', 'tự cập nhật'),
           hangNut([nutMenu('DT hôm nay KV', 'DT HÔM NAY', cam), nutMenu(`DT hôm nay ${st}`, `DT HÔM NAY ${st}`, cam)]),
           hangNut([nutMenu(`Mốc DT tháng ${st}`, `LÀM CHỦ ${st}`, cam)]),
-          tieuDeMuc('🏆', 'THI ĐUA + CÔNG VIỆC', 'tự cập nhật'),
-          hangNut([nutMenu('Sữa Celano + C2', 'BC SỮA', xanh), nutMenu(`BC CVST ${st}`, `BC CVST ${st}`, xanh)]),
+          tieuDeMuc('🏆', 'THI ĐUA', 'tự cập nhật'),
+          hangNut([nutMenu('Sữa Celano + C2', 'BC SỮA', xanh)]),
           tieuDeMuc('📁', 'BÁO CÁO GỬI FILE', 'số lần gửi file gần nhất'),
           hangNut([nutMenu('Đặt hàng FMCG KV', 'ĐẶT HÀNG FMCG', xam), nutMenu(`Đặt hàng FMCG ${st}`, `ĐẶT HÀNG FMCG ${st}`, xam)]),
         ],
@@ -3773,7 +3772,7 @@ async function taoMenuFlex() {
         type: 'box', layout: 'vertical', backgroundColor: '#FAFAF7', paddingAll: '12px',
         contents: [
           { type: 'text', text: 'Tra siêu thị khác: @bot + lệnh + mã ST', size: 'xxs', color: '#666666', wrap: true },
-          { type: 'text', text: 'vd: @bot dt hôm nay 7661 · @bot bc cvst 5818', size: 'xxs', color: '#666666', wrap: true },
+          { type: 'text', text: 'vd: @bot dt hôm nay 7661 · @bot bc sữa 5818', size: 'xxs', color: '#666666', wrap: true },
         ],
       },
     },
@@ -3932,7 +3931,6 @@ async function traLoiCauHoiAI(event, targetId, question) {
         '   (không gõ mã = cả KV + bảng chi tiết từng ST)\n' +
         '• DT NGÀY 7665 (thẻ chi tiết 1 ngày theo ngành; thêm 24/10 để xem ngày khác)\n' +
         '• BC SỮA 7665 (Celano + C2)\n' +
-        '• BC CVST 7665 (công việc chưa hoàn tất 100%)\n' +
         '• LÀM CHỦ 8104 (mốc DT tháng so base) · @bot BASE LÀM CHỦ 7665 98.500.000\n' +
         '• ĐẶT HÀNG FMCG · ĐẶT HÀNG FMCG 7665 (gửi file đặt hàng KM vào là tự cập nhật)\n' +
         '• @bot SP KM (xem/đổi danh sách SP theo dõi)\n' +
@@ -4140,11 +4138,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         }
 
         if (kq.loai === 'cvst') {
-          try {
-            await guiTraLoi(event, targetId, await generateCvstReport(kq.dsST.length === 1 ? kq.dsST[0] : MENU_MA_ST));
-          } catch (e) {
-            await guiTraLoi(event, targetId, { type: 'text', text: `✅ Đã nạp công việc (${kq.soDong} dòng).\n⚠️ ${e.message}` });
-          }
+          await guiTraLoi(event, targetId, { type: 'text', text: 'Báo cáo BC CVST đã tắt (28/10), em chỉ lưu file, không gửi báo cáo.' });
           continue;
         }
 
