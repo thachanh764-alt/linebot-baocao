@@ -349,8 +349,13 @@ async function napFileVaoSheet(fileName, buffer, ngayChiDinh, laBaseDmsk, laBase
   if (laFileGiaVon(header)) return napFileGiaVon(sheets, header, dataRows, fileName);
   if (laFileFreshBan(header)) return napFileFreshBan(sheets, header, dataRows, fileName);
   if (laFileHuyMmkk(header)) return napFileHuyMmkk(sheets, header, dataRows);
-  if (laFileTonModel(header)) return napFileTonSua(sheets, header, dataRows, fileName);
-  if (laFileDoanhThuModel(header) && (await laFileBanSua(sheets, header, dataRows))) return napFileBanSua(sheets, header, dataRows, fileName);
+  if (laFileTonModel(header)) return napTonChung(sheets, header, dataRows, fileName);
+  if (laFileDoanhThuModel(header) && (await laFileBanSua(sheets, header, dataRows))) return napBanChung(sheets, header, dataRows, fileName, ngayChiDinh);
+  // File Doanh Thu Theo Model có mã THI ĐUA T11 (gửi tay, luỹ kế từ 01/11) -> chỉ lấy các mã thi đua
+  if (TD_BAT && laFileDoanhThuModel(header) && tdCoMa(header, dataRows)) {
+    const kqTD = await napBanThiDua(sheets, header, dataRows, fileName, ngayChiDinh);
+    if (kqTD) return kqTD;
+  }
 
   // File Thuỷ hải sản / Trứng của 1 siêu thị -> Báo cáo THS + Trứng
   if (laFileDoanhThuModel(header) && laFileThst(header, dataRows)) {
@@ -1286,9 +1291,36 @@ async function dsMaSua(sheets) {
 
 async function laFileBanSua(sheets, header, dataRows) {
   const iMa = header.indexOf('Mã Model');
-  if (iMa === -1 || dataRows.length === 0 || dataRows.length > 3000) return false;
+  if (iMa === -1 || dataRows.length === 0 || dataRows.length > 6000) return false;
   const ma = await dsMaSua(sheets);
-  return dataRows.every((r) => ma.has(String(r[iMa] ?? '').trim()));
+  const iTen = header.indexOf('Model');
+  // Mã thi đua T11 cũng được (robot lấy chung mã sữa + mã thi đua)
+  return dataRows.every((r) => { const m = String(r[iMa] ?? '').trim(); return ma.has(m) || (TD_BAT && !!tdNhomCua(m, r[iTen])); });
+}
+
+// File tồn / bán dùng chung cho BC SỮA và THI ĐUA T11: mã thi đua -> tab TD_*, mã còn lại -> BC SỮA như cũ
+async function tachFileSuaThiDua(sheets, header, dataRows) {
+  const iMa = header.indexOf('Mã Model'), iTen = header.indexOf('Model');
+  const maSua = await dsMaSua(sheets);
+  const laTDRieng = (r) => { const m = String(r[iMa] ?? '').trim(); return TD_BAT && !maSua.has(m) && !!tdNhomCua(m, r[iTen]); };
+  return { dongSua: dataRows.filter((r) => !laTDRieng(r)), coTDRieng: dataRows.some(laTDRieng) };
+}
+async function napTonChung(sheets, header, dataRows, fileName) {
+  const kqTD = TD_BAT ? await napTonThiDua(sheets, header, dataRows, fileName) : null;
+  const { dongSua, coTDRieng } = await tachFileSuaThiDua(sheets, header, dataRows);
+  let kqSua = null;
+  // File tồn cả KV (rất nhiều mã) mà có mã thi đua -> chỉ lấy phần thi đua, bỏ qua BC SỮA
+  if (dongSua.length && (dongSua.length <= 2000 || !kqTD)) kqSua = await napFileTonSua(sheets, header, dongSua, fileName);
+  if (kqTD && (coTDRieng || !kqSua)) return kqTD;
+  return kqSua || kqTD;
+}
+async function napBanChung(sheets, header, dataRows, fileName, ngayChiDinh) {
+  const kqTD = TD_BAT ? await napBanThiDua(sheets, header, dataRows, fileName, ngayChiDinh) : null;
+  const { dongSua, coTDRieng } = await tachFileSuaThiDua(sheets, header, dataRows);
+  let kqSua = null;
+  if (dongSua.length) kqSua = await napFileBanSua(sheets, header, dongSua, fileName);
+  if (kqTD && (coTDRieng || !kqSua)) return kqTD;
+  return kqSua || kqTD;
 }
 
 function bayGioVN() {
@@ -3563,11 +3595,357 @@ async function generateLamChuReport(text) {
   return { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?${q}`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?${q}&nho=1` };
 }
 
+// ---------------------------------------------------------------------------
+// BÁO CÁO "THI ĐUA T11" — KV QLTP QUỐC NAM 40909 (thêm 30/10)
+//  Mỗi chương trình 2 cột: TỒN | BÁN T11 (số lượng). Mốc chỉ ghi chú, không tính.
+//  - Tồn: file "BC Tồn Theo Model" (gửi tay hoặc robot) -> tab TD_TON (thay theo mã có trong file).
+//  - Bán robot (file hôm nay)          -> tab TD_BAN_NGAY (mỗi ngày 1 bản mới nhất).
+//  - Bán gửi tay (file luỹ kế từ 01/11) -> tab TD_BAN_LK  (mốc = hết hôm qua; "NẠP NGÀY dd/mm" = hết ngày đó).
+//    Bán T11 = luỹ kế gửi tay + các ngày robot SAU mốc. Chỉ tính ngày trong tháng TD_THANG.
+//  - Lệnh: "THI ĐUA" / "THI ĐUA T11" (thêm mã ST để xem 1 siêu thị), nút trong MENU.
+// ---------------------------------------------------------------------------
+const TD_BAT = true; // Báo cáo THI ĐUA T11. Tắt: đổi thành false.
+const TD_THANG = '2026-11';
+const TAB_TD_TON = 'TD_TON';
+const TAB_TD_BAN_NGAY = 'TD_BAN_NGAY';
+const TAB_TD_BAN_LK = 'TD_BAN_LK';
+const TD_ST_LOAI = new Set(['14978', '14652']); // Phạm Hùng, 244 Trương Công Định: đã off
+const TD_NHOM = [
+  {
+    k: 'joyday', ten: 'KEM JOYDAY', phu: 'mốc ×2 so T10', mau: '#7B4BB7', dv: 'SP',
+    ma: ['2502000158', '2502000157', '2406001348', '2406001347', '2407001700', '2407001701', '2406001344', '2408002762', '2408002764', '2501000762', '2411000996', '2506000314', '2406001343', '2507002656', '2406001342', '2605000183', '2410001979', '2408002763', '2407001704', '2407001705', '2407001703', '2406001346', '2406001345', '2408002761'],
+    khopTen: (ten) => /JOYDAY/i.test(ten) && /KEM/i.test(ten), // kem Joyday mới cũng tự tính
+  },
+  { k: 'celym', ten: 'CELANO YẾN MẠCH', phu: '4 mã · mốc ×1,5 so T10', mau: '#1F7AC2', dv: 'hộp', ma: ['2609001656', '2609001221', '2609001657', '2609001223'] },
+  { k: 'celth', ten: 'CELANO CÓ THẠCH', phu: 'mốc 200k/tuần', mau: '#0E9AA7', dv: 'hộp', ma: ['2610000626', '2610000627', '2610000628'] },
+  { k: 'milo', ten: 'MILO LON', phu: 'bán nhiêu tính nhiêu', mau: '#2E7D32', dv: 'lon', ma: ['1706010219'] },
+  { k: 'c2', ten: 'C2', phu: 'bán nhiêu tính nhiêu', mau: '#D4A017', dv: 'chai', ma: ['2601001494', '2006000354', '2204000011', '2011000232', '2011000231', '2509013159', '2110003778', '2203000875'] },
+];
+const TD_MA = new Map(); // mã model -> nhóm
+for (const g of TD_NHOM) for (const m of g.ma) TD_MA.set(m, g.k);
+function tdNhomCua(ma, ten) {
+  const k = TD_MA.get(String(ma ?? '').trim());
+  if (k) return k;
+  const g = TD_NHOM.find((x) => x.khopTen && x.khopTen(String(ten || '')));
+  return g ? g.k : null;
+}
+const TD_TAT_CA_MA = () => [...TD_MA.keys()];
+
+// Tên sản phẩm in ở cuối ảnh
+const TD_SP_IN = {
+  joyday: [
+    ['Kem cây / que (13)', ['Bắp ngọt 80ml', 'Bắp socola 80ml', 'Dâu tằm nhung đỏ 65g', 'Dưa hấu táo mát lạnh 43g', 'Kokomi sữa socola và vani 35ml', 'Kokomi đậu xanh 38ml', 'Mạch nha socola giòn 65ml', 'Socola lalava 37ml', 'Socola trắng và vụn bánh 70ml', 'Socola việt quất giòn 65ml', 'Sữa vị cà phê sốt đường nâu 70ml', 'Viên socola tròn 58ml', 'Việt quốc mát lạnh 57g']],
+    ['Kem ly 100ml (4)', ['Sốt socola', 'Sữa lắc dâu tây', 'Sữa lắc socola', 'Sữa lắc vani']],
+    ['Ốc quế (3)', ['Dâu tây giòn ngọt 70ml', 'Socola giòn gấp đôi 70ml', 'Vani socola giòn 105ml']],
+    ['Mochi 45ml (2)', ['Dâu', 'Socola']],
+    ['Hộp 5 cây (2)', ['Bánh quy kem giòn 70ml', 'Mạch nha socola giòn 65ml']],
+  ],
+  celym: ['2609001656 Yến mạch vị Café latte 180ml', '2609001221 Yến mạch vị Matcha latte 180ml', '2609001657 Yến mạch vị Nguyên bản 180ml', '2609001223 Trà sữa vị Gạo rang có thạch 170ml'],
+  celth: ['2610000626 Sữa tươi TT vị Đậu xanh có thạch 170ml', '2610000627 Sữa tươi TT vị Cốm dừa có thạch 170ml', '2610000628 Sữa tươi TT vị Mè đen có thạch 170ml'],
+  milo: ['1706010219 Sữa Milo lon 240ml'],
+  c2: ['2601001494 Sâm hoa cúc thảo mộc C2 Cool 280ml', '2006000354 Trà hồng C2 vị vải 455ml', '2204000011 C2 Freeze chanh tuyết bạc hà 455ml', '2203000875 C2 Freeze dâu anh đào 455ml', '2011000232 Trà xanh C2 vị chanh 225ml', '2011000231 Trà xanh C2 vị táo 225ml', '2509013159 Trà xanh C2 ổi hồng chanh dây 225ml', '2110003778 Trà đen C2 hương đào 225ml'],
+};
+
+function tdCoMa(header, dataRows) {
+  const iMa = header.indexOf('Mã Model'), iTen = header.indexOf('Model');
+  return dataRows.some((r) => tdNhomCua(r[iMa], r[iTen]));
+}
+
+async function napTonThiDua(sheets, header, dataRows, fileName) {
+  const i = (c) => header.indexOf(c);
+  const c = { ma: i('Mã Model'), ten: i('Model'), st: i('Mã siêu thị'), tenST: i('Tên siêu thị'), ton: i('Tồn kho siêu thị') };
+  const cap = capNhatTuTen(fileName) || bayGioVN();
+  const gop = new Map();
+  for (const r of dataRows) {
+    const ma = String(r[c.ma] ?? '').trim(), st = chuanHoaMaST(r[c.st]);
+    if (!ma || !st || !tdNhomCua(ma, r[c.ten])) continue;
+    const k = `${ma}|${st}`;
+    if (!gop.has(k)) gop.set(k, [ma, String(r[c.ten] || ''), st, tenNganSieuThi(r[c.tenST]), 0, cap]);
+    gop.get(k)[4] += soGV(r[c.ton]);
+  }
+  const rows = [...gop.values()];
+  if (!rows.length) return null;
+  const maMoi = new Set(rows.map((r) => r[0]));
+  const giuLai = (await docTabAnToan(sheets, TAB_TD_TON)).slice(1).filter((r) => r[0] && !maMoi.has(String(r[0]).trim()));
+  await ghiDeTab(sheets, TAB_TD_TON, ['Mã Model', 'Model', 'Mã siêu thị', 'Tên siêu thị', 'Tồn', 'Cập nhật'], [...giuLai, ...rows]);
+  return { loai: 'thidua', tenTab: TAB_TD_TON, soDong: rows.length };
+}
+
+async function napBanThiDua(sheets, header, dataRows, fileName, ngayChiDinh) {
+  const i = (c) => header.indexOf(c);
+  const c = { ma: i('Mã Model'), ten: i('Model'), st: i('Mã siêu thị'), tenST: i('Tên siêu thị'), sl: i('Tổng số lượng'), dt: i('Tổng doanh thu') };
+  const gop = new Map();
+  for (const r of dataRows) {
+    const ma = String(r[c.ma] ?? '').trim(), st = chuanHoaMaST(r[c.st]);
+    if (!ma || !st || !tdNhomCua(ma, r[c.ten])) continue;
+    const k = `${ma}|${st}`;
+    if (!gop.has(k)) gop.set(k, { ma, ten: String(r[c.ten] || ''), st, tenST: tenNganSieuThi(r[c.tenST]), sl: 0, dt: 0 });
+    const o = gop.get(k); o.sl += soGV(r[c.sl]); o.dt += soGV(r[c.dt]);
+  }
+  const ds = [...gop.values()];
+  if (!ds.length) return null;
+  const ngay = ngayChiDinh || ngayTuTenFile(fileName);
+  const cap = capNhatTuTen(fileName) || bayGioVN();
+  const laRobot = /_robot_/.test(String(fileName || ''));
+  const motNgay = KIEU_FILE_ROBOT.v === 'ngay' || (KIEU_FILE_ROBOT.v !== 'luyke' && laRobot && !ngayChiDinh);
+  if (motNgay) {
+    // File hôm nay của robot: thay hẳn số của ngày đó (mã nào chưa bán = 0)
+    const cu = (await docTabAnToan(sheets, TAB_TD_BAN_NGAY)).slice(1)
+      .filter((r) => r[0] && String(r[0]) !== ngay && String(r[0]).slice(0, 7) === TD_THANG);
+    if (ngay.slice(0, 7) !== TD_THANG) return { loai: 'thidua', tenTab: TAB_TD_BAN_NGAY, soDong: 0, ngoaiThang: true };
+    for (const o of ds) cu.push([ngay, o.ma, o.ten, o.st, o.tenST, Math.round(o.sl * 100) / 100, Math.round(o.dt), cap]);
+    await ghiDeTab(sheets, TAB_TD_BAN_NGAY, ['Ngày', 'Mã Model', 'Model', 'Mã siêu thị', 'Tên siêu thị', 'SL bán', 'Doanh thu', 'Cập nhật'], cu);
+    return { loai: 'thidua', tenTab: TAB_TD_BAN_NGAY, soDong: ds.length, motNgay: true, ngay };
+  }
+  // File luỹ kế gửi tay: tên file có giờ xuất -> luỹ kế tới lúc xuất hôm đó; không có giờ -> hết hôm qua
+  let moc = ngay, capMoc = cap;
+  if (ngayChiDinh) capMoc = `hết ${ngay.slice(8, 10)}/${ngay.slice(5, 7)}`;
+  else if (gioTuTenFile(fileName) == null) { moc = taoKeyNgayLuiDmsk(ngay, 1); capMoc = `hết ${moc.slice(8, 10)}/${moc.slice(5, 7)}`; }
+  const maMoi = new Set(ds.map((o) => o.ma));
+  const giuLai = (await docTabAnToan(sheets, TAB_TD_BAN_LK)).slice(1).filter((r) => r[0] && !maMoi.has(String(r[0]).trim()));
+  const rows = ds.map((o) => [o.ma, o.ten, o.st, o.tenST, Math.round(o.sl * 100) / 100, Math.round(o.dt), moc, capMoc]);
+  await ghiDeTab(sheets, TAB_TD_BAN_LK, ['Mã Model', 'Model', 'Mã siêu thị', 'Tên siêu thị', 'SL luỹ kế', 'DT luỹ kế', 'Mốc ngày', 'Cập nhật'], [...giuLai, ...rows]);
+  return { loai: 'thidua', tenTab: TAB_TD_BAN_LK, soDong: ds.length, motNgay: false, ngay: moc, ngoaiThang: moc.slice(0, 7) !== TD_THANG };
+}
+
+// Tính bán T11 theo (mã model, siêu thị) từ 2 tab luỹ kế + ngày
+function tdTinhBan(lkRows, ngayRows) {
+  const ban = new Map(); // `${ma}|${st}` -> sl
+  const moc = new Map(); // ma -> mốc ngày của file luỹ kế (trong tháng thi đua)
+  const add = (k, v) => ban.set(k, (ban.get(k) || 0) + v);
+  for (const r of lkRows) {
+    const ma = String(r[0] ?? '').trim(), m = String(r[6] || '');
+    if (!ma || m.slice(0, 7) !== TD_THANG) continue; // file tháng khác (vd T10) -> bỏ
+    moc.set(ma, m);
+    add(`${ma}|${chuanHoaMaST(r[2])}`, soGV(r[4]));
+  }
+  let capNgay = '';
+  for (const r of ngayRows) {
+    const ngay = String(r[0] || ''), ma = String(r[1] ?? '').trim();
+    if (ngay.slice(0, 7) !== TD_THANG) continue;
+    if (moc.has(ma) && ngay <= moc.get(ma)) continue; // đã nằm trong luỹ kế
+    add(`${ma}|${chuanHoaMaST(r[3])}`, soGV(r[5]));
+    if (ngay >= capNgay.slice(0, 10)) capNgay = `${ngay}|${r[7] || ''}`;
+  }
+  return { ban, capNgay: capNgay.split('|')[1] || '' };
+}
+
+async function docDuLieuThiDua(maST) {
+  const sheets = getSheetsClient();
+  const ton = (await docTabAnToan(sheets, TAB_TD_TON)).slice(1).filter((r) => r[0]);
+  const lk = (await docTabAnToan(sheets, TAB_TD_BAN_LK)).slice(1).filter((r) => r[0]);
+  const ng = (await docTabAnToan(sheets, TAB_TD_BAN_NGAY)).slice(1).filter((r) => r[0]);
+  if (!ton.length && !lk.length && !ng.length) throw new Error('Chưa có dữ liệu THI ĐUA T11. Anh gửi file "BC Tồn Theo Model" và "Doanh Thu Theo Model" (từ 01/11) vào group giúp em.');
+  const st = new Map();
+  const lay = (ma, ten) => {
+    ma = chuanHoaMaST(ma);
+    if (!ma || TD_ST_LOAI.has(ma)) return null;
+    if (!st.has(ma)) st.set(ma, { ma, ten: ten || '', ton: {}, ban: {} });
+    const o = st.get(ma); if (!o.ten && ten) o.ten = ten;
+    return o;
+  };
+  for (const r of ton) {
+    const k = tdNhomCua(r[0], r[1]); const o = lay(r[2], String(r[3] || ''));
+    if (!k || !o) continue;
+    o.ton[k] = (o.ton[k] || 0) + soGV(r[4]);
+  }
+  const tenMa = new Map([...ton, ...lk].map((r) => [String(r[0]).trim(), String(r[1] || '')]));
+  for (const r of ng) tenMa.set(String(r[1]).trim(), String(r[2] || ''));
+  const { ban, capNgay } = tdTinhBan(lk, ng);
+  const tenST = new Map([...lk.map((r) => [chuanHoaMaST(r[2]), String(r[3] || '')]), ...ng.map((r) => [chuanHoaMaST(r[3]), String(r[4] || '')])]);
+  for (const [key, sl] of ban) {
+    const [ma, s] = key.split('|');
+    const k = tdNhomCua(ma, tenMa.get(ma)); const o = lay(s, tenST.get(s));
+    if (!k || !o) continue;
+    o.ban[k] = (o.ban[k] || 0) + sl;
+  }
+  let dsST = [...st.values()].sort((a, b) => Number(a.ma) - Number(b.ma));
+  let nhanTong = `TỔNG KV (${dsST.length} ST)`;
+  if (maST) {
+    dsST = dsST.filter((x) => String(x.ma) === String(maST));
+    if (!dsST.length) throw new Error(`Không có số THI ĐUA của siêu thị ${maST}.`);
+    nhanTong = `TỔNG ST ${maST}`;
+  }
+  const moiNhat = (ds, i) => ds.map((r) => String(r[i] || '')).filter(Boolean).sort((a, b) => {
+    const k = (x) => { const m = x.match(/(\d{2}):(\d{2})\s+(\d{2})\/(\d{2})/); return m ? `${m[4]}${m[3]}${m[1]}${m[2]}` : x; };
+    return k(b).localeCompare(k(a));
+  })[0] || '';
+  const capLK = lk.filter((r) => String(r[6] || '').slice(0, 7) === TD_THANG);
+  return { dsST, nhanTong, capTon: moiNhat(ton, 5), capBan: capNgay || moiNhat(capLK, 7) };
+}
+
+// Chia chữ thành nhiều dòng theo số ký tự
+function tdXuongDong(s, max) {
+  const out = []; let dong = '';
+  for (const tu of String(s).split(/\s+/)) {
+    if (dong && (dong + ' ' + tu).length > max) { out.push(dong); dong = tu; } else dong = dong ? dong + ' ' + tu : tu;
+  }
+  if (dong) out.push(dong);
+  return out;
+}
+
+function veSvgThiDua(d) {
+  const W = 1600, PAD = 24, ROW = 30;
+  const C = { xanh: '#00873C', xanhDam: '#0B5A2B', nen: '#E4F2E8', chan: '#FAFCFA', vien: '#EDF0ED', phu: '#56655A', xam: '#B0B8B2', do: '#C62828', vang: '#FFD200' };
+  const t = (x, y, s, o = {}) =>
+    `<text x="${x}" y="${y}" font-size="${o.size || 15}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1D2B1F'}" text-anchor="${o.anchor || 'start'}"${o.ls ? ` letter-spacing="${o.ls}"` : ''}>${escXml(s)}</text>`;
+  const fs = (v) => String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const p = [];
+
+  // ---- Tiêu đề đóng khung ----
+  const HH = 250;
+  p.push(`<defs><linearGradient id="tdg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#006B2F"/><stop offset="0.55" stop-color="#00A94A"/><stop offset="1" stop-color="#007A36"/></linearGradient></defs>`);
+  p.push(`<rect x="0" y="0" width="${W}" height="${HH}" fill="url(#tdg)"/>`);
+  p.push(`<rect x="${PAD + 4}" y="20" width="${W - PAD * 2 - 8}" height="${HH - 40}" rx="18" fill="none" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="2"/>`);
+  p.push(`<rect x="${PAD + 14}" y="30" width="${W - PAD * 2 - 28}" height="${HH - 60}" rx="14" fill="#000000" fill-opacity="0.10" stroke="${C.vang}" stroke-width="4"/>`);
+  p.push(t(W / 2, 70, 'BÁCH HÓA XANH · CHƯƠNG TRÌNH THI ĐUA', { size: 15, bold: true, fill: '#FFE680', anchor: 'middle', ls: 4 }));
+  p.push(t(W / 2, 124, 'THI ĐUA THÁNG 11', { size: 52, bold: true, fill: '#FFFFFF', anchor: 'middle', ls: 2 }));
+  const rw = 560, rx = (W - rw) / 2;
+  p.push(`<rect x="${rx}" y="144" width="${rw}" height="52" rx="10" fill="#B89400"/>`);
+  p.push(`<rect x="${rx}" y="140" width="${rw}" height="52" rx="10" fill="${C.vang}"/>`);
+  p.push(t(W / 2, 177, 'KV QLTP QUỐC NAM 40909', { size: 30, bold: true, fill: '#0B4A22', anchor: 'middle', ls: 1.5 }));
+  p.push(t(W / 2, 214, `Kem Joyday · Sữa Celano · Milo lon · C2  |  Tồn ${d.capTon || '–'} · Bán T11 ${d.capBan || 'chưa có'}`, { size: 15, fill: '#FFFFFF', anchor: 'middle' }));
+  let y = HH + 18;
+
+  // ---- Bảng ----
+  const xTen = PAD + 50, x0 = 430, wNhom = (W - PAD - x0) / TD_NHOM.length;
+  const xc = (gi, j) => x0 + gi * wNhom + (j === 0 ? wNhom * 0.5 - 14 : wNhom - 14);
+  TD_NHOM.forEach((g, gi) => {
+    const x1 = x0 + gi * wNhom;
+    p.push(`<rect x="${x1 + 2}" y="${y}" width="${wNhom - 4}" height="54" fill="${g.mau}"/>`);
+    p.push(t(x1 + wNhom / 2, y + 24, g.ten, { size: 16, bold: true, fill: '#FFFFFF', anchor: 'middle' }));
+    p.push(t(x1 + wNhom / 2, y + 44, `${g.phu} · ${g.dv}`, { size: 12.5, fill: '#FFFFFF', anchor: 'middle' }));
+  });
+  y += 54;
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="34" fill="${C.nen}"/>`);
+  p.push(`<line x1="${PAD}" y1="${y + 34}" x2="${W - PAD}" y2="${y + 34}" stroke="${C.xanh}" stroke-width="2"/>`);
+  p.push(t(PAD + 34, y + 22, '#', { size: 13, bold: true, fill: C.xanhDam, anchor: 'end' }));
+  p.push(t(xTen, y + 22, 'Siêu thị', { size: 13, bold: true, fill: C.xanhDam }));
+  TD_NHOM.forEach((g, gi) => {
+    p.push(t(xc(gi, 0), y + 22, 'Tồn', { size: 13, bold: true, fill: C.xanhDam, anchor: 'end' }));
+    p.push(t(xc(gi, 1), y + 22, 'Bán T11', { size: 13, bold: true, fill: C.xanhDam, anchor: 'end' }));
+  });
+  const yTop = y; y += 36;
+  const tong = (k, g) => d.dsST.reduce((s, x) => s + (x[k][g.k] || 0), 0);
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 4}" fill="${C.xanh}"/>`);
+  p.push(t(xTen, y + 23, d.nhanTong, { size: 16, bold: true, fill: '#FFFFFF' }));
+  TD_NHOM.forEach((g, gi) => {
+    p.push(t(xc(gi, 0), y + 23, fs(tong('ton', g)), { size: 16, bold: true, fill: '#FFFFFF', anchor: 'end' }));
+    p.push(t(xc(gi, 1), y + 23, fs(tong('ban', g)), { size: 16, bold: true, fill: '#FFFFFF', anchor: 'end' }));
+  });
+  y += ROW + 4;
+  d.dsST.forEach((r, i) => {
+    if (i % 2 === 1) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${C.chan}"/>`);
+    p.push(`<line x1="${PAD}" y1="${y + ROW}" x2="${W - PAD}" y2="${y + ROW}" stroke="${C.vien}"/>`);
+    const yt = y + 20;
+    p.push(t(PAD + 34, yt, i + 1, { fill: C.phu, anchor: 'end' }));
+    p.push(`<text x="${xTen}" y="${yt}" font-size="15" fill="#1D2B1F"><tspan font-weight="700">${escXml(r.ma)}</tspan> · ${escXml(rutGonTen(String(r.ten).replace(/\(\s+/g, '(').replace(/\s+\)/g, ')').replace(/Phường 0?1\b/, 'P.1'), 34))}</text>`);
+    TD_NHOM.forEach((g, gi) => {
+      const ton = r.ton[g.k] || 0, ban = r.ban[g.k] || 0;
+      p.push(t(xc(gi, 0), yt, fs(ton), { anchor: 'end', bold: ton <= 0, fill: ton <= 0 ? C.do : '#1D2B1F' }));
+      p.push(t(xc(gi, 1), yt, fs(ban), { anchor: 'end', bold: ban > 0, fill: ban > 0 ? g.mau : C.xam }));
+    });
+    y += ROW;
+  });
+  TD_NHOM.forEach((g, gi) => { const x = x0 + gi * wNhom; p.push(`<line x1="${x}" y1="${yTop}" x2="${x}" y2="${y}" stroke="#DFE8E1" stroke-width="3"/>`); });
+  y += 28;
+
+  // ---- Sản phẩm tính thưởng ----
+  p.push(t(PAD, y + 6, 'SẢN PHẨM TÍNH THƯỞNG', { size: 22, bold: true, fill: C.xanh }));
+  y += 22;
+  const GAP = 14, wTong = W - PAD * 2 - GAP * 3;
+  const rong = [wTong * 0.4, wTong * 0.22, wTong * 0.16, wTong * 0.22];
+  const xs = [PAD]; for (let k = 1; k < 4; k++) xs.push(xs[k - 1] + rong[k - 1] + GAP);
+  const the = []; // mỗi thẻ: { mau, noiDung(x, y0) -> [svg, chiều cao] }
+  const nh = (k) => TD_NHOM.find((g) => g.k === k);
+  const huyHieu = (x, yy, s, mau) => { const w = s.length * 7.2 + 18; return `<rect x="${x}" y="${yy}" width="${w}" height="22" rx="6" fill="#FFF1DC"/>${t(x + 9, yy + 15.5, s, { size: 12.5, bold: true, fill: '#A35B00' })}`; };
+  const dsDong = (x, yy, w, ds) => { const o = []; let h = 0; ds.forEach((s, n) => { const ls = tdXuongDong(`${n + 1}. ${s}`, Math.floor(w / 7.4)); ls.forEach((l, j) => { o.push(t(x + (j ? 18 : 0), yy + h + 16, l, { size: 13.5 })); h += 20; }); }); return [o.join(''), h]; };
+  // Joyday: nhóm + nhãn
+  the.push((x, w) => {
+    const g = nh('joyday'); const o = []; let h = 0;
+    o.push(t(x + 14, 30, `KEM JOYDAY (${g.ma.length} mã) – tất cả kem Joyday`, { size: 16, bold: true, fill: g.mau })); h = 40;
+    o.push(huyHieu(x + 14, h, 'Có mốc: bán T11 ≥ 2 lần T10', g.mau)); h += 32;
+    o.push(t(x + 14, h + 4, 'Thưởng NV ST: 3,25% DT bán ra', { size: 13.5, fill: C.phu })); h += 16;
+    for (const [nhom, ds] of TD_SP_IN.joyday) {
+      h += 14; o.push(t(x + 14, h + 12, nhom, { size: 14, bold: true, fill: '#5A3A8A' })); h += 20;
+      let cx = x + 14;
+      for (const s of ds) {
+        const cw = s.length * 7.1 + 22;
+        if (cx + cw > x + w - 12) { cx = x + 14; h += 30; }
+        o.push(`<rect x="${cx}" y="${h}" width="${cw}" height="25" rx="12.5" fill="#FFFFFF" stroke="#D9CBEE"/>`);
+        o.push(t(cx + 11, h + 17, s, { size: 13 }));
+        cx += cw + 6;
+      }
+      h += 30;
+    }
+    return [o.join(''), h + 8, g.mau];
+  });
+  the.push((x, w) => {
+    const a = nh('celym'), b = nh('celth'); const o = []; let h = 0;
+    o.push(t(x + 14, 30, 'SỮA CELANO', { size: 16, bold: true, fill: a.mau })); h = 46;
+    o.push(t(x + 14, h + 4, '① Yến mạch / Trà sữa Celano', { size: 14.5, bold: true, fill: a.mau })); h += 14;
+    o.push(huyHieu(x + 14, h, 'Có mốc: bán T11 ≥ 1,5 lần T10')); h += 30;
+    o.push(t(x + 14, h + 4, 'Thưởng NV ST: 13.000đ/thùng', { size: 13.5, fill: C.phu })); h += 12;
+    let [s1, h1] = dsDong(x + 18, h, w - 34, TD_SP_IN.celym); o.push(s1); h += h1 + 18;
+    o.push(t(x + 14, h + 4, '② Sữa tiệt trùng Celano có thạch 170ml', { size: 14.5, bold: true, fill: b.mau })); h += 14;
+    o.push(huyHieu(x + 14, h, 'Có mốc: DT ≥ 200.000đ/tuần/ST')); h += 30;
+    o.push(t(x + 14, h + 4, 'Thưởng NV ST: 13.000đ/thùng · lốc, thùng đều tính', { size: 13.5, fill: C.phu })); h += 12;
+    [s1, h1] = dsDong(x + 18, h, w - 34, TD_SP_IN.celth); o.push(s1); h += h1;
+    o.push(t(x + 14, h + 18, '1 lốc = 4 hộp · 1 thùng = 48 hộp', { size: 12.5, fill: C.phu })); h += 26;
+    return [o.join(''), h + 10, a.mau];
+  });
+  the.push((x, w) => {
+    const g = nh('milo'); const o = []; let h = 0;
+    o.push(t(x + 14, 30, 'MILO LON 240ML TH24', { size: 16, bold: true, fill: g.mau })); h = 40;
+    o.push(huyHieu(x + 14, h, 'Không mốc – bán nhiêu tính nhiêu')); h += 32;
+    o.push(t(x + 14, h + 4, 'Thưởng NV ST: 1.625đ/lốc', { size: 13.5, fill: C.phu })); h += 20;
+    o.push(t(x + 14, h + 4, '· 6.500đ/thùng', { size: 13.5, fill: C.phu })); h += 12;
+    const [s1, h1] = dsDong(x + 18, h, w - 34, TD_SP_IN.milo); o.push(s1); h += h1;
+    o.push(t(x + 14, h + 18, 'KM mua 4 tặng 1 · mua 9 tặng 3', { size: 12.5, fill: C.phu })); h += 26;
+    return [o.join(''), h + 10, g.mau];
+  });
+  the.push((x, w) => {
+    const g = nh('c2'); const o = []; let h = 0;
+    o.push(t(x + 14, 30, `TRÀ C2 (${g.ma.length} mã)`, { size: 16, bold: true, fill: g.mau })); h = 40;
+    o.push(huyHieu(x + 14, h, 'Không mốc – bán nhiêu tính nhiêu')); h += 26;
+    const [s1, h1] = dsDong(x + 18, h, w - 34, TD_SP_IN.c2); o.push(s1); h += h1;
+    return [o.join(''), h + 14, g.mau];
+  });
+  const ve = the.map((f, k) => f(xs[k], rong[k]));
+  ve.forEach(([svg, h, mau], k) => {
+    p.push(`<g transform="translate(0 ${y})"><rect x="${xs[k]}" y="0" width="${rong[k]}" height="${h}" rx="10" fill="${mau}" fill-opacity="0.07"/><rect x="${xs[k]}" y="0" width="${rong[k]}" height="5" rx="2" fill="${mau}"/>${svg}</g>`);
+  });
+  y += Math.max(...ve.map((v) => v[1])) + 26;
+  p.push(t(W / 2, y, 'Tồn đỏ = hết hàng · Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh - 197042', { size: 13, fill: '#7A877D', anchor: 'middle' }));
+  const H = y + 22;
+  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`, W };
+}
+
+function laTriggerThiDua(text) {
+  return TD_BAT && coTuKhoa(text, ['thi đua t11', 'thi dua t11', 'thi đua tháng 11', 'thi dua thang 11', 'bc thi đua', 'bc thi dua', 'thi đua', 'thi dua']);
+}
+
+async function veAnhThiDua(maST) {
+  const d = await docDuLieuThiDua(maST);
+  const { svg, W } = veSvgThiDua(d);
+  return { png: svgThanhPng(svg, Math.round(W * 1.5)), preview: svgThanhPng(svg, 600) };
+}
+
+async function generateThiDuaReport(text) {
+  const maST = await timMaST(String(text || '').replace(/t\s*11|tháng\s*11|thang\s*11/gi, ' '));
+  const { png, preview } = await veAnhThiDua(maST);
+  const id = `td-${maST || 'kv'}-${Date.now().toString(36)}`;
+  luuAnh(id, png, preview);
+  const q = `loai=td${maST ? `&st=${maST}` : ''}`;
+  return { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?${q}`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?${q}&nho=1` };
+}
+
 async function chayLenh(text) {
   text = (text || '').normalize('NFC');
   // TẮT 27/10: ĐMSK, THS + Trứng, DT NGÀNH HÀNG, ĐẶT MỨC, BNNB, BC NGÀY, DTLK KV
   const tat = [[laTriggerBcNgay, 'BC NGÀY'], [laTriggerDtNganhHang, 'DT NGÀNH HÀNG'], [laTriggerThst, 'THS + Trứng'], [laTriggerBnnb, 'BNNB'], [laTriggerDmsk, 'ĐMSK'], [(x) => /đ[ặa]t\s*m[ứu]c/i.test(x), 'ĐẶT MỨC'], [laTriggerDtlk, 'DTLK'], [laTriggerGiaVon, 'GIÁ VỐN'], [laTriggerHuyMmkk, 'HUỶ MMKK'], [laTriggerCvst, 'BC CVST']].find(([f]) => f(text));
   if (tat) return { ten: 'Đã tắt', ket: { type: 'text', text: `Báo cáo ${tat[1]} đã tắt. Gõ MENU để xem các báo cáo đang dùng.` } };
+  if (laTriggerThiDua(text)) return { ten: 'Thi đua T11', ket: await generateThiDuaReport(text) };
   const datMuc = null;
   if (datMuc) return { ten: 'Đặt mức', ket: datMuc };
   if (laLenhMtDtlk(text)) { const kq = await datMtDtlk(text); if (kq) return { ten: 'MT DTLK', ket: kq }; }
@@ -3764,6 +4142,7 @@ async function taoMenuFlex() {
           hangNut([nutMenu(`Mốc DT tháng ${st}`, `LÀM CHỦ ${st}`, cam)]),
           tieuDeMuc('🏆', 'THI ĐUA', 'tự cập nhật'),
           hangNut([nutMenu('Sữa Celano + C2', 'BC SỮA', xanh)]),
+          ...(TD_BAT ? [hangNut([nutMenu('Thi đua T11 KV', 'THI ĐUA T11', xanh), nutMenu(`Thi đua T11 ${st}`, `THI ĐUA T11 ${st}`, xanh)])] : []),
           tieuDeMuc('📁', 'BÁO CÁO GỬI FILE', 'số lần gửi file gần nhất'),
           hangNut([nutMenu('Đặt hàng FMCG KV', 'ĐẶT HÀNG FMCG', xam), nutMenu(`Đặt hàng FMCG ${st}`, `ĐẶT HÀNG FMCG ${st}`, xam)]),
         ],
@@ -4045,6 +4424,10 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         continue;
       }
 
+      if (Number(event.message.fileSize || 0) > 12 * 1024 * 1024) {
+        await guiTraLoi(event, targetId, { type: 'text', text: `⚠️ File "${fileName}" nặng ${(event.message.fileSize / 1048576).toFixed(1)}MB, bot dễ bị tràn bộ nhớ. Anh xuất lại file chỉ gồm các mã cần (lọc theo Model / Ngành hàng) rồi gửi giúp em.` });
+        continue;
+      }
       console.log(`[webhook] nhận file "${fileName}", đang nạp vào Sheet...`);
       try {
         const buffer = await taiNoiDungFileLine(event.message.id);
@@ -4109,6 +4492,17 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
 
         if (kq.loai === 'bo_qua') {
           await guiTraLoi(event, targetId, { type: 'text', text: kq.thongBao });
+          continue;
+        }
+
+        if (kq.loai === 'thidua') {
+          const ghiChu = kq.ngoaiThang ? `ℹ️ File bán này là số trước tháng 11 (mốc ${fmtNgay(kq.ngay)}) nên em KHÔNG tính vào Bán T11.` : '';
+          try {
+            const anh = await generateThiDuaReport('');
+            await guiTraLoi(event, targetId, ghiChu ? [{ type: 'text', text: ghiChu }, anh] : anh);
+          } catch (e) {
+            await guiTraLoi(event, targetId, { type: 'text', text: `✅ Đã nạp ${kq.soDong} dòng vào ${kq.tenTab}.${ghiChu ? '\n' + ghiChu : ''}\n⚠️ Chưa tạo được báo cáo: ${e.message}` });
+          }
           continue;
         }
 
@@ -4297,6 +4691,8 @@ app.get('/anh/:id.png', async (req, res) => {
         ve = await veAnhBnnb();
       } else if (req.query.loai === 'dmsk') {
         ve = await veAnhDmsk(String(req.query.st || ''));
+      } else if (req.query.loai === 'td') {
+        ve = await veAnhThiDua(String(req.query.st || ''));
       } else if (req.query.loai === 'sua') {
         ve = await veAnhSua(String(req.query.st || ''));
       } else if (req.query.loai === 'mm') {
@@ -4345,7 +4741,7 @@ app.get('/robot/cau-hinh', async (req, res) => {
     const cot = async (tab, i) => [...new Set((await docTabAnToan(sheets, tab)).slice(1).map((r) => chuanHoaMaST(r[i])).filter((x) => /^\d+$/.test(x)))];
     res.json({
       ok: true,
-      maSua: [...(await dsMaSua(sheets))],
+      maSua: [...new Set([...(await dsMaSua(sheets)), ...(TD_BAT ? TD_TAT_CA_MA() : [])])], // + mã THI ĐUA T11
       stSua: await cot(TAB_SUA_TON, 2),
       stDmsk: await cot(TAB_DMSK_BASE, 0),
       stThst: (await cot(TAB_THST_BASE, 5))[0] || MENU_MA_ST,
@@ -4383,4 +4779,4 @@ if (require.main === module) {
   })();
 }
 
-module.exports = { docDuLieuThst, veSvgThst, laTriggerThst, laLenhNapBaseThst, veSvgDtHomNay, laTriggerDtHomNay, docDuLieuDtlk, veSvgDtlk, laTriggerDtlk, laLenhMtDtlk, datMtDtlk, docDuLieuBnnb, veSvgBnnb, laTriggerBnnb, laLenhNapBaseBnnb, docDuLieuDmsk, veSvgDmsk, laTriggerDmsk, laLenhNapBaseDmsk, docDuLieuSua, veSvgSua, laTriggerSua, laTriggerDtNganhHang, laTriggerGiaVon, laTriggerHuyMmkk, docDuLieuHuyMmkk, veSvgHuyMmkk, datMucThiDua, veSvgGiaVon, docDuLieuGiaVon, generateGiaVonReport, gioTuTenFile, napFileVaoSheet, generateDtNganhHangReport, tinhDuLieuDtNH, veSvgDtNH, docFileThiDua, gopDoanhThuModel };
+module.exports = { docDuLieuThiDua, veSvgThiDua, tdTinhBan, tdNhomCua, laTriggerThiDua, chayLenh, docDuLieuThst, veSvgThst, laTriggerThst, laLenhNapBaseThst, veSvgDtHomNay, laTriggerDtHomNay, docDuLieuDtlk, veSvgDtlk, laTriggerDtlk, laLenhMtDtlk, datMtDtlk, docDuLieuBnnb, veSvgBnnb, laTriggerBnnb, laLenhNapBaseBnnb, docDuLieuDmsk, veSvgDmsk, laTriggerDmsk, laLenhNapBaseDmsk, docDuLieuSua, veSvgSua, laTriggerSua, laTriggerDtNganhHang, laTriggerGiaVon, laTriggerHuyMmkk, docDuLieuHuyMmkk, veSvgHuyMmkk, datMucThiDua, veSvgGiaVon, docDuLieuGiaVon, generateGiaVonReport, gioTuTenFile, napFileVaoSheet, generateDtNganhHangReport, tinhDuLieuDtNH, veSvgDtNH, docFileThiDua, gopDoanhThuModel };
