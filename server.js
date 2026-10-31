@@ -2757,7 +2757,7 @@ async function napFileNganhBHX(sheets, header, dataRows, fileName) {
     if (!ngay || !ma) continue;
     const k = `${ngay}|${ma}`;
     const o = gop.get(k) || [ngay, ma, tenNganSieuThi(r[c.st]), 0, 0, 0, cap];
-    const nh = String(r[c.nh] || '').trim().toLowerCase(), v = soGV(r[c.dt]);
+    const nh = String(r[c.nh] || '').trim().toLowerCase().replace(/^\d+\s*-\s*/, ''), v = soGV(r[c.dt]); // file gửi tay ghi "11 - Thịt" -> bỏ số đầu
     if (NH_FRESH.includes(nh)) o[4] += v; else if (NH_DONGMAT.includes(nh)) o[5] += v; else o[3] += v;
     gop.set(k, o);
   }
@@ -2774,7 +2774,7 @@ async function napFileNganhBHX(sheets, header, dataRows, fileName) {
     for (const r of dataRows) {
       const ngay = keyNgayExcel(r[c.ngay]); const ma = chuanHoaMaST(r[c.st]);
       if (!cacNgay.includes(ngay) || !ma) continue;
-      const nh = String(r[c.nh] || '').trim(); const k = `${ngay}|${ma}|${nh}`;
+      const nh = String(r[c.nh] || '').trim().replace(/^\d+\s*-\s*/, ''); const k = `${ngay}|${ma}|${nh}`;
       ct.set(k, (ct.get(k) || 0) + soGV(r[c.dt]));
     }
     const moiCT = [...ct.entries()].map(([k, v]) => { const [ngay, ma, nh] = k.split('|'); return [ngay, ma, nh, Math.round(v)]; });
