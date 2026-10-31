@@ -2815,7 +2815,7 @@ function veSvgBcNgay(d) {
   const X = [0, 100, 250, 390, 530, 690, 790, W]; // mép cột: Ngày | FMCG | FRESH | ĐÔNG MÁT | TỔNG | BILL | GTB (120)
   const giua = (i) => (X[i] + X[i + 1]) / 2;
   const p = [];
-  p.push(t(W / 2, 46, 'BÁO CÁO DOANH THU CUỐI NGÀY', { size: 32, bold: true, fill: C.do }));
+  p.push(t(W / 2, 46, 'BÁO CÁO DOANH THU KHUNG 22H', { size: 32, bold: true, fill: C.do }));
   p.push(`<line x1="0" y1="66" x2="${W}" y2="66" stroke="${C.vien}" stroke-width="1.5"/>`);
   p.push(t(W / 2, 98, d.ten.includes(' - ') ? d.ten : `${d.ma} - ${d.ten}`, { size: 26, bold: true, fill: C.do }));
   let y = 114;
@@ -2840,7 +2840,7 @@ function veSvgBcNgay(d) {
   }
   for (let yy = bd; yy <= y; yy += RH) p.push(`<line x1="0" y1="${yy}" x2="${W}" y2="${yy}" stroke="${C.vien}" stroke-width="1.2"/>`);
   // TOTAL + DỰ KIẾN
-  for (const [nhan, o] of [['TOTAL', d.T], ['DỰ KIẾN', d.DK]]) {
+  for (const [nhan, o] of [['TOTAL', d.T]]) { // bỏ dòng DỰ KIẾN (31/10)
     p.push(`<rect x="0" y="${y}" width="${W}" height="${RH}" fill="${C.xanh}"/>`);
     const v = [nhan, so(o.fmcg), so(o.fresh), so(o.dm), so(o.tong), so(o.bill), so(o.gtb)];
     v.forEach((s2, i) => p.push(t(giua(i), y + 25, s2, { size: 19, bold: true, fill: C.trang })));
@@ -2851,7 +2851,7 @@ function veSvgBcNgay(d) {
   p.push(`<line x1="${X[1]}" y1="${hY + RH}" x2="${X[4]}" y2="${hY + RH}" stroke="${C.vien}" stroke-width="1.2"/>`);
   p.push(`<rect x="0.75" y="${hY}" width="${W - 1.5}" height="${y - hY}" fill="none" stroke="${C.vien}" stroke-width="1.5"/>`);
   y += 26;
-  p.push(t(10, y, `${d.ma} · tháng ${d.thang.slice(5, 7)}/${d.thang.slice(0, 4)} · ${d.dong.length} ngày có số · Dự kiến = tổng ÷ ${d.dong.length} ngày × ${new Date(Number(d.thang.slice(0, 4)), Number(d.thang.slice(5, 7)), 0).getDate()} ngày · GTB dự kiến = TB giá trị bill các ngày${d.cap ? ` · cập nhật ${d.cap}` : ''}`, { size: 13, fill: '#666666', anchor: 'start' }));
+  p.push(t(10, y, `${d.ma} · tháng ${d.thang.slice(5, 7)}/${d.thang.slice(0, 4)} · ${d.dong.length} ngày có số${d.cap ? ` · cập nhật ${d.cap}` : ''}`, { size: 13, fill: '#666666', anchor: 'start' }));
   const H = y + 16;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
 }
@@ -3942,8 +3942,8 @@ async function generateThiDuaReport(text) {
 
 async function chayLenh(text) {
   text = (text || '').normalize('NFC');
-  // TẮT 27/10: ĐMSK, THS + Trứng, DT NGÀNH HÀNG, ĐẶT MỨC, BNNB, BC NGÀY, DTLK KV
-  const tat = [[laTriggerBcNgay, 'BC NGÀY'], [laTriggerDtNganhHang, 'DT NGÀNH HÀNG'], [laTriggerThst, 'THS + Trứng'], [laTriggerBnnb, 'BNNB'], [laTriggerDmsk, 'ĐMSK'], [(x) => /đ[ặa]t\s*m[ứu]c/i.test(x), 'ĐẶT MỨC'], [laTriggerDtlk, 'DTLK'], [laTriggerGiaVon, 'GIÁ VỐN'], [laTriggerHuyMmkk, 'HUỶ MMKK'], [laTriggerCvst, 'BC CVST'], [laTriggerSua, 'SỮA CELANO + C2']].find(([f]) => f(text)); // TẮT 31/10: BC SỮA
+  // TẮT 27/10: ĐMSK, THS + Trứng, DT NGÀNH HÀNG, ĐẶT MỨC, BNNB, DTLK KV (BC NGÀY bật lại 31/10: mẫu KHUNG 22H)
+  const tat = [[laTriggerDtNganhHang, 'DT NGÀNH HÀNG'], [laTriggerThst, 'THS + Trứng'], [laTriggerBnnb, 'BNNB'], [laTriggerDmsk, 'ĐMSK'], [(x) => /đ[ặa]t\s*m[ứu]c/i.test(x), 'ĐẶT MỨC'], [laTriggerDtlk, 'DTLK'], [laTriggerGiaVon, 'GIÁ VỐN'], [laTriggerHuyMmkk, 'HUỶ MMKK'], [laTriggerCvst, 'BC CVST'], [laTriggerSua, 'SỮA CELANO + C2']].find(([f]) => f(text)); // TẮT 31/10: BC SỮA
   if (tat) return { ten: 'Đã tắt', ket: { type: 'text', text: `Báo cáo ${tat[1]} đã tắt. Gõ MENU để xem các báo cáo đang dùng.` } };
   if (laTriggerThiDua(text)) return { ten: 'Thi đua T11', ket: await generateThiDuaReport(text) };
   const datMuc = null;
@@ -4139,7 +4139,7 @@ async function taoMenuFlex() {
         contents: [
           tieuDeMuc('⏱', 'REALTIME HÔM NAY', 'tự cập nhật'),
           hangNut([nutMenu('DT hôm nay KV', 'DT HÔM NAY', cam), nutMenu(`DT hôm nay ${st}`, `DT HÔM NAY ${st}`, cam)]),
-          hangNut([nutMenu(`Mốc DT tháng ${st}`, `LÀM CHỦ ${st}`, cam)]),
+          hangNut([nutMenu(`Mốc DT tháng ${st}`, `LÀM CHỦ ${st}`, cam), nutMenu(`BC ngày 22H ${st}`, `BC NGÀY ${st}`, cam)]),
           tieuDeMuc('🏆', 'THI ĐUA', 'tự cập nhật'),
           ...(TD_BAT ? [hangNut([nutMenu('Thi đua T11 KV', 'THI ĐUA T11', xanh), nutMenu(`Thi đua T11 ${st}`, `THI ĐUA T11 ${st}`, xanh)])] : []),
           tieuDeMuc('📁', 'BÁO CÁO GỬI FILE', 'số lần gửi file gần nhất'),
