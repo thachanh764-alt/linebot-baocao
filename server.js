@@ -3943,7 +3943,7 @@ async function generateThiDuaReport(text) {
 async function chayLenh(text) {
   text = (text || '').normalize('NFC');
   // TẮT 27/10: ĐMSK, THS + Trứng, DT NGÀNH HÀNG, ĐẶT MỨC, BNNB, BC NGÀY, DTLK KV
-  const tat = [[laTriggerBcNgay, 'BC NGÀY'], [laTriggerDtNganhHang, 'DT NGÀNH HÀNG'], [laTriggerThst, 'THS + Trứng'], [laTriggerBnnb, 'BNNB'], [laTriggerDmsk, 'ĐMSK'], [(x) => /đ[ặa]t\s*m[ứu]c/i.test(x), 'ĐẶT MỨC'], [laTriggerDtlk, 'DTLK'], [laTriggerGiaVon, 'GIÁ VỐN'], [laTriggerHuyMmkk, 'HUỶ MMKK'], [laTriggerCvst, 'BC CVST']].find(([f]) => f(text));
+  const tat = [[laTriggerBcNgay, 'BC NGÀY'], [laTriggerDtNganhHang, 'DT NGÀNH HÀNG'], [laTriggerThst, 'THS + Trứng'], [laTriggerBnnb, 'BNNB'], [laTriggerDmsk, 'ĐMSK'], [(x) => /đ[ặa]t\s*m[ứu]c/i.test(x), 'ĐẶT MỨC'], [laTriggerDtlk, 'DTLK'], [laTriggerGiaVon, 'GIÁ VỐN'], [laTriggerHuyMmkk, 'HUỶ MMKK'], [laTriggerCvst, 'BC CVST'], [laTriggerSua, 'SỮA CELANO + C2']].find(([f]) => f(text)); // TẮT 31/10: BC SỮA
   if (tat) return { ten: 'Đã tắt', ket: { type: 'text', text: `Báo cáo ${tat[1]} đã tắt. Gõ MENU để xem các báo cáo đang dùng.` } };
   if (laTriggerThiDua(text)) return { ten: 'Thi đua T11', ket: await generateThiDuaReport(text) };
   const datMuc = null;
@@ -4141,7 +4141,6 @@ async function taoMenuFlex() {
           hangNut([nutMenu('DT hôm nay KV', 'DT HÔM NAY', cam), nutMenu(`DT hôm nay ${st}`, `DT HÔM NAY ${st}`, cam)]),
           hangNut([nutMenu(`Mốc DT tháng ${st}`, `LÀM CHỦ ${st}`, cam)]),
           tieuDeMuc('🏆', 'THI ĐUA', 'tự cập nhật'),
-          hangNut([nutMenu('Sữa Celano + C2', 'BC SỮA', xanh)]),
           ...(TD_BAT ? [hangNut([nutMenu('Thi đua T11 KV', 'THI ĐUA T11', xanh), nutMenu(`Thi đua T11 ${st}`, `THI ĐUA T11 ${st}`, xanh)])] : []),
           tieuDeMuc('📁', 'BÁO CÁO GỬI FILE', 'số lần gửi file gần nhất'),
           hangNut([nutMenu('Đặt hàng FMCG KV', 'ĐẶT HÀNG FMCG', xam), nutMenu(`Đặt hàng FMCG ${st}`, `ĐẶT HÀNG FMCG ${st}`, xam)]),
@@ -4508,7 +4507,8 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
 
         if (kq.loai === 'sua') {
           try {
-            await guiTraLoi(event, targetId, await generateSuaReport());
+            // BC SỮA đã tắt (31/10): file tồn/bán sữa vẫn lưu, trả báo cáo THI ĐUA T11 thay thế
+            await guiTraLoi(event, targetId, TD_BAT ? await generateThiDuaReport('') : { type: 'text', text: 'Báo cáo Sữa Celano + C2 đã tắt, em chỉ lưu file.' });
           } catch (e) {
             await guiTraLoi(event, targetId, { type: 'text', text: `✅ Đã nạp ${kq.soDong} dòng vào ${kq.tenTab}.\n⚠️ Chưa tạo được báo cáo: ${e.message}` });
           }
