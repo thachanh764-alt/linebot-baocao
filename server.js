@@ -3613,8 +3613,8 @@ const TD_ST_LOAI = new Set(['14978', '14652']); // Phạm Hùng, 244 Trương C�
 const TD_NHOM = [
   {
     k: 'joyday', ten: 'KEM JOYDAY', phu: 'mốc ×2 so T10', mau: '#7B4BB7', dv: 'SP',
-    ma: ['2502000158', '2502000157', '2406001348', '2406001347', '2407001700', '2407001701', '2406001344', '2408002762', '2408002764', '2501000762', '2411000996', '2506000314', '2406001343', '2507002656', '2406001342', '2605000183', '2410001979', '2408002763', '2407001704', '2407001705', '2407001703', '2406001346', '2406001345', '2408002761'],
-    khopTen: (ten) => /JOYDAY/i.test(ten) && /KEM/i.test(ten), // kem Joyday mới cũng tự tính
+    // 31/10: CHỈ tính 17 mã theo file "Danh sách sku kem Joyday thưởng thi đua tháng 11"
+    ma: ['2406001344', '2406001343', '2406001342', '2605000183', '2501000762', '2407001701', '2408002762', '2406001347', '2411000996', '2407001703', '2608003391', '2605000181', '2608003583', '2608003584', '2605000182', '2605002606', '2407001700'],
   },
   { k: 'celym', ten: 'CELANO YẾN MẠCH', phu: '4 mã · mốc ×1,5 so T10', mau: '#1F7AC2', dv: 'hộp', ma: ['2609001656', '2609001221', '2609001657', '2609001223'] },
   { k: 'celth', ten: 'CELANO CÓ THẠCH', phu: 'mốc 200k/tuần', mau: '#0E9AA7', dv: 'hộp', ma: ['2610000626', '2610000627', '2610000628'] },
@@ -3634,11 +3634,10 @@ const TD_TAT_CA_MA = () => [...TD_MA.keys()];
 // Tên sản phẩm in ở cuối ảnh
 const TD_SP_IN = {
   joyday: [
-    ['Kem cây / que (13)', ['Bắp ngọt 80ml', 'Bắp socola 80ml', 'Dâu tằm nhung đỏ 65g', 'Dưa hấu táo mát lạnh 43g', 'Kokomi sữa socola và vani 35ml', 'Kokomi đậu xanh 38ml', 'Mạch nha socola giòn 65ml', 'Socola lalava 37ml', 'Socola trắng và vụn bánh 70ml', 'Socola việt quất giòn 65ml', 'Sữa vị cà phê sốt đường nâu 70ml', 'Viên socola tròn 58ml', 'Việt quốc mát lạnh 57g']],
-    ['Kem ly 100ml (4)', ['Sốt socola', 'Sữa lắc dâu tây', 'Sữa lắc socola', 'Sữa lắc vani']],
-    ['Ốc quế (3)', ['Dâu tây giòn ngọt 70ml', 'Socola giòn gấp đôi 70ml', 'Vani socola giòn 105ml']],
-    ['Mochi 45ml (2)', ['Dâu', 'Socola']],
-    ['Hộp 5 cây (2)', ['Bánh quy kem giòn 70ml', 'Mạch nha socola giòn 65ml']],
+    ['Kem cây / que (13)', ['Bắp ngọt 80ml', 'Bắp socola 80ml', 'Dưa hấu táo mát lạnh 43g', 'Kokomi sữa socola và vani 35ml', 'Mạch nha socola giòn 65ml', 'Socola trắng và vụn bánh 70ml', 'Socola việt quất giòn 65ml', 'Sữa vị cà phê sốt đường nâu 70ml', 'Sữa vị vani với vụn bánh quy 65ml', 'Sữa vị bánh Black Forest 90ml', 'Sữa vị vani 90ml', 'Vanilla berry sandwich 100ml', 'Việt quốc mát lạnh 57g']],
+    ['Kem ly 100ml (2)', ['Sữa lắc vani', 'Sữa vị socola và vani']],
+    ['Mochi 45ml (1)', ['Socola']],
+    ['Khác (1)', ['Bánh mì kem tươi Kisin các vị 75g']],
   ],
   celym: ['2609001656 Yến mạch vị Café latte 180ml', '2609001221 Yến mạch vị Matcha latte 180ml', '2609001657 Yến mạch vị Nguyên bản 180ml', '2609001223 Trà sữa vị Gạo rang có thạch 170ml'],
   celth: ['2610000626 Sữa tươi TT vị Đậu xanh có thạch 170ml', '2610000627 Sữa tươi TT vị Cốm dừa có thạch 170ml', '2610000628 Sữa tươi TT vị Mè đen có thạch 170ml'],
@@ -3863,7 +3862,7 @@ function veSvgThiDua(d) {
   // Joyday: nhóm + nhãn
   the.push((x, w) => {
     const g = nh('joyday'); const o = []; let h = 0;
-    o.push(t(x + 14, 30, `KEM JOYDAY (${g.ma.length} mã) – tất cả kem Joyday`, { size: 16, bold: true, fill: g.mau })); h = 40;
+    o.push(t(x + 14, 30, `KEM JOYDAY (${g.ma.length} mã thưởng thi đua)`, { size: 16, bold: true, fill: g.mau })); h = 40;
     o.push(huyHieu(x + 14, h, 'Có mốc: bán T11 ≥ 2 lần T10', g.mau)); h += 32;
     o.push(t(x + 14, h + 4, 'Thưởng NV ST: 3,25% DT bán ra', { size: 13.5, fill: C.phu })); h += 16;
     for (const [nhom, ds] of TD_SP_IN.joyday) {
