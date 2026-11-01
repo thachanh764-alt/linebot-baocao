@@ -3618,7 +3618,7 @@ const TD_NHOM = [
     // 31/10: CHỈ tính 17 mã theo file "Danh sách sku kem Joyday thưởng thi đua tháng 11"
     ma: ['2406001344', '2406001343', '2406001342', '2605000183', '2501000762', '2407001701', '2408002762', '2406001347', '2411000996', '2407001703', '2608003391', '2605000181', '2608003583', '2608003584', '2605000182', '2605002606', '2407001700'],
   },
-  { k: 'celym', ten: 'CELANO 4 SKU', phu: 'mốc ×1,5 so T10', mau: '#1F7AC2', dv: 'hộp', ma: ['2609001656', '2609001221', '2609001657', '2609001223'] },
+  { k: 'celym', ten: 'CELANO 4 SKU', phu: 'mốc doanh thu ×1,5 so tháng 10', mau: '#1F7AC2', dv: 'hộp', ma: ['2609001656', '2609001221', '2609001657', '2609001223'] },
   { k: 'celth', ten: 'CELANO CÓ THẠCH', phu: 'mốc 200k/tuần', mau: '#0E9AA7', dv: 'hộp', ma: ['2610000626', '2610000627', '2610000628'] },
   { k: 'milo', ten: 'MILO LON', phu: 'bán nhiêu tính nhiêu', mau: '#2E7D32', dv: 'lon', ma: ['1706010219'] },
   { k: 'c2', ten: 'C2', phu: 'bán nhiêu tính nhiêu', mau: '#D4A017', dv: 'chai', ma: ['2601001494', '2006000354', '2204000011', '2011000232', '2011000231', '2509013159', '2110003778', '2203000875'] },
@@ -3627,8 +3627,8 @@ const TD_NHOM = [
 const TD_HIEN = TD_LAY;
 // MỤC TIÊU CHU KỲ (chỉ hiện khi xem 1 siêu thị, vd "BC CELANO 8104"): MT = bán TB/ngày T10 × 1,5 × số ngày chu kỳ
 const TD_CK = { tu: '2026-11-02', den: '2026-11-08', soNgay: 7, heSo: 1.5, ngayT10: 31, nhom: 'celym' };
-// Bán T10 (hộp) Celano 4 SKU theo siêu thị — từ file Doanh Thu Theo Model tháng 10 (01–31/10)
-const TD_BASE_T10 = { '5151': 672, '5152': 564, '5153': 92, '5396': 520, '5405': 572, '5414': 504, '5489': 40, '5818': 728, '6135': 720, '6136': 264, '6294': 264, '6384': 464, '6434': 332, '6477': 212, '6525': 132, '6785': 512, '7661': 392, '7664': 756, '7665': 392, '8104': 492, '8153': 484, '8363': 488, '8828': 428, '9020': 972, '9153': 460, '9495': 228, '14012': 296, '14536': 56, '14551': 532, '14564': 132, '14586': 60, '14592': 220, '14619': 312, '14664': 260, '14823': 148, '14986': 240, '28632': 180, '28717': 144, '28724': 160, '29778': 144, '30400': 40, '34610': 256, '34673': 120, '34706': 176, '35544': 424, '35657': 288, '36191': 248, '36325': 88 }; // file T10 gửi 01/11 15:11
+// DOANH THU T10 (đồng) Celano 4 SKU theo siêu thị — file Doanh Thu Theo Model tháng 10 gửi 01/11 15:11. Mục tiêu tính theo DOANH THU.
+const TD_BASE_T10 = { '5151': 5605555, '5152': 4847220, '5153': 762964, '5396': 4274537, '5405': 4841663, '5414': 4303699, '5489': 360185, '5818': 6130095, '6135': 6010184, '6136': 2155558, '6294': 2285186, '6384': 3852780, '6434': 2787960, '6477': 1837032, '6525': 1162035, '6785': 4353704, '7661': 3292593, '7664': 6331944, '7665': 3302779, '8104': 4124999, '8153': 4029622, '8363': 4009724, '8828': 3601853, '9020': 8162035, '9153': 3847222, '9495': 2037961, '14012': 2459263, '14536': 499074, '14551': 4716667, '14564': 1136109, '14586': 480553, '14592': 1893519, '14619': 2598149, '14664': 2195370, '14823': 1249075, '14986': 2096292, '28632': 1520372, '28717': 1231482, '28724': 1390741, '29778': 1185186, '30400': 334259, '34610': 2196299, '34673': 1028703, '34706': 1501851, '35544': 3478704, '35657': 2367595, '36191': 2055557, '36325': 744445 };
 const TD_CHU_KY = 'CHU KỲ: 02/11 → 08/11 (7 ngày)'; // in dưới tên KV trên ảnh; đổi tuần thì sửa dòng này ('' = ẩn)
 const TD_NHOM_HIEN = () => TD_NHOM.filter((g) => TD_HIEN.has(g.k));
 const TD_MA = new Map(); // mã model -> nhóm
@@ -3795,17 +3795,17 @@ async function docDuLieuThiDua(maST) {
     const ngay = String(r[0] || '');
     if (ngay < TD_CK.tu || ngay > TD_CK.den || tdNhomCua(r[1], r[2]) !== TD_CK.nhom) continue;
     const o = st.get(chuanHoaMaST(r[3])); if (!o) continue;
-    o.banCK = (o.banCK || 0) + soGV(r[5]);
-    if (ngay === homNayVN()) o.banHN = (o.banHN || 0) + soGV(r[5]);
+    o.banCK = (o.banCK || 0) + soGV(r[6]); // DOANH THU
+    if (ngay === homNayVN()) o.banHN = (o.banHN || 0) + soGV(r[6]);
   }
-  // Mục tiêu: MT/ngày = bán T10 ÷ 31 × 1,5 · MT 7 ngày = MT/ngày × 7
+  // Mục tiêu: MT 7 ngày = NGUYÊN doanh thu T10 × 1,5 · MT/ngày = MT 7 ngày ÷ 7
   // Hôm nay cần bán = MT/ngày × (số ngày tới hôm nay) − đã bán trước hôm nay  (ngày nào thiếu thì cộng dồn qua ngày sau)
   const hn = homNayVN();
   const kHN = hn < TD_CK.tu ? 1 : hn > TD_CK.den ? TD_CK.soNgay : soNgayGiua(TD_CK.tu, hn) + 1;
   for (const o of st.values()) {
     const b10 = TD_BASE_T10[o.ma];
     o.coMT = b10 != null;
-    o.mtNgay = o.coMT ? (b10 / TD_CK.ngayT10) * TD_CK.heSo : 0;
+    o.mtNgay = o.coMT ? (b10 * TD_CK.heSo) / TD_CK.soNgay : 0; // MỤC TIÊU 7 NGÀY = NGUYÊN DOANH THU T10 × 1,5
     o.mt7 = o.mtNgay * TD_CK.soNgay;
     o.banCK = o.banCK || 0; o.banHN = hn >= TD_CK.tu && hn <= TD_CK.den ? o.banHN || 0 : 0;
     const truocHN = o.banCK - o.banHN, mtToiHN = o.mtNgay * kHN;
@@ -3860,11 +3860,11 @@ function veSvgThiDua(d) {
   const CKMODE = NHOM.length === 1 && NHOM[0].k === TD_CK.nhom;
   if (CKMODE) {
     const g = NHOM[0], f1 = (v) => (Math.round(v * 10) / 10).toFixed(1).replace('.', ',');
-    const cot = [['TỒN', 'ton'], [`MỤC TIÊU ${TD_CK.soNgay} NGÀY`, 'mt7'], ['LUỸ KẾ', 'banCK'], ['% ĐẠT', 'pct'], ['CẦN HÔM NAY', 'canHN'], ['ĐÃ BÁN HÔM NAY', 'banHN'], ['CÒN THIẾU', 'conCanHN']];
+    const cot = [['TỒN (HỘP)', 'ton'], [`MỤC TIÊU ${TD_CK.soNgay} NGÀY`, 'mt7'], ['LUỸ KẾ', 'banCK'], ['% ĐẠT', 'pct'], ['CẦN HÔM NAY', 'canHN'], ['ĐÃ BÁN HÔM NAY', 'banHN'], ['CÒN THIẾU', 'conCanHN']];
     const xTen2 = PAD + 50, x02 = 440, wc = (W - PAD - x02) / cot.length, xr = (j) => x02 + wc * (j + 0.5); // canh giữa cột
     p.push(`<rect x="${x02 + 2}" y="${y}" width="${W - PAD - x02 - 2}" height="54" fill="${g.mau}"/>`);
-    p.push(t((x02 + W - PAD) / 2, y + 24, `${g.ten} · MỤC TIÊU ×${String(TD_CK.heSo).replace('.', ',')} SO THÁNG 10 · ${TD_CK.soNgay} NGÀY`, { size: 16, bold: true, fill: '#FFFFFF', anchor: 'middle' }));
-    p.push(t((x02 + W - PAD) / 2, y + 44, `NGÀY ${d.kHN}/${TD_CK.soNgay} CỦA CHU KỲ · NGÀY NÀO THIẾU CỘNG DỒN QUA NGÀY SAU · ĐƠN VỊ TÍNH: HỘP`, { size: 12.5, fill: '#FFFFFF', anchor: 'middle' }));
+    p.push(t((x02 + W - PAD) / 2, y + 24, `${g.ten} · MỤC TIÊU DOANH THU ×${String(TD_CK.heSo).replace('.', ',')} SO THÁNG 10 · ${TD_CK.soNgay} NGÀY`, { size: 16, bold: true, fill: '#FFFFFF', anchor: 'middle' }));
+    p.push(t((x02 + W - PAD) / 2, y + 44, `NGÀY ${d.kHN}/${TD_CK.soNgay} CỦA CHU KỲ · NGÀY NÀO THIẾU CỘNG DỒN QUA NGÀY SAU · TỒN: HỘP · DOANH THU: ĐỒNG`, { size: 12.5, fill: '#FFFFFF', anchor: 'middle' }));
     y += 54;
     p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="34" fill="${C.nen}"/>`);
     p.push(`<line x1="${PAD}" y1="${y + 34}" x2="${W - PAD}" y2="${y + 34}" stroke="${C.xanh}" stroke-width="2"/>`);
@@ -3873,7 +3873,7 @@ function veSvgThiDua(d) {
     cot.forEach(([nhan], j) => p.push(t(xr(j), y + 22, nhan, { size: 13, bold: true, fill: C.xanhDam, anchor: 'middle' })));
     const yTop2 = y; y += 36;
     const T = { ton: 0, mt7: 0, banCK: 0, canHN: 0, banHN: 0, conCanHN: 0 };
-    const len = (v) => Math.ceil((v || 0) - 1e-9);
+    const len = (v) => Math.ceil((v || 0) / 1000 - 1e-9) * 1000; // làm tròn LÊN tới 1.000đ
     for (const r of d.dsST) { T.ton += r.ton[g.k] || 0; for (const k of ['mt7', 'banCK', 'canHN', 'banHN', 'conCanHN']) T[k] += ['mt7', 'canHN', 'conCanHN'].includes(k) ? len(r[k]) : r[k] || 0; }
     T.pct = T.mt7 > 0 ? (T.banCK / T.mt7) * 100 : null;
     const giaTri = (r, k) => (k === 'ton' ? r.ton[g.k] || 0 : r[k]);
@@ -3955,17 +3955,17 @@ function veSvgThiDua(d) {
   // ---- Mục tiêu chu kỳ (xem 1 siêu thị) ----
   if (d.dsST.length === 1 && TD_BASE_T10[d.dsST[0].ma] != null) {
     const r = d.dsST[0], g = TD_NHOM.find((x) => x.k === TD_CK.nhom) || NHOM[0];
-    const b10 = TD_BASE_T10[r.ma], tb = b10 / TD_CK.ngayT10, mt = tb * TD_CK.heSo * TD_CK.soNgay, moiNgay = mt / TD_CK.soNgay;
+    const b10 = TD_BASE_T10[r.ma], tb = b10 / TD_CK.ngayT10, mt = b10 * TD_CK.heSo, moiNgay = mt / TD_CK.soNgay; // nguyên T10 × 1,5 chạy trong 7 ngày
     const daBan = r.banCK || 0, pct = mt > 0 ? (daBan / mt) * 100 : 0;
-    const f1 = (v) => fs(Math.ceil((v || 0) - 1e-9)); // số lẻ làm tròn LÊN
+    const f1 = (v) => fs(Math.ceil((v || 0) / 1000 - 1e-9) * 1000); // làm tròn LÊN tới 1.000đ
     p.push(t(PAD, y + 6, `MỤC TIÊU CHU KỲ · ${g.ten} · ${r.ma} · ngày ${d.kHN}/${TD_CK.soNgay}`, { size: 22, bold: true, fill: C.xanh }));
     y += 22;
     const no = Math.max(0, r.canHN - moiNgay);
     const o4 = [
-      ['BÁN THÁNG 10', `${fs(b10)} hộp`, `trung bình ${f1(tb)} hộp mỗi ngày`, '#F2F8F4', '#1D2B1F'],
-      [`MỤC TIÊU ${TD_CK.soNgay} NGÀY (×${String(TD_CK.heSo).replace('.', ',')})`, `${f1(mt)} hộp`, `${f1(moiNgay)} hộp mỗi ngày`, '#F2F8F4', '#1D2B1F'],
-      ['LUỸ KẾ CHU KỲ', `${fs(daBan)} hộp`, `đạt ${Math.round(pct)}% · hôm nay bán ${fs(r.banHN || 0)} hộp`, pct >= (d.kHN / TD_CK.soNgay) * 100 ? '#E3F6EA' : '#FFF4E5', pct >= (d.kHN / TD_CK.soNgay) * 100 ? '#00873C' : '#C2570C'],
-      ['HÔM NAY CÒN CẦN BÁN', `${f1(r.conCanHN)} hộp`, `cần ${f1(r.canHN)} = ${f1(moiNgay)} mỗi ngày${no > 0 ? ` + cộng dồn ${f1(no)}` : ''}`, g.mau, '#FFFFFF'],
+      ['DOANH THU THÁNG 10', `${fs(b10)} đ`, `trung bình ${f1(tb)} đ mỗi ngày`, '#F2F8F4', '#1D2B1F'],
+      [`MỤC TIÊU ${TD_CK.soNgay} NGÀY (×${String(TD_CK.heSo).replace('.', ',')})`, `${f1(mt)} đ`, `${f1(moiNgay)} đ mỗi ngày`, '#F2F8F4', '#1D2B1F'],
+      ['LUỸ KẾ CHU KỲ', `${fs(daBan)} đ`, `đạt ${Math.round(pct)}% · hôm nay ${fs(r.banHN || 0)} đ`, pct >= (d.kHN / TD_CK.soNgay) * 100 ? '#E3F6EA' : '#FFF4E5', pct >= (d.kHN / TD_CK.soNgay) * 100 ? '#00873C' : '#C2570C'],
+      ['HÔM NAY CÒN CẦN BÁN', `${f1(r.conCanHN)} đ`, `${f1(moiNgay)} mỗi ngày${no > 0 ? ` + cộng dồn ${f1(no)}` : ''}`, g.mau, '#FFFFFF'],
     ];
     const gw = 12, bw = (W - PAD * 2 - gw * 3) / 4, bh = 96;
     o4.forEach(([a, v, s2, nen, chu], k) => {
@@ -4020,7 +4020,7 @@ function veSvgThiDua(d) {
       if (ghiChu) { o.push(t(x0 + 14, h + 18, ghiChu, { size: 12.5, fill: C.phu })); h += 26; }
       return h;
     };
-    const A = [coThach ? '① Yến mạch / Trà sữa Celano' : 'Trà sữa gạo rang + Sữa yến mạch Celano', a.mau, 'Có mốc: bán tháng 11 ≥ 1,5 lần tháng 10', 'Thưởng nhân viên siêu thị: 13.000đ/thùng', TD_SP_IN.celym, ''];
+    const A = [coThach ? '① Yến mạch / Trà sữa Celano' : 'Trà sữa gạo rang + Sữa yến mạch Celano', a.mau, 'Có mốc: doanh thu tháng 11 ≥ 1,5 lần tháng 10', 'Thưởng nhân viên siêu thị: 13.000đ/thùng', TD_SP_IN.celym, ''];
     const B = ['② Sữa tiệt trùng Celano có thạch 170ml', b ? b.mau : a.mau, 'Có mốc: DT ≥ 200.000đ/tuần/ST', 'Thưởng nhân viên siêu thị: 13.000đ/thùng · lốc, thùng đều tính', TD_SP_IN.celth, '1 lốc = 4 hộp · 1 thùng = 48 hộp'];
     let h;
     if (haiCot) {
