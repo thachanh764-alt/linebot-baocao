@@ -3610,6 +3610,8 @@ const TAB_TD_TON = 'TD_TON';
 const TAB_TD_BAN_NGAY = 'TD_BAN_NGAY';
 const TAB_TD_BAN_LK = 'TD_BAN_LK';
 const TD_ST_LOAI = new Set(['14978', '14652']); // Phạm Hùng, 244 Trương Công Định: đã off
+// 01/11: CHỈ LẤY DATA CELANO (robot không lấy mã Joyday/Milo/C2 nữa). Lấy lại: thêm 'joyday', 'milo', 'c2' vào đây.
+const TD_LAY = new Set(['celym', 'celth']);
 const TD_NHOM = [
   {
     k: 'joyday', ten: 'KEM JOYDAY', phu: 'mốc ×2 so T10', mau: '#7B4BB7', dv: 'SP',
@@ -3620,7 +3622,10 @@ const TD_NHOM = [
   { k: 'celth', ten: 'CELANO CÓ THẠCH', phu: 'mốc 200k/tuần', mau: '#0E9AA7', dv: 'hộp', ma: ['2610000626', '2610000627', '2610000628'] },
   { k: 'milo', ten: 'MILO LON', phu: 'bán nhiêu tính nhiêu', mau: '#2E7D32', dv: 'lon', ma: ['1706010219'] },
   { k: 'c2', ten: 'C2', phu: 'bán nhiêu tính nhiêu', mau: '#D4A017', dv: 'chai', ma: ['2601001494', '2006000354', '2204000011', '2011000232', '2011000231', '2509013159', '2110003778', '2203000875'] },
-];
+].filter((g) => TD_LAY.has(g.k));
+// 01/11: bảng CHỈ hiện Celano (tuần 1 RSM chọn CELANO). Hiện lại nhóm khác: thêm 'joyday', 'milo', 'c2' vào đây.
+const TD_HIEN = TD_LAY;
+const TD_NHOM_HIEN = () => TD_NHOM.filter((g) => TD_HIEN.has(g.k));
 const TD_MA = new Map(); // mã model -> nhóm
 for (const g of TD_NHOM) for (const m of g.ma) TD_MA.set(m, g.k);
 function tdNhomCua(ma, ten) {
@@ -3784,7 +3789,8 @@ function tdXuongDong(s, max) {
 }
 
 function veSvgThiDua(d) {
-  const W = 1600, PAD = 24, ROW = 30;
+  const NHOM = TD_NHOM_HIEN();
+  const W = NHOM.length >= 5 ? 1600 : Math.max(1100, 454 + NHOM.length * 320), PAD = 24, ROW = 30;
   const C = { xanh: '#00873C', xanhDam: '#0B5A2B', nen: '#E4F2E8', chan: '#FAFCFA', vien: '#EDF0ED', phu: '#56655A', xam: '#B0B8B2', do: '#C62828', vang: '#FFD200' };
   const t = (x, y, s, o = {}) =>
     `<text x="${x}" y="${y}" font-size="${o.size || 15}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1D2B1F'}" text-anchor="${o.anchor || 'start'}"${o.ls ? ` letter-spacing="${o.ls}"` : ''}>${escXml(s)}</text>`;
@@ -3803,13 +3809,13 @@ function veSvgThiDua(d) {
   p.push(`<rect x="${rx}" y="144" width="${rw}" height="52" rx="10" fill="#B89400"/>`);
   p.push(`<rect x="${rx}" y="140" width="${rw}" height="52" rx="10" fill="${C.vang}"/>`);
   p.push(t(W / 2, 177, 'KV QLTP QUỐC NAM 40909', { size: 30, bold: true, fill: '#0B4A22', anchor: 'middle', ls: 1.5 }));
-  p.push(t(W / 2, 214, `Kem Joyday · Sữa Celano · Milo lon · C2  |  Tồn ${d.capTon || '–'} · Bán T11 ${d.capBan || 'chưa có'}`, { size: 15, fill: '#FFFFFF', anchor: 'middle' }));
+  p.push(t(W / 2, 214, `${[...new Set(NHOM.map((g) => (g.k.startsWith('cel') ? 'Sữa Celano' : g.ten)))].join(' · ')}  |  Tồn ${d.capTon || '–'} · Bán T11 ${d.capBan || 'chưa có'}`, { size: 15, fill: '#FFFFFF', anchor: 'middle' }));
   let y = HH + 18;
 
   // ---- Bảng ----
-  const xTen = PAD + 50, x0 = 430, wNhom = (W - PAD - x0) / TD_NHOM.length;
+  const xTen = PAD + 50, x0 = 430, wNhom = (W - PAD - x0) / NHOM.length;
   const xc = (gi, j) => x0 + gi * wNhom + (j === 0 ? wNhom * 0.5 - 14 : wNhom - 14);
-  TD_NHOM.forEach((g, gi) => {
+  NHOM.forEach((g, gi) => {
     const x1 = x0 + gi * wNhom;
     p.push(`<rect x="${x1 + 2}" y="${y}" width="${wNhom - 4}" height="54" fill="${g.mau}"/>`);
     p.push(t(x1 + wNhom / 2, y + 24, g.ten, { size: 16, bold: true, fill: '#FFFFFF', anchor: 'middle' }));
@@ -3820,7 +3826,7 @@ function veSvgThiDua(d) {
   p.push(`<line x1="${PAD}" y1="${y + 34}" x2="${W - PAD}" y2="${y + 34}" stroke="${C.xanh}" stroke-width="2"/>`);
   p.push(t(PAD + 34, y + 22, '#', { size: 13, bold: true, fill: C.xanhDam, anchor: 'end' }));
   p.push(t(xTen, y + 22, 'Siêu thị', { size: 13, bold: true, fill: C.xanhDam }));
-  TD_NHOM.forEach((g, gi) => {
+  NHOM.forEach((g, gi) => {
     p.push(t(xc(gi, 0), y + 22, 'Tồn', { size: 13, bold: true, fill: C.xanhDam, anchor: 'end' }));
     p.push(t(xc(gi, 1), y + 22, 'Bán T11', { size: 13, bold: true, fill: C.xanhDam, anchor: 'end' }));
   });
@@ -3828,7 +3834,7 @@ function veSvgThiDua(d) {
   const tong = (k, g) => d.dsST.reduce((s, x) => s + (x[k][g.k] || 0), 0);
   p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 4}" fill="${C.xanh}"/>`);
   p.push(t(xTen, y + 23, d.nhanTong, { size: 16, bold: true, fill: '#FFFFFF' }));
-  TD_NHOM.forEach((g, gi) => {
+  NHOM.forEach((g, gi) => {
     p.push(t(xc(gi, 0), y + 23, fs(tong('ton', g)), { size: 16, bold: true, fill: '#FFFFFF', anchor: 'end' }));
     p.push(t(xc(gi, 1), y + 23, fs(tong('ban', g)), { size: 16, bold: true, fill: '#FFFFFF', anchor: 'end' }));
   });
@@ -3839,22 +3845,20 @@ function veSvgThiDua(d) {
     const yt = y + 20;
     p.push(t(PAD + 34, yt, i + 1, { fill: C.phu, anchor: 'end' }));
     p.push(`<text x="${xTen}" y="${yt}" font-size="15" fill="#1D2B1F"><tspan font-weight="700">${escXml(r.ma)}</tspan> · ${escXml(rutGonTen(String(r.ten).replace(/\(\s+/g, '(').replace(/\s+\)/g, ')').replace(/Phường 0?1\b/, 'P.1'), 34))}</text>`);
-    TD_NHOM.forEach((g, gi) => {
+    NHOM.forEach((g, gi) => {
       const ton = r.ton[g.k] || 0, ban = r.ban[g.k] || 0;
       p.push(t(xc(gi, 0), yt, fs(ton), { anchor: 'end', bold: ton <= 0, fill: ton <= 0 ? C.do : '#1D2B1F' }));
       p.push(t(xc(gi, 1), yt, fs(ban), { anchor: 'end', bold: ban > 0, fill: ban > 0 ? g.mau : C.xam }));
     });
     y += ROW;
   });
-  TD_NHOM.forEach((g, gi) => { const x = x0 + gi * wNhom; p.push(`<line x1="${x}" y1="${yTop}" x2="${x}" y2="${y}" stroke="#DFE8E1" stroke-width="3"/>`); });
+  NHOM.forEach((g, gi) => { const x = x0 + gi * wNhom; p.push(`<line x1="${x}" y1="${yTop}" x2="${x}" y2="${y}" stroke="#DFE8E1" stroke-width="3"/>`); });
   y += 28;
 
   // ---- Sản phẩm tính thưởng ----
   p.push(t(PAD, y + 6, 'SẢN PHẨM TÍNH THƯỞNG', { size: 22, bold: true, fill: C.xanh }));
   y += 22;
-  const GAP = 14, wTong = W - PAD * 2 - GAP * 3;
-  const rong = [wTong * 0.4, wTong * 0.22, wTong * 0.16, wTong * 0.22];
-  const xs = [PAD]; for (let k = 1; k < 4; k++) xs.push(xs[k - 1] + rong[k - 1] + GAP);
+  const GAP = 14;
   const the = []; // mỗi thẻ: { mau, noiDung(x, y0) -> [svg, chiều cao] }
   const nh = (k) => TD_NHOM.find((g) => g.k === k);
   const huyHieu = (x, yy, s, mau) => { const w = s.length * 7.2 + 18; return `<rect x="${x}" y="${yy}" width="${w}" height="22" rx="6" fill="#FFF1DC"/>${t(x + 9, yy + 15.5, s, { size: 12.5, bold: true, fill: '#A35B00' })}`; };
@@ -3910,7 +3914,13 @@ function veSvgThiDua(d) {
     const [s1, h1] = dsDong(x + 18, h, w - 34, TD_SP_IN.c2); o.push(s1); h += h1;
     return [o.join(''), h + 14, g.mau];
   });
-  const ve = the.map((f, k) => f(xs[k], rong[k]));
+  // Thẻ nào hiện: joyday | celano (celym/celth) | milo | c2 — theo TD_HIEN
+  const khoaThe = ['joyday', 'celano', 'milo', 'c2'], tiLe = [0.4, 0.22, 0.16, 0.22];
+  const hien = khoaThe.map((k, i) => i).filter((i) => (khoaThe[i] === 'celano' ? TD_HIEN.has('celym') || TD_HIEN.has('celth') : TD_HIEN.has(khoaThe[i])));
+  const wTong = W - PAD * 2 - GAP * (hien.length - 1), tongTiLe = hien.reduce((s2, i) => s2 + tiLe[i], 0);
+  const rong = [], xs = [];
+  hien.forEach((i, n) => { rong.push((wTong * tiLe[i]) / tongTiLe); xs.push(n ? xs[n - 1] + rong[n - 1] + GAP : PAD); });
+  const ve = hien.map((i, n) => the[i](xs[n], rong[n]));
   ve.forEach(([svg, h, mau], k) => {
     p.push(`<g transform="translate(0 ${y})"><rect x="${xs[k]}" y="0" width="${rong[k]}" height="${h}" rx="10" fill="${mau}" fill-opacity="0.07"/><rect x="${xs[k]}" y="0" width="${rong[k]}" height="5" rx="2" fill="${mau}"/>${svg}</g>`);
   });
@@ -4740,7 +4750,7 @@ app.get('/robot/cau-hinh', async (req, res) => {
     const cot = async (tab, i) => [...new Set((await docTabAnToan(sheets, tab)).slice(1).map((r) => chuanHoaMaST(r[i])).filter((x) => /^\d+$/.test(x)))];
     res.json({
       ok: true,
-      maSua: [...new Set([...(await dsMaSua(sheets)), ...(TD_BAT ? TD_TAT_CA_MA() : [])])], // + mã THI ĐUA T11
+      maSua: TD_BAT ? TD_TAT_CA_MA() : [...(await dsMaSua(sheets))], // 01/11: robot chỉ lấy mã THI ĐUA (Celano); BC SỮA đã tắt
       stSua: await cot(TAB_SUA_TON, 2),
       stDmsk: await cot(TAB_DMSK_BASE, 0),
       stThst: (await cot(TAB_THST_BASE, 5))[0] || MENU_MA_ST,
