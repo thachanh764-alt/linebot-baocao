@@ -3611,14 +3611,14 @@ const TAB_TD_BAN_NGAY = 'TD_BAN_NGAY';
 const TAB_TD_BAN_LK = 'TD_BAN_LK';
 const TD_ST_LOAI = new Set(['14978', '14652']); // Phạm Hùng, 244 Trương Công Định: đã off
 // 01/11: CHỈ LẤY DATA CELANO (robot không lấy mã Joyday/Milo/C2 nữa). Lấy lại: thêm 'joyday', 'milo', 'c2' vào đây.
-const TD_LAY = new Set(['celym', 'celth']);
+const TD_LAY = new Set(['celym']); // 01/11 15h: chỉ CELANO 4 SKU (bỏ Celano có thạch). Lấy lại: thêm 'celth'
 const TD_NHOM = [
   {
     k: 'joyday', ten: 'KEM JOYDAY', phu: 'mốc ×2 so T10', mau: '#7B4BB7', dv: 'SP',
     // 31/10: CHỈ tính 17 mã theo file "Danh sách sku kem Joyday thưởng thi đua tháng 11"
     ma: ['2406001344', '2406001343', '2406001342', '2605000183', '2501000762', '2407001701', '2408002762', '2406001347', '2411000996', '2407001703', '2608003391', '2605000181', '2608003583', '2608003584', '2605000182', '2605002606', '2407001700'],
   },
-  { k: 'celym', ten: 'CELANO YẾN MẠCH', phu: '4 mã · mốc ×1,5 so T10', mau: '#1F7AC2', dv: 'hộp', ma: ['2609001656', '2609001221', '2609001657', '2609001223'] },
+  { k: 'celym', ten: 'CELANO 4 SKU', phu: 'mốc ×1,5 so T10', mau: '#1F7AC2', dv: 'hộp', ma: ['2609001656', '2609001221', '2609001657', '2609001223'] },
   { k: 'celth', ten: 'CELANO CÓ THẠCH', phu: 'mốc 200k/tuần', mau: '#0E9AA7', dv: 'hộp', ma: ['2610000626', '2610000627', '2610000628'] },
   { k: 'milo', ten: 'MILO LON', phu: 'bán nhiêu tính nhiêu', mau: '#2E7D32', dv: 'lon', ma: ['1706010219'] },
   { k: 'c2', ten: 'C2', phu: 'bán nhiêu tính nhiêu', mau: '#D4A017', dv: 'chai', ma: ['2601001494', '2006000354', '2204000011', '2011000232', '2011000231', '2509013159', '2110003778', '2203000875'] },
@@ -3938,9 +3938,9 @@ function veSvgThiDua(d) {
   });
   the.push((x, w) => {
     const a = nh('celym'), b = nh('celth'); const o = [];
-    o.push(t(x + 14, 30, 'SỮA CELANO', { size: 16, bold: true, fill: a.mau }));
+    o.push(t(x + 14, 30, TD_LAY.has('celth') ? 'SỮA CELANO' : 'CELANO 4 SKU', { size: 16, bold: true, fill: a.mau }));
     // Thẻ rộng (chỉ hiện Celano) -> chia ① bên trái, ② bên phải cho đều
-    const haiCot = w > 700, wc = haiCot ? (w - 28) / 2 : w;
+    const coThach = TD_LAY.has('celth'), haiCot = coThach && w > 700, wc = haiCot ? (w - 28) / 2 : w;
     const cot = (x0, wcot, h0, tieuDe, mau, moc, thuong, ds, ghiChu) => {
       let h = h0;
       o.push(t(x0 + 14, h + 4, tieuDe, { size: 14.5, bold: true, fill: mau })); h += 14;
@@ -3950,7 +3950,7 @@ function veSvgThiDua(d) {
       if (ghiChu) { o.push(t(x0 + 14, h + 18, ghiChu, { size: 12.5, fill: C.phu })); h += 26; }
       return h;
     };
-    const A = ['① Yến mạch / Trà sữa Celano', a.mau, 'Có mốc: bán T11 ≥ 1,5 lần T10', 'Thưởng NV ST: 13.000đ/thùng', TD_SP_IN.celym, ''];
+    const A = [coThach ? '① Yến mạch / Trà sữa Celano' : 'Trà sữa gạo rang + Sữa yến mạch Celano', a.mau, 'Có mốc: bán T11 ≥ 1,5 lần T10', 'Thưởng NV ST: 13.000đ/thùng', TD_SP_IN.celym, ''];
     const B = ['② Sữa tiệt trùng Celano có thạch 170ml', b ? b.mau : a.mau, 'Có mốc: DT ≥ 200.000đ/tuần/ST', 'Thưởng NV ST: 13.000đ/thùng · lốc, thùng đều tính', TD_SP_IN.celth, '1 lốc = 4 hộp · 1 thùng = 48 hộp'];
     let h;
     if (haiCot) {
@@ -3958,8 +3958,8 @@ function veSvgThiDua(d) {
       o.push(`<line x1="${x + wc + 14}" y1="44" x2="${x + wc + 14}" y2="${Math.max(h1, h2)}" stroke="#C9DCEB" stroke-width="1.5"/>`);
       h = Math.max(h1, h2);
     } else {
-      h = cot(x, w, 46, ...A) + 18;
-      h = cot(x, w, h, ...B);
+      h = cot(x, w, 46, ...A);
+      if (coThach) h = cot(x, w, h + 18, ...B);
     }
     return [o.join(''), h + 10, a.mau];
   });
