@@ -3625,6 +3625,10 @@ const TD_NHOM = [
 ].filter((g) => TD_LAY.has(g.k));
 // 01/11: bảng CHỈ hiện Celano (tuần 1 RSM chọn CELANO). Hiện lại nhóm khác: thêm 'joyday', 'milo', 'c2' vào đây.
 const TD_HIEN = TD_LAY;
+// MỤC TIÊU CHU KỲ (chỉ hiện khi xem 1 siêu thị, vd "BC CELANO 8104"): MT = bán TB/ngày T10 × 1,5 × số ngày chu kỳ
+const TD_CK = { tu: '2026-11-02', den: '2026-11-08', soNgay: 7, heSo: 1.5, ngayT10: 31, nhom: 'celym' };
+// Bán T10 (hộp) Celano 4 SKU theo siêu thị — từ file Doanh Thu Theo Model tháng 10 (01–31/10)
+const TD_BASE_T10 = { '5151': 664, '5152': 548, '5153': 84, '5396': 512, '5405': 548, '5414': 500, '5489': 40, '5818': 716, '6135': 704, '6136': 260, '6294': 264, '6384': 456, '6434': 332, '6477': 212, '6525': 128, '6785': 508, '7661': 384, '7664': 740, '7665': 344, '8104': 492, '8153': 484, '8363': 480, '8828': 428, '9020': 892, '9153': 460, '9495': 216, '14012': 296, '14536': 48, '14551': 532, '14564': 132, '14586': 60, '14592': 220, '14619': 304, '14664': 252, '14823': 148, '14986': 240, '28632': 168, '28717': 144, '28724': 160, '29778': 144, '30400': 40, '34610': 256, '34673': 120, '34706': 176, '35544': 376, '35657': 280, '36191': 248, '36325': 88 };
 const TD_CHU_KY = 'CHU KỲ: 02/11 → 08/11 (7 ngày)'; // in dưới tên KV trên ảnh; đổi tuần thì sửa dòng này ('' = ẩn)
 const TD_NHOM_HIEN = () => TD_NHOM.filter((g) => TD_HIEN.has(g.k));
 const TD_MA = new Map(); // mã model -> nhóm
@@ -3786,6 +3790,12 @@ async function docDuLieuThiDua(maST) {
     return k(b).localeCompare(k(a));
   })[0] || '';
   const capLK = lk.filter((r) => String(r[6] || '').slice(0, 7) === TD_THANG);
+  // Bán trong chu kỳ (robot từng ngày) của nhóm tính mục tiêu
+  for (const r of ng) {
+    const ngay = String(r[0] || '');
+    if (ngay < TD_CK.tu || ngay > TD_CK.den || tdNhomCua(r[1], r[2]) !== TD_CK.nhom) continue;
+    const o = st.get(chuanHoaMaST(r[3])); if (o) o.banCK = (o.banCK || 0) + soGV(r[5]);
+  }
   return { dsST, nhanTong, capTon: moiNhat(ton, 5), capBan: capNgay || moiNhat(capLK, 7) };
 }
 
@@ -3870,6 +3880,33 @@ function veSvgThiDua(d) {
   });
   NHOM.forEach((g, gi) => { const x = x0 + gi * wNhom; p.push(`<line x1="${x}" y1="${yTop}" x2="${x}" y2="${y}" stroke="#DFE8E1" stroke-width="3"/>`); });
   y += 28;
+
+  // ---- Mục tiêu chu kỳ (xem 1 siêu thị) ----
+  if (d.dsST.length === 1 && TD_BASE_T10[d.dsST[0].ma] != null) {
+    const r = d.dsST[0], g = TD_NHOM.find((x) => x.k === TD_CK.nhom) || NHOM[0];
+    const b10 = TD_BASE_T10[r.ma], tb = b10 / TD_CK.ngayT10, mt = tb * TD_CK.heSo * TD_CK.soNgay, moiNgay = mt / TD_CK.soNgay;
+    const daBan = r.banCK || 0, pct = mt > 0 ? (daBan / mt) * 100 : 0, thieu = Math.max(0, mt - daBan);
+    const hn = homNayVN(), conNgay = hn < TD_CK.tu ? TD_CK.soNgay : hn > TD_CK.den ? 0 : soNgayGiua(hn, TD_CK.den) + 1;
+    const can = conNgay > 0 ? thieu / conNgay : 0;
+    const f1 = (v) => (Math.round(v * 10) / 10).toFixed(1).replace('.', ',');
+    p.push(t(PAD, y + 6, `MỤC TIÊU CHU KỲ · ${g.ten} · ${r.ma}`, { size: 22, bold: true, fill: C.xanh }));
+    y += 22;
+    const o4 = [
+      ['BÁN THÁNG 10', `${fs(b10)} hộp`, `TB ${f1(tb)} hộp/ngày`, '#F2F8F4', '#1D2B1F'],
+      [`MỤC TIÊU CHU KỲ (×${String(TD_CK.heSo).replace('.', ',')})`, `${fs(mt)} hộp`, `${TD_CK.soNgay} ngày · ${f1(moiNgay)} hộp/ngày`, '#F2F8F4', '#1D2B1F'],
+      ['ĐÃ BÁN TRONG CHU KỲ', `${fs(daBan)} hộp`, `đạt ${Math.round(pct)}%`, pct >= 100 ? '#E3F6EA' : '#FFF4E5', pct >= 100 ? '#00873C' : '#C2570C'],
+      [thieu > 0 ? 'MỖI NGÀY CÒN CẦN BÁN' : 'ĐÃ ĐẠT MỤC TIÊU', thieu > 0 ? `${f1(can || moiNgay)} hộp` : '✓', thieu > 0 ? `còn thiếu ${fs(thieu)} hộp · ${conNgay || TD_CK.soNgay} ngày` : `vượt ${fs(daBan - mt)} hộp`, g.mau, '#FFFFFF'],
+    ];
+    const gw = 12, bw = (W - PAD * 2 - gw * 3) / 4, bh = 96;
+    o4.forEach(([a, v, s2, nen, chu], k) => {
+      const bx = PAD + k * (bw + gw), trang = chu === '#FFFFFF';
+      p.push(`<rect x="${bx}" y="${y}" width="${bw}" height="${bh}" rx="12" fill="${nen}" stroke="${trang ? nen : '#D6E6DA'}"/>`);
+      p.push(t(bx + 14, y + 24, a, { size: 13, bold: true, fill: trang ? '#DBEAF7' : C.phu }));
+      p.push(t(bx + 14, y + 60, v, { size: 30, bold: true, fill: chu }));
+      p.push(t(bx + 14, y + 84, s2, { size: 13, fill: trang ? '#DBEAF7' : C.phu }));
+    });
+    y += bh + 30;
+  }
 
   // ---- Sản phẩm tính thưởng ----
   p.push(t(PAD, y + 6, 'SẢN PHẨM TÍNH THƯỞNG', { size: 22, bold: true, fill: C.xanh }));
