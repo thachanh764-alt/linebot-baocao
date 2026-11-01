@@ -1514,7 +1514,7 @@ function veSvgSua(d) {
 }
 
 function laTriggerSua(text) {
-  return coTuKhoa(text, ['bc sữa', 'bc sua', 'báo cáo sữa', 'bao cao sua', 'bc celano', 'celano']);
+  return coTuKhoa(text, ['bc sữa', 'bc sua', 'báo cáo sữa', 'bao cao sua']); // 'celano' chuyển sang THI ĐUA T11 (01/11)
 }
 
 async function veAnhSua(maST) {
@@ -3960,7 +3960,7 @@ function veSvgThiDua(d) {
 }
 
 function laTriggerThiDua(text) {
-  return TD_BAT && coTuKhoa(text, ['thi đua t11', 'thi dua t11', 'thi đua tháng 11', 'thi dua thang 11', 'bc thi đua', 'bc thi dua', 'thi đua', 'thi dua']);
+  return TD_BAT && coTuKhoa(text, ['thi đua t11', 'thi dua t11', 'thi đua tháng 11', 'thi dua thang 11', 'bc thi đua', 'bc thi dua', 'thi đua', 'thi dua', 'bc celano', 'celano']);
 }
 
 async function veAnhThiDua(maST) {
