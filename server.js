@@ -3873,14 +3873,15 @@ function veSvgThiDua(d) {
     cot.forEach(([nhan], j) => p.push(t(xr(j), y + 22, nhan, { size: 13, bold: true, fill: C.xanhDam, anchor: 'middle' })));
     const yTop2 = y; y += 36;
     const T = { ton: 0, mt7: 0, banCK: 0, canHN: 0, banHN: 0, conCanHN: 0 };
-    for (const r of d.dsST) { T.ton += r.ton[g.k] || 0; for (const k of ['mt7', 'banCK', 'canHN', 'banHN', 'conCanHN']) T[k] += r[k] || 0; }
+    const len = (v) => Math.ceil((v || 0) - 1e-9);
+    for (const r of d.dsST) { T.ton += r.ton[g.k] || 0; for (const k of ['mt7', 'banCK', 'canHN', 'banHN', 'conCanHN']) T[k] += ['mt7', 'canHN', 'conCanHN'].includes(k) ? len(r[k]) : r[k] || 0; }
     T.pct = T.mt7 > 0 ? (T.banCK / T.mt7) * 100 : null;
     const giaTri = (r, k) => (k === 'ton' ? r.ton[g.k] || 0 : r[k]);
     const oSo = (r, k, laTong) => {
       const v = laTong ? T[k] : giaTri(r, k);
       if (k === 'pct') return v == null ? '–' : `${Math.round(v)}%`;
       if (!laTong && !r.coMT && ['mt7', 'canHN', 'conCanHN'].includes(k)) return '–';
-      return ['canHN', 'conCanHN'].includes(k) ? f1(v) : fs(v);
+      return fs(['mt7', 'canHN', 'conCanHN'].includes(k) ? len(v) : v); // số lẻ làm tròn LÊN
     };
     const mauPct = (v) => (v == null ? C.xam : v >= (d.kHN / TD_CK.soNgay) * 100 ? '#00873C' : v >= (d.kHN / TD_CK.soNgay) * 70 ? '#C2570C' : C.do);
     p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 4}" fill="${C.xanh}"/>`);
@@ -3956,13 +3957,13 @@ function veSvgThiDua(d) {
     const r = d.dsST[0], g = TD_NHOM.find((x) => x.k === TD_CK.nhom) || NHOM[0];
     const b10 = TD_BASE_T10[r.ma], tb = b10 / TD_CK.ngayT10, mt = tb * TD_CK.heSo * TD_CK.soNgay, moiNgay = mt / TD_CK.soNgay;
     const daBan = r.banCK || 0, pct = mt > 0 ? (daBan / mt) * 100 : 0;
-    const f1 = (v) => (Math.round(v * 10) / 10).toFixed(1).replace('.', ',');
+    const f1 = (v) => fs(Math.ceil((v || 0) - 1e-9)); // số lẻ làm tròn LÊN
     p.push(t(PAD, y + 6, `MỤC TIÊU CHU KỲ · ${g.ten} · ${r.ma} · ngày ${d.kHN}/${TD_CK.soNgay}`, { size: 22, bold: true, fill: C.xanh }));
     y += 22;
     const no = Math.max(0, r.canHN - moiNgay);
     const o4 = [
       ['BÁN THÁNG 10', `${fs(b10)} hộp`, `trung bình ${f1(tb)} hộp mỗi ngày`, '#F2F8F4', '#1D2B1F'],
-      [`MỤC TIÊU ${TD_CK.soNgay} NGÀY (×${String(TD_CK.heSo).replace('.', ',')})`, `${fs(mt)} hộp`, `${f1(moiNgay)} hộp mỗi ngày`, '#F2F8F4', '#1D2B1F'],
+      [`MỤC TIÊU ${TD_CK.soNgay} NGÀY (×${String(TD_CK.heSo).replace('.', ',')})`, `${f1(mt)} hộp`, `${f1(moiNgay)} hộp mỗi ngày`, '#F2F8F4', '#1D2B1F'],
       ['LUỸ KẾ CHU KỲ', `${fs(daBan)} hộp`, `đạt ${Math.round(pct)}% · hôm nay bán ${fs(r.banHN || 0)} hộp`, pct >= (d.kHN / TD_CK.soNgay) * 100 ? '#E3F6EA' : '#FFF4E5', pct >= (d.kHN / TD_CK.soNgay) * 100 ? '#00873C' : '#C2570C'],
       ['HÔM NAY CÒN CẦN BÁN', `${f1(r.conCanHN)} hộp`, `cần ${f1(r.canHN)} = ${f1(moiNgay)} mỗi ngày${no > 0 ? ` + cộng dồn ${f1(no)}` : ''}`, g.mau, '#FFFFFF'],
     ];
