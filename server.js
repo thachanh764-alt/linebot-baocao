@@ -3884,17 +3884,30 @@ function veSvgThiDua(d) {
     return [o.join(''), h + 8, g.mau];
   });
   the.push((x, w) => {
-    const a = nh('celym'), b = nh('celth'); const o = []; let h = 0;
-    o.push(t(x + 14, 30, 'SỮA CELANO', { size: 16, bold: true, fill: a.mau })); h = 46;
-    o.push(t(x + 14, h + 4, '① Yến mạch / Trà sữa Celano', { size: 14.5, bold: true, fill: a.mau })); h += 14;
-    o.push(huyHieu(x + 14, h, 'Có mốc: bán T11 ≥ 1,5 lần T10')); h += 30;
-    o.push(t(x + 14, h + 4, 'Thưởng NV ST: 13.000đ/thùng', { size: 13.5, fill: C.phu })); h += 12;
-    let [s1, h1] = dsDong(x + 18, h, w - 34, TD_SP_IN.celym); o.push(s1); h += h1 + 18;
-    o.push(t(x + 14, h + 4, '② Sữa tiệt trùng Celano có thạch 170ml', { size: 14.5, bold: true, fill: b.mau })); h += 14;
-    o.push(huyHieu(x + 14, h, 'Có mốc: DT ≥ 200.000đ/tuần/ST')); h += 30;
-    o.push(t(x + 14, h + 4, 'Thưởng NV ST: 13.000đ/thùng · lốc, thùng đều tính', { size: 13.5, fill: C.phu })); h += 12;
-    [s1, h1] = dsDong(x + 18, h, w - 34, TD_SP_IN.celth); o.push(s1); h += h1;
-    o.push(t(x + 14, h + 18, '1 lốc = 4 hộp · 1 thùng = 48 hộp', { size: 12.5, fill: C.phu })); h += 26;
+    const a = nh('celym'), b = nh('celth'); const o = [];
+    o.push(t(x + 14, 30, 'SỮA CELANO', { size: 16, bold: true, fill: a.mau }));
+    // Thẻ rộng (chỉ hiện Celano) -> chia ① bên trái, ② bên phải cho đều
+    const haiCot = w > 700, wc = haiCot ? (w - 28) / 2 : w;
+    const cot = (x0, wcot, h0, tieuDe, mau, moc, thuong, ds, ghiChu) => {
+      let h = h0;
+      o.push(t(x0 + 14, h + 4, tieuDe, { size: 14.5, bold: true, fill: mau })); h += 14;
+      o.push(huyHieu(x0 + 14, h, moc)); h += 30;
+      o.push(t(x0 + 14, h + 4, thuong, { size: 13.5, fill: C.phu })); h += 12;
+      const [s1, h1] = dsDong(x0 + 18, h, wcot - 34, ds); o.push(s1); h += h1;
+      if (ghiChu) { o.push(t(x0 + 14, h + 18, ghiChu, { size: 12.5, fill: C.phu })); h += 26; }
+      return h;
+    };
+    const A = ['① Yến mạch / Trà sữa Celano', a.mau, 'Có mốc: bán T11 ≥ 1,5 lần T10', 'Thưởng NV ST: 13.000đ/thùng', TD_SP_IN.celym, ''];
+    const B = ['② Sữa tiệt trùng Celano có thạch 170ml', b ? b.mau : a.mau, 'Có mốc: DT ≥ 200.000đ/tuần/ST', 'Thưởng NV ST: 13.000đ/thùng · lốc, thùng đều tính', TD_SP_IN.celth, '1 lốc = 4 hộp · 1 thùng = 48 hộp'];
+    let h;
+    if (haiCot) {
+      const h1 = cot(x, wc, 46, ...A), h2 = cot(x + wc + 28, wc, 46, ...B);
+      o.push(`<line x1="${x + wc + 14}" y1="44" x2="${x + wc + 14}" y2="${Math.max(h1, h2)}" stroke="#C9DCEB" stroke-width="1.5"/>`);
+      h = Math.max(h1, h2);
+    } else {
+      h = cot(x, w, 46, ...A) + 18;
+      h = cot(x, w, h, ...B);
+    }
     return [o.join(''), h + 10, a.mau];
   });
   the.push((x, w) => {
