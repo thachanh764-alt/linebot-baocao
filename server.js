@@ -3625,6 +3625,7 @@ const TD_NHOM = [
 ].filter((g) => TD_LAY.has(g.k));
 // 01/11: bảng CHỈ hiện Celano (tuần 1 RSM chọn CELANO). Hiện lại nhóm khác: thêm 'joyday', 'milo', 'c2' vào đây.
 const TD_HIEN = TD_LAY;
+const TD_CHU_KY = 'CHU KỲ: 02/11 → 08/11 (7 ngày)'; // in dưới tên KV trên ảnh; đổi tuần thì sửa dòng này ('' = ẩn)
 const TD_NHOM_HIEN = () => TD_NHOM.filter((g) => TD_HIEN.has(g.k));
 const TD_MA = new Map(); // mã model -> nhóm
 for (const g of TD_NHOM) for (const m of g.ma) TD_MA.set(m, g.k);
@@ -3808,7 +3809,7 @@ function veSvgThiDua(d) {
   const p = [];
 
   // ---- Tiêu đề đóng khung ----
-  const HH = 250;
+  const HH = TD_CHU_KY ? 316 : 250;
   p.push(`<defs><linearGradient id="tdg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#006B2F"/><stop offset="0.55" stop-color="#00A94A"/><stop offset="1" stop-color="#007A36"/></linearGradient></defs>`);
   p.push(`<rect x="0" y="0" width="${W}" height="${HH}" fill="url(#tdg)"/>`);
   p.push(`<rect x="${PAD + 4}" y="20" width="${W - PAD * 2 - 8}" height="${HH - 40}" rx="18" fill="none" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="2"/>`);
@@ -3819,7 +3820,12 @@ function veSvgThiDua(d) {
   p.push(`<rect x="${rx}" y="144" width="${rw}" height="52" rx="10" fill="#B89400"/>`);
   p.push(`<rect x="${rx}" y="140" width="${rw}" height="52" rx="10" fill="${C.vang}"/>`);
   p.push(t(W / 2, 177, 'KV QLTP QUỐC NAM 40909', { size: 30, bold: true, fill: '#0B4A22', anchor: 'middle', ls: 1.5 }));
-  p.push(t(W / 2, 214, `${[...new Set(NHOM.map((g) => (g.k.startsWith('cel') ? 'Sữa Celano' : g.ten)))].join(' · ')}  |  Tồn ${d.capTon || '–'} · Bán T11 ${d.capBan || 'chưa có'}`, { size: 15, fill: '#FFFFFF', anchor: 'middle' }));
+  if (TD_CHU_KY) {
+    const cw = TD_CHU_KY.length * 11.5 + 44, cx = (W - cw) / 2;
+    p.push(`<rect x="${cx}" y="206" width="${cw}" height="38" rx="19" fill="#FFFFFF"/>`);
+    p.push(t(W / 2, 232, TD_CHU_KY, { size: 20, bold: true, fill: '#C62828', anchor: 'middle' }));
+  }
+  p.push(t(W / 2, TD_CHU_KY ? 272 : 214, `${[...new Set(NHOM.map((g) => (g.k.startsWith('cel') ? 'Sữa Celano' : g.ten)))].join(' · ')}  |  Tồn ${d.capTon || '–'} · Bán T11 ${d.capBan || 'chưa có'}`, { size: 15, fill: '#FFFFFF', anchor: 'middle' }));
   let y = HH + 18;
 
   // ---- Bảng ----
