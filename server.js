@@ -3705,6 +3705,8 @@ async function napBanThiDua(sheets, header, dataRows, fileName, ngayChiDinh) {
   let moc = ngay, capMoc = cap;
   if (ngayChiDinh) capMoc = `hết ${ngay.slice(8, 10)}/${ngay.slice(5, 7)}`;
   else if (gioTuTenFile(fileName) == null) { moc = taoKeyNgayLuiDmsk(ngay, 1); capMoc = `hết ${moc.slice(8, 10)}/${moc.slice(5, 7)}`; }
+  // Hôm qua còn thuộc tháng trước (vd gửi file ngày 01/11) -> file là số của HÔM NAY, mốc = hôm nay
+  if (!ngayChiDinh && moc.slice(0, 7) !== TD_THANG && ngay.slice(0, 7) === TD_THANG) { moc = ngay; capMoc = cap; }
   const maMoi = new Set(ds.map((o) => o.ma));
   const giuLai = (await docTabAnToan(sheets, TAB_TD_BAN_LK)).slice(1).filter((r) => r[0] && !maMoi.has(String(r[0]).trim()));
   const rows = ds.map((o) => [o.ma, o.ten, o.st, o.tenST, Math.round(o.sl * 100) / 100, Math.round(o.dt), moc, capMoc]);
@@ -3716,19 +3718,27 @@ async function napBanThiDua(sheets, header, dataRows, fileName, ngayChiDinh) {
 function tdTinhBan(lkRows, ngayRows) {
   const ban = new Map(); // `${ma}|${st}` -> sl
   const moc = new Map(); // ma -> mốc ngày của file luỹ kế (trong tháng thi đua)
+  const lkMung1 = new Map(); // key -> SL luỹ kế khi mốc là ngày 01 chưa hết ngày (để so với robot)
   const add = (k, v) => ban.set(k, (ban.get(k) || 0) + v);
   for (const r of lkRows) {
     const ma = String(r[0] ?? '').trim(), m = String(r[6] || '');
     if (!ma || m.slice(0, 7) !== TD_THANG) continue; // file tháng khác (vd T10) -> bỏ
     moc.set(ma, m);
-    add(`${ma}|${chuanHoaMaST(r[2])}`, soGV(r[4]));
+    const k = `${ma}|${chuanHoaMaST(r[2])}`;
+    add(k, soGV(r[4]));
+    if (m.endsWith('-01') && !/^hết/.test(String(r[7] || ''))) lkMung1.set(k, (lkMung1.get(k) || 0) + soGV(r[4]));
   }
   let capNgay = '';
   for (const r of ngayRows) {
     const ngay = String(r[0] || ''), ma = String(r[1] ?? '').trim();
     if (ngay.slice(0, 7) !== TD_THANG) continue;
-    if (moc.has(ma) && ngay <= moc.get(ma)) continue; // đã nằm trong luỹ kế
-    add(`${ma}|${chuanHoaMaST(r[3])}`, soGV(r[5]));
+    const k = `${ma}|${chuanHoaMaST(r[3])}`, v = soGV(r[5]);
+    if (moc.has(ma) && ngay <= moc.get(ma)) {
+      // Mốc = ngày 01 đang trong ngày: robot giờ sau bán nhiều hơn file gửi tay -> lấy số robot
+      if (ngay === moc.get(ma) && lkMung1.has(k) && v > lkMung1.get(k)) add(k, v - lkMung1.get(k));
+      continue; // đã nằm trong luỹ kế
+    }
+    add(k, v);
     if (ngay >= capNgay.slice(0, 10)) capNgay = `${ngay}|${r[7] || ''}`;
   }
   return { ban, capNgay: capNgay.split('|')[1] || '' };
