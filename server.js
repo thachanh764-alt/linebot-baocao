@@ -3628,7 +3628,7 @@ const TD_HIEN = TD_LAY;
 // MỤC TIÊU CHU KỲ (chỉ hiện khi xem 1 siêu thị, vd "BC CELANO 8104"): MT = bán TB/ngày T10 × 1,5 × số ngày chu kỳ
 const TD_CK = { tu: '2026-11-02', den: '2026-11-08', soNgay: 7, heSo: 1.5, ngayT10: 31, nhom: 'celym' };
 // Bán T10 (hộp) Celano 4 SKU theo siêu thị — từ file Doanh Thu Theo Model tháng 10 (01–31/10)
-const TD_BASE_T10 = { '5151': 664, '5152': 548, '5153': 84, '5396': 512, '5405': 548, '5414': 500, '5489': 40, '5818': 716, '6135': 704, '6136': 260, '6294': 264, '6384': 456, '6434': 332, '6477': 212, '6525': 128, '6785': 508, '7661': 384, '7664': 740, '7665': 344, '8104': 492, '8153': 484, '8363': 480, '8828': 428, '9020': 892, '9153': 460, '9495': 216, '14012': 296, '14536': 48, '14551': 532, '14564': 132, '14586': 60, '14592': 220, '14619': 304, '14664': 252, '14823': 148, '14986': 240, '28632': 168, '28717': 144, '28724': 160, '29778': 144, '30400': 40, '34610': 256, '34673': 120, '34706': 176, '35544': 376, '35657': 280, '36191': 248, '36325': 88 };
+const TD_BASE_T10 = { '5151': 672, '5152': 564, '5153': 92, '5396': 520, '5405': 572, '5414': 504, '5489': 40, '5818': 728, '6135': 720, '6136': 264, '6294': 264, '6384': 464, '6434': 332, '6477': 212, '6525': 132, '6785': 512, '7661': 392, '7664': 756, '7665': 392, '8104': 492, '8153': 484, '8363': 488, '8828': 428, '9020': 972, '9153': 460, '9495': 228, '14012': 296, '14536': 56, '14551': 532, '14564': 132, '14586': 60, '14592': 220, '14619': 312, '14664': 260, '14823': 148, '14986': 240, '28632': 180, '28717': 144, '28724': 160, '29778': 144, '30400': 40, '34610': 256, '34673': 120, '34706': 176, '35544': 424, '35657': 288, '36191': 248, '36325': 88 }; // file T10 gửi 01/11 15:11
 const TD_CHU_KY = 'CHU KỲ: 02/11 → 08/11 (7 ngày)'; // in dưới tên KV trên ảnh; đổi tuần thì sửa dòng này ('' = ẩn)
 const TD_NHOM_HIEN = () => TD_NHOM.filter((g) => TD_HIEN.has(g.k));
 const TD_MA = new Map(); // mã model -> nhóm
@@ -3779,11 +3779,11 @@ async function docDuLieuThiDua(maST) {
     o.ban[k] = (o.ban[k] || 0) + sl;
   }
   let dsST = [...st.values()].sort((a, b) => Number(a.ma) - Number(b.ma));
-  let nhanTong = `TỔNG KV (${dsST.length} ST)`;
+  let nhanTong = `TỔNG KHU VỰC (${dsST.length} SIÊU THỊ)`;
   if (maST) {
     dsST = dsST.filter((x) => String(x.ma) === String(maST));
     if (!dsST.length) throw new Error(`Không có số THI ĐUA của siêu thị ${maST}.`);
-    nhanTong = `TỔNG ST ${maST}`;
+    nhanTong = `TỔNG SIÊU THỊ ${maST}`;
   }
   const moiNhat = (ds, i) => ds.map((r) => String(r[i] || '')).filter(Boolean).sort((a, b) => {
     const k = (x) => { const m = x.match(/(\d{2}):(\d{2})\s+(\d{2})\/(\d{2})/); return m ? `${m[4]}${m[3]}${m[1]}${m[2]}` : x; };
@@ -3794,9 +3794,27 @@ async function docDuLieuThiDua(maST) {
   for (const r of ng) {
     const ngay = String(r[0] || '');
     if (ngay < TD_CK.tu || ngay > TD_CK.den || tdNhomCua(r[1], r[2]) !== TD_CK.nhom) continue;
-    const o = st.get(chuanHoaMaST(r[3])); if (o) o.banCK = (o.banCK || 0) + soGV(r[5]);
+    const o = st.get(chuanHoaMaST(r[3])); if (!o) continue;
+    o.banCK = (o.banCK || 0) + soGV(r[5]);
+    if (ngay === homNayVN()) o.banHN = (o.banHN || 0) + soGV(r[5]);
   }
-  return { dsST, nhanTong, capTon: moiNhat(ton, 5), capBan: capNgay || moiNhat(capLK, 7) };
+  // Mục tiêu: MT/ngày = bán T10 ÷ 31 × 1,5 · MT 7 ngày = MT/ngày × 7
+  // Hôm nay cần bán = MT/ngày × (số ngày tới hôm nay) − đã bán trước hôm nay  (ngày nào thiếu thì cộng dồn qua ngày sau)
+  const hn = homNayVN();
+  const kHN = hn < TD_CK.tu ? 1 : hn > TD_CK.den ? TD_CK.soNgay : soNgayGiua(TD_CK.tu, hn) + 1;
+  for (const o of st.values()) {
+    const b10 = TD_BASE_T10[o.ma];
+    o.coMT = b10 != null;
+    o.mtNgay = o.coMT ? (b10 / TD_CK.ngayT10) * TD_CK.heSo : 0;
+    o.mt7 = o.mtNgay * TD_CK.soNgay;
+    o.banCK = o.banCK || 0; o.banHN = hn >= TD_CK.tu && hn <= TD_CK.den ? o.banHN || 0 : 0;
+    const truocHN = o.banCK - o.banHN, mtToiHN = o.mtNgay * kHN;
+    o.canHN = Math.max(0, mtToiHN - truocHN); // gồm phần nợ các ngày trước
+    o.conCanHN = Math.max(0, o.canHN - o.banHN);
+    o.pct = o.mt7 > 0 ? (o.banCK / o.mt7) * 100 : null;
+  }
+  if (!maST) dsST.sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1) || b.banCK - a.banCK); // % đạt cao -> thấp
+  return { kHN, dsST, nhanTong, capTon: moiNhat(ton, 5), capBan: capNgay || moiNhat(capLK, 7) };
 }
 
 // Chia chữ thành nhiều dòng theo số ký tự
@@ -3811,7 +3829,7 @@ function tdXuongDong(s, max) {
 
 function veSvgThiDua(d) {
   const NHOM = TD_NHOM_HIEN();
-  const W = NHOM.length >= 5 ? 1600 : Math.max(1100, 454 + NHOM.length * 320), PAD = 24, ROW = 30;
+  const W = NHOM.length === 1 && NHOM[0].k === TD_CK.nhom ? 1400 : NHOM.length >= 5 ? 1600 : Math.max(1100, 454 + NHOM.length * 320), PAD = 24, ROW = 30;
   const C = { xanh: '#00873C', xanhDam: '#0B5A2B', nen: '#E4F2E8', chan: '#FAFCFA', vien: '#EDF0ED', phu: '#56655A', xam: '#B0B8B2', do: '#C62828', vang: '#FFD200' };
   const t = (x, y, s, o = {}) =>
     `<text x="${x}" y="${y}" font-size="${o.size || 15}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1D2B1F'}" text-anchor="${o.anchor || 'start'}"${o.ls ? ` letter-spacing="${o.ls}"` : ''}>${escXml(s)}</text>`;
@@ -3835,10 +3853,61 @@ function veSvgThiDua(d) {
     p.push(`<rect x="${cx}" y="206" width="${cw}" height="38" rx="19" fill="#FFFFFF"/>`);
     p.push(t(W / 2, 232, TD_CHU_KY, { size: 20, bold: true, fill: '#C62828', anchor: 'middle' }));
   }
-  p.push(t(W / 2, TD_CHU_KY ? 272 : 214, `${[...new Set(NHOM.map((g) => (g.k.startsWith('cel') ? 'Sữa Celano' : g.ten)))].join(' · ')}  |  Tồn ${d.capTon || '–'} · Bán T11 ${d.capBan || 'chưa có'}`, { size: 15, fill: '#FFFFFF', anchor: 'middle' }));
+  p.push(t(W / 2, TD_CHU_KY ? 272 : 214, `${[...new Set(NHOM.map((g) => (g.k.startsWith('cel') ? 'Sữa Celano' : g.ten)))].join(' · ')}  |  Tồn ${d.capTon || '–'} · Bán tháng 11 ${d.capBan || 'chưa có'}`, { size: 15, fill: '#FFFFFF', anchor: 'middle' }));
   let y = HH + 18;
 
   // ---- Bảng ----
+  const CKMODE = NHOM.length === 1 && NHOM[0].k === TD_CK.nhom;
+  if (CKMODE) {
+    const g = NHOM[0], f1 = (v) => (Math.round(v * 10) / 10).toFixed(1).replace('.', ',');
+    const cot = [['TỒN', 'ton'], [`MỤC TIÊU ${TD_CK.soNgay} NGÀY`, 'mt7'], ['LUỸ KẾ', 'banCK'], ['% ĐẠT', 'pct'], ['CẦN HÔM NAY', 'canHN'], ['ĐÃ BÁN HÔM NAY', 'banHN'], ['CÒN THIẾU', 'conCanHN']];
+    const xTen2 = PAD + 50, x02 = 440, wc = (W - PAD - x02) / cot.length, xr = (j) => x02 + wc * (j + 0.5); // canh giữa cột
+    p.push(`<rect x="${x02 + 2}" y="${y}" width="${W - PAD - x02 - 2}" height="54" fill="${g.mau}"/>`);
+    p.push(t((x02 + W - PAD) / 2, y + 24, `${g.ten} · MỤC TIÊU ×${String(TD_CK.heSo).replace('.', ',')} SO THÁNG 10 · ${TD_CK.soNgay} NGÀY`, { size: 16, bold: true, fill: '#FFFFFF', anchor: 'middle' }));
+    p.push(t((x02 + W - PAD) / 2, y + 44, `NGÀY ${d.kHN}/${TD_CK.soNgay} CỦA CHU KỲ · NGÀY NÀO THIẾU CỘNG DỒN QUA NGÀY SAU · ĐƠN VỊ TÍNH: HỘP`, { size: 12.5, fill: '#FFFFFF', anchor: 'middle' }));
+    y += 54;
+    p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="34" fill="${C.nen}"/>`);
+    p.push(`<line x1="${PAD}" y1="${y + 34}" x2="${W - PAD}" y2="${y + 34}" stroke="${C.xanh}" stroke-width="2"/>`);
+    p.push(t(PAD + 34, y + 22, '#', { size: 13, bold: true, fill: C.xanhDam, anchor: 'end' }));
+    p.push(t(xTen2, y + 22, 'SIÊU THỊ (XẾP % ĐẠT TỪ CAO ĐẾN THẤP)', { size: 13, bold: true, fill: C.xanhDam }));
+    cot.forEach(([nhan], j) => p.push(t(xr(j), y + 22, nhan, { size: 13, bold: true, fill: C.xanhDam, anchor: 'middle' })));
+    const yTop2 = y; y += 36;
+    const T = { ton: 0, mt7: 0, banCK: 0, canHN: 0, banHN: 0, conCanHN: 0 };
+    for (const r of d.dsST) { T.ton += r.ton[g.k] || 0; for (const k of ['mt7', 'banCK', 'canHN', 'banHN', 'conCanHN']) T[k] += r[k] || 0; }
+    T.pct = T.mt7 > 0 ? (T.banCK / T.mt7) * 100 : null;
+    const giaTri = (r, k) => (k === 'ton' ? r.ton[g.k] || 0 : r[k]);
+    const oSo = (r, k, laTong) => {
+      const v = laTong ? T[k] : giaTri(r, k);
+      if (k === 'pct') return v == null ? '–' : `${Math.round(v)}%`;
+      if (!laTong && !r.coMT && ['mt7', 'canHN', 'conCanHN'].includes(k)) return '–';
+      return ['canHN', 'conCanHN'].includes(k) ? f1(v) : fs(v);
+    };
+    const mauPct = (v) => (v == null ? C.xam : v >= (d.kHN / TD_CK.soNgay) * 100 ? '#00873C' : v >= (d.kHN / TD_CK.soNgay) * 70 ? '#C2570C' : C.do);
+    p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 4}" fill="${C.xanh}"/>`);
+    p.push(t(xTen2, y + 23, d.nhanTong, { size: 16, bold: true, fill: '#FFFFFF' }));
+    cot.forEach(([, k], j) => p.push(t(xr(j), y + 23, oSo(null, k, true), { size: 16, bold: true, fill: '#FFFFFF', anchor: 'middle' })));
+    y += ROW + 4;
+    d.dsST.forEach((r, i) => {
+      if (i % 2 === 1) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${C.chan}"/>`);
+      p.push(`<line x1="${PAD}" y1="${y + ROW}" x2="${W - PAD}" y2="${y + ROW}" stroke="${C.vien}"/>`);
+      const yt = y + 20;
+      p.push(t(PAD + 34, yt, i + 1, { fill: C.phu, anchor: 'end' }));
+      p.push(`<text x="${xTen2}" y="${yt}" font-size="15" fill="#1D2B1F"><tspan font-weight="700">${escXml(r.ma)}</tspan> · ${escXml(rutGonTen(String(r.ten).replace(/\(\s+/g, '(').replace(/\s+\)/g, ')').replace(/Phường 0?1\b/, 'P.1'), 30))}</text>`);
+      cot.forEach(([, k], j) => {
+        const v = giaTri(r, k), s2 = oSo(r, k, false);
+        let o = {};
+        if (k === 'ton') o = { bold: v <= 0, fill: v <= 0 ? C.do : '#1D2B1F' };
+        else if (k === 'pct') o = { bold: true, fill: mauPct(v) };
+        else if (k === 'banCK' || k === 'banHN') o = { bold: v > 0, fill: v > 0 ? g.mau : C.xam };
+        else if (k === 'conCanHN') o = { bold: v > 0, fill: v > 0 ? C.do : C.xam };
+        else if (k === 'canHN') o = { bold: true };
+        p.push(t(xr(j), yt, s2, { anchor: 'middle', ...o }));
+      });
+      y += ROW;
+    });
+    p.push(`<line x1="${x02}" y1="${yTop2}" x2="${x02}" y2="${y}" stroke="#DFE8E1" stroke-width="3"/>`);
+    y += 28;
+  } else {
   const xTen = PAD + 50, x0 = 430, wNhom = (W - PAD - x0) / NHOM.length;
   const xc = (gi, j) => x0 + gi * wNhom + (j === 0 ? wNhom * 0.5 - 14 : wNhom - 14);
   NHOM.forEach((g, gi) => {
@@ -3880,22 +3949,22 @@ function veSvgThiDua(d) {
   });
   NHOM.forEach((g, gi) => { const x = x0 + gi * wNhom; p.push(`<line x1="${x}" y1="${yTop}" x2="${x}" y2="${y}" stroke="#DFE8E1" stroke-width="3"/>`); });
   y += 28;
+  }
 
   // ---- Mục tiêu chu kỳ (xem 1 siêu thị) ----
   if (d.dsST.length === 1 && TD_BASE_T10[d.dsST[0].ma] != null) {
     const r = d.dsST[0], g = TD_NHOM.find((x) => x.k === TD_CK.nhom) || NHOM[0];
     const b10 = TD_BASE_T10[r.ma], tb = b10 / TD_CK.ngayT10, mt = tb * TD_CK.heSo * TD_CK.soNgay, moiNgay = mt / TD_CK.soNgay;
-    const daBan = r.banCK || 0, pct = mt > 0 ? (daBan / mt) * 100 : 0, thieu = Math.max(0, mt - daBan);
-    const hn = homNayVN(), conNgay = hn < TD_CK.tu ? TD_CK.soNgay : hn > TD_CK.den ? 0 : soNgayGiua(hn, TD_CK.den) + 1;
-    const can = conNgay > 0 ? thieu / conNgay : 0;
+    const daBan = r.banCK || 0, pct = mt > 0 ? (daBan / mt) * 100 : 0;
     const f1 = (v) => (Math.round(v * 10) / 10).toFixed(1).replace('.', ',');
-    p.push(t(PAD, y + 6, `MỤC TIÊU CHU KỲ · ${g.ten} · ${r.ma}`, { size: 22, bold: true, fill: C.xanh }));
+    p.push(t(PAD, y + 6, `MỤC TIÊU CHU KỲ · ${g.ten} · ${r.ma} · ngày ${d.kHN}/${TD_CK.soNgay}`, { size: 22, bold: true, fill: C.xanh }));
     y += 22;
+    const no = Math.max(0, r.canHN - moiNgay);
     const o4 = [
-      ['BÁN THÁNG 10', `${fs(b10)} hộp`, `TB ${f1(tb)} hộp/ngày`, '#F2F8F4', '#1D2B1F'],
-      [`MỤC TIÊU CHU KỲ (×${String(TD_CK.heSo).replace('.', ',')})`, `${fs(mt)} hộp`, `${TD_CK.soNgay} ngày · ${f1(moiNgay)} hộp/ngày`, '#F2F8F4', '#1D2B1F'],
-      ['ĐÃ BÁN TRONG CHU KỲ', `${fs(daBan)} hộp`, `đạt ${Math.round(pct)}%`, pct >= 100 ? '#E3F6EA' : '#FFF4E5', pct >= 100 ? '#00873C' : '#C2570C'],
-      [thieu > 0 ? 'MỖI NGÀY CÒN CẦN BÁN' : 'ĐÃ ĐẠT MỤC TIÊU', thieu > 0 ? `${f1(can || moiNgay)} hộp` : '✓', thieu > 0 ? `còn thiếu ${fs(thieu)} hộp · ${conNgay || TD_CK.soNgay} ngày` : `vượt ${fs(daBan - mt)} hộp`, g.mau, '#FFFFFF'],
+      ['BÁN THÁNG 10', `${fs(b10)} hộp`, `trung bình ${f1(tb)} hộp mỗi ngày`, '#F2F8F4', '#1D2B1F'],
+      [`MỤC TIÊU ${TD_CK.soNgay} NGÀY (×${String(TD_CK.heSo).replace('.', ',')})`, `${fs(mt)} hộp`, `${f1(moiNgay)} hộp mỗi ngày`, '#F2F8F4', '#1D2B1F'],
+      ['LUỸ KẾ CHU KỲ', `${fs(daBan)} hộp`, `đạt ${Math.round(pct)}% · hôm nay bán ${fs(r.banHN || 0)} hộp`, pct >= (d.kHN / TD_CK.soNgay) * 100 ? '#E3F6EA' : '#FFF4E5', pct >= (d.kHN / TD_CK.soNgay) * 100 ? '#00873C' : '#C2570C'],
+      ['HÔM NAY CÒN CẦN BÁN', `${f1(r.conCanHN)} hộp`, `cần ${f1(r.canHN)} = ${f1(moiNgay)} mỗi ngày${no > 0 ? ` + cộng dồn ${f1(no)}` : ''}`, g.mau, '#FFFFFF'],
     ];
     const gw = 12, bw = (W - PAD * 2 - gw * 3) / 4, bh = 96;
     o4.forEach(([a, v, s2, nen, chu], k) => {
@@ -3950,8 +4019,8 @@ function veSvgThiDua(d) {
       if (ghiChu) { o.push(t(x0 + 14, h + 18, ghiChu, { size: 12.5, fill: C.phu })); h += 26; }
       return h;
     };
-    const A = [coThach ? '① Yến mạch / Trà sữa Celano' : 'Trà sữa gạo rang + Sữa yến mạch Celano', a.mau, 'Có mốc: bán T11 ≥ 1,5 lần T10', 'Thưởng NV ST: 13.000đ/thùng', TD_SP_IN.celym, ''];
-    const B = ['② Sữa tiệt trùng Celano có thạch 170ml', b ? b.mau : a.mau, 'Có mốc: DT ≥ 200.000đ/tuần/ST', 'Thưởng NV ST: 13.000đ/thùng · lốc, thùng đều tính', TD_SP_IN.celth, '1 lốc = 4 hộp · 1 thùng = 48 hộp'];
+    const A = [coThach ? '① Yến mạch / Trà sữa Celano' : 'Trà sữa gạo rang + Sữa yến mạch Celano', a.mau, 'Có mốc: bán tháng 11 ≥ 1,5 lần tháng 10', 'Thưởng nhân viên siêu thị: 13.000đ/thùng', TD_SP_IN.celym, ''];
+    const B = ['② Sữa tiệt trùng Celano có thạch 170ml', b ? b.mau : a.mau, 'Có mốc: DT ≥ 200.000đ/tuần/ST', 'Thưởng nhân viên siêu thị: 13.000đ/thùng · lốc, thùng đều tính', TD_SP_IN.celth, '1 lốc = 4 hộp · 1 thùng = 48 hộp'];
     let h;
     if (haiCot) {
       const h1 = cot(x, wc, 46, ...A), h2 = cot(x + wc + 28, wc, 46, ...B);
