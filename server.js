@@ -4213,6 +4213,7 @@ async function generateThiDuaReport(text) {
 //  Luỹ kế từ ngày 01 của tháng. Cần hôm nay = mục tiêu ngày × số ngày đã chạy − luỹ kế trước hôm nay (cộng dồn ngày thiếu).
 // ---------------------------------------------------------------------------
 const TAB_THEODOI = 'THEODOI_NGAY';
+const TDOI_CHI_ST = '8104'; // 02/11: THEO DÕI (ĐMSK+HPM, Cá trứng+Thịt) chỉ nạp + hiện siêu thị này. Bỏ lọc: để ''
 const TDOI_HE_SO = 1; // mục tiêu = trung bình ngày tháng trước × hệ số này (đổi 1.2 = tăng 20%)
 const TDOI_NHOM = [
   { k: 'dmsk', ten: 'ĐÔNG MÁT SỮA KEM', dv: 'đ', nh: ['10', '12', '13', '14'], ten2: ['sữa - thức uống bổ dưỡng các loại', 'thực phẩm đông lạnh - hàng mát các loại', 'sản phẩm từ sữa - bảo quản mát', 'kem các loại'] },
@@ -4264,11 +4265,12 @@ async function napTheoDoiThit(sheets, header, dataRows, fileName) {
 }
 // Ghi vào THEODOI_NGAY: chỉ thay các nhóm có trong file (file lẻ từng ngành không xoá nhóm khác)
 async function ghiTheoDoi(sheets, moi, fileName) {
+  if (TDOI_CHI_ST) moi = moi.filter((o) => String(o.st) === TDOI_CHI_ST); // chỉ nạp số 8104
   if (!moi.length) return;
   const cap = capNhatTuTen(fileName) || bayGioVN();
   const khoa = new Set(moi.map((o) => `${o.ngay}|${o.st}`));
   const giuTu = (() => { const d = new Date(Date.now() + 7 * 3600e3); d.setUTCMonth(d.getUTCMonth() - 1, 1); return d.toISOString().slice(0, 10); })(); // giữ tháng trước + tháng này
-  const tatCa = (await docTabAnToan(sheets, TAB_THEODOI)).slice(1).filter((r) => r[0] && String(r[0]) >= giuTu);
+  const tatCa = (await docTabAnToan(sheets, TAB_THEODOI)).slice(1).filter((r) => r[0] && String(r[0]) >= giuTu && (!TDOI_CHI_ST || chuanHoaMaST(r[1]) === TDOI_CHI_ST));
   const cuTheoKhoa = new Map(tatCa.map((r) => [`${r[0]}|${chuanHoaMaST(r[1])}`, r]));
   const cu = tatCa.filter((r) => !khoa.has(`${r[0]}|${chuanHoaMaST(r[1])}`));
   const rows = [...cu, ...moi.map((o) => {
@@ -4282,7 +4284,7 @@ async function ghiTheoDoi(sheets, moi, fileName) {
 }
 
 async function docDuLieuTheoDoi(maST) {
-  const rows = (await docTabAnToan(getSheetsClient(), TAB_THEODOI)).slice(1).filter((r) => r[0]);
+  const rows = (await docTabAnToan(getSheetsClient(), TAB_THEODOI)).slice(1).filter((r) => r[0] && (!TDOI_CHI_ST || chuanHoaMaST(r[1]) === TDOI_CHI_ST));
   if (!rows.length) throw new Error('Chưa có số theo dõi. Chờ robot nạp file POS 835 (Doanh thu theo ngành hàng BHX) hoặc anh gửi file đó vào group.');
   const hn = homNayVN(), thang = hn.slice(0, 7), thangTr = thangTruoc(thang);
   const ngayTr = new Date(Number(thang.slice(0, 4)), Number(thang.slice(5, 7)) - 1, 0).getDate();
@@ -4327,7 +4329,7 @@ function veSvgTheoDoi(d, cap2) {
   const ngay = `${d.ngayMoi.slice(8, 10)}/${d.ngayMoi.slice(5, 7)}`;
   p.push(`<rect x="0" y="0" width="${W}" height="96" fill="${C.xanh}"/>`);
   p.push(t(PAD, 40, `THEO DÕI ${A.ten} + ${B.ten} · NGÀY ${ngay}`, { size: 26, bold: true, fill: '#FFFFFF' }));
-  p.push(t(PAD, 68, `KV QLTP QUỐC NAM 40909 · ${A.ten}: ${A.dv === 'kg' ? 'KG' : 'DOANH THU (Đ)'} · ${B.ten}: ${B.dv === 'kg' ? 'KG' : 'DOANH THU (Đ)'} · LUỸ KẾ TỪ 01/${d.ngayMoi.slice(5, 7)}`, { size: 14, fill: '#E3F5EA' }));
+  p.push(t(PAD, 68, `${d.ds.length === 1 ? `SIÊU THỊ ${d.ds[0].ma}${d.ds[0].ten ? ` – ${d.ds[0].ten}` : ''}` : 'KV QLTP QUỐC NAM 40909'} · ${A.ten}: ${A.dv === 'kg' ? 'KG' : 'DOANH THU (Đ)'} · ${B.ten}: ${B.dv === 'kg' ? 'KG' : 'DOANH THU (Đ)'} · LUỸ KẾ TỪ 01/${d.ngayMoi.slice(5, 7)}`, { size: 14, fill: '#E3F5EA' }));
   p.push(t(PAD, 88, `Cập nhật ${d.cap || '–'} · Cần hôm nay = mục tiêu ngày × ${d.k} ngày − luỹ kế trước hôm nay (ngày nào thiếu cộng dồn) · mục tiêu ngày theo từng siêu thị (8104: ĐMSK 22tr · HPM 18tr · Cá trứng 5,2tr · Thịt 63kg)`, { size: 12, fill: '#E3F5EA' }));
   let y = 112;
   // thẻ tổng
