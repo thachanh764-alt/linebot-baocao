@@ -3340,7 +3340,7 @@ function veSvgKmKV(d) {
   for (let k = 0; k <= d.nhom.length; k++) p.push(`<line x1="${xG0 + CW * k}" y1="${y0}" x2="${xG0 + CW * k}" y2="${y}" stroke="${C.vien}" stroke-width="1"/>`);
   p.push(`<rect x="${PAD}" y="${y0}" width="${W - PAD * 2}" height="${y - y0}" fill="none" stroke="${C.xanhDam}" stroke-width="1.5"/>`);
   y += 26;
-  p.push(t(PAD, y, 'Nhóm gộp nhiều SKU (NRC, KĐR, Gạo, C2) = tổng SL đặt các SKU trong nhóm · Gõ "ĐẶT HÀNG FMCG + mã ST" để xem từng SKU.', { size: 13, fill: C.phu }));
+  p.push(t(PAD, y, `Mỗi cột = tổng SL đặt các SKU trong nhóm (${d.nhom.join(', ')}) · Gõ "ĐẶT HÀNG FMCG + mã ST" để xem từng SKU.`, { size: 13, fill: C.phu }));
   if (d.thieu.length) { y += 22; p.push(t(PAD, y, `⚠ Không thấy trong file: ${rutGonTen(d.thieu.join('; '), 150)}`, { size: 13, bold: true, fill: C.do })); }
   const H = y + 20;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
