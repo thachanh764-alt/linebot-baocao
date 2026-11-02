@@ -4117,6 +4117,7 @@ function veSvgC2(d) {
   p.push(t(xTen, y + 26, 'SIÊU THỊ', { size: 15, bold: true, fill: '#FFFFFF' }));
   p.push(t(xTon, y + 26, 'TỒN (CHAI)', { size: 15, bold: true, fill: '#FFFFFF', anchor: 'end' }));
   p.push(t(xBan, y + 26, 'BÁN T11 (CHAI)', { size: 15, bold: true, fill: '#FFFFFF', anchor: 'end' }));
+  const yKeTop = y; // 02/11: mốc kẻ dọc tách cột siêu thị (giống Celano)
   y += 40;
   const ds = d.dsST;
   const tTon = ds.reduce((s, x) => s + (x.ton.c2 || 0), 0), tBan = ds.reduce((s, x) => s + (x.ban.c2 || 0), 0);
@@ -4137,6 +4138,9 @@ function veSvgC2(d) {
     p.push(t(xBan, yt, fs(ban), { size: 18, anchor: 'end', bold: ban > 0, fill: ban > 0 ? '#1F7AC2' : C.xam }));
     y += ROW;
   });
+  // 02/11: kẻ dọc sau cột SIÊU THỊ + giữa TỒN | BÁN cho giống bảng Celano
+  const xKeST = xTon - 210, xKeGiua = Math.round((xTon + xBan) / 2) - 70;
+  [xKeST, xKeGiua].forEach((vx, k) => p.push(`<line x1="${vx}" y1="${yKeTop}" x2="${vx}" y2="${y}" stroke="${k ? '#E6ECE7' : '#DFE8E1'}" stroke-width="${k ? 1.5 : 3}"/>`));
   y += 26;
   // Sản phẩm
   const ten = TD_SP_IN.c2, hSP = 58 + ten.length * 26;
