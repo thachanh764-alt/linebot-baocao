@@ -4405,6 +4405,8 @@ async function generateTheoDoiReport(text, l) {
 
 async function chayLenh(text) {
   text = (text || '').normalize('NFC');
+  // 02/11: lệnh SP KM (đổi danh sách đặt hàng) xét TRƯỚC — tin có chữ "celano", "c2"... không bị nhảy qua báo cáo khác
+  if (laLenhKmSP(text)) return { ten: 'SP KM', ket: await lenhKmSP(text) };
   { const l = lenhTheoDoi(text); if (l) return { ten: 'Theo dõi', ket: await generateTheoDoiReport(text, l) }; }
   // TẮT 27/10: ĐMSK, THS + Trứng, DT NGÀNH HÀNG, ĐẶT MỨC, BNNB, DTLK KV (BC NGÀY bật lại 31/10: mẫu KHUNG 22H)
   const tat = [[laTriggerDtNganhHang, 'DT NGÀNH HÀNG'], [laTriggerThst, 'THS + Trứng'], [laTriggerBnnb, 'BNNB'], [laTriggerDmsk, 'ĐMSK'], [(x) => /đ[ặa]t\s*m[ứu]c/i.test(x), 'ĐẶT MỨC'], [laTriggerDtlk, 'DTLK'], [laTriggerGiaVon, 'GIÁ VỐN'], [laTriggerHuyMmkk, 'HUỶ MMKK'], [laTriggerCvst, 'BC CVST'], [laTriggerSua, 'SỮA CELANO + C2']].find(([f]) => f(text)); // TẮT 31/10: BC SỮA
