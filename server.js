@@ -3703,7 +3703,10 @@ async function napBanThiDua(sheets, header, dataRows, fileName, ngayChiDinh) {
   const ngay = ngayChiDinh || ngayTuTenFile(fileName);
   const cap = capNhatTuTen(fileName) || bayGioVN();
   const laRobot = /_robot_/.test(String(fileName || ''));
-  const motNgay = KIEU_FILE_ROBOT.v === 'ngay' || (KIEU_FILE_ROBOT.v !== 'luyke' && laRobot && !ngayChiDinh);
+  // 02/11: file gửi tay (POS xuất "chỉ hôm nay") trong chu kỳ -> tính là số bán HÔM NAY (vào TD_BAN_NGAY như robot),
+  // để bảng chu kỳ (Luỹ kế / Đã bán hôm nay) cập nhật được khi robot lỗi. Lượt robot sau sẽ thay bằng số mới hơn.
+  const tayHomNay = !laRobot && !ngayChiDinh && !KIEU_FILE_ROBOT.v && ngay === homNayVN() && ngay >= TD_CK.tu && ngay <= TD_CK.den;
+  const motNgay = KIEU_FILE_ROBOT.v === 'ngay' || (KIEU_FILE_ROBOT.v !== 'luyke' && laRobot && !ngayChiDinh) || tayHomNay;
   if (motNgay) {
     // File hôm nay của robot: thay hẳn số của ngày đó (mã nào chưa bán = 0)
     const cu = (await docTabAnToan(sheets, TAB_TD_BAN_NGAY)).slice(1)
