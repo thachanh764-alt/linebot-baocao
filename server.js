@@ -3217,6 +3217,8 @@ async function datMucThiDua(text) {
 // ĐẶT HÀNG FMCG (file "Báo cáo đặt hàng khuyến mãi FMCG"): gửi file vào group -> tự nạp + gửi bảng
 // Danh sách SP theo dõi nằm ở tab KM_SP (Nhóm | Tên sản phẩm). Đổi SP: sửa tab đó, hoặc @bot SP KM MỚI ...
 // ---------------------------------------------------------------------------
+// Siêu thị chưa khai trương: ẩn khỏi báo cáo KV (khai trương thì xoá mã khỏi đây)
+const ST_CHUA_KHAI_TRUONG = new Set(['36757', '37030', '50026', '50029', '50030']); // Chợ Vĩnh Biên, No Tom (Chợ Hoà Đông), Chợ Kế An, Giồng Giữa, Chợ Tuấn Tức
 const TAB_KM = 'KMFMCG';
 const TAB_KM_SP = 'KM_SP';
 const KM_SP_MAC_DINH = [
@@ -3278,6 +3280,7 @@ async function docDuLieuKm() {
   const st = new Map();
   for (const r of rows) {
     const ma = String(r[1]);
+    if (ST_CHUA_KHAI_TRUONG.has(ma)) continue;
     const o = st.get(ma) || { ma, ten: String(r[2] || ma), dat: new Map(), sku: [] };
     st.set(ma, o);
     const g = spSangNhom.get(String(r[3]));
@@ -3616,7 +3619,7 @@ const TD_THANG = '2026-11';
 const TAB_TD_TON = 'TD_TON';
 const TAB_TD_BAN_NGAY = 'TD_BAN_NGAY';
 const TAB_TD_BAN_LK = 'TD_BAN_LK';
-const TD_ST_LOAI = new Set(['14978', '14652']); // Phạm Hùng, 244 Trương Công Định: đã off
+const TD_ST_LOAI = new Set(['14978', '14652', ...ST_CHUA_KHAI_TRUONG]); // Phạm Hùng, 244 Trương Công Định: đã off
 // 01/11: CHỈ LẤY DATA CELANO (robot không lấy mã Joyday/Milo/C2 nữa). Lấy lại: thêm 'joyday', 'milo', 'c2' vào đây.
 const TD_LAY = new Set(['celym', 'c2']); // 02/11: thêm 'c2' (báo cáo riêng BC C2, 7 mã theo hình KV) // 01/11 15h: chỉ CELANO 4 SKU (bỏ Celano có thạch). Lấy lại: thêm 'celth'
 const TD_NHOM = [
