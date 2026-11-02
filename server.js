@@ -4127,7 +4127,7 @@ function veSvgC2(d) {
   y += ROW + 6;
   ds.forEach((r, i) => {
     const ton = r.ton.c2 || 0, ban = r.ban.c2 || 0;
-    const nen = String(r.ma) === String(MENU_MA_ST) ? '#FFF4C2' : i % 2 === 1 ? C.chan : null;
+    const nen = i % 2 === 1 ? C.chan : null; // 02/11: bỏ tô vàng 8104 theo yêu cầu
     if (nen) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${nen}"/>`);
     p.push(`<line x1="${PAD}" y1="${y + ROW}" x2="${W - PAD}" y2="${y + ROW}" stroke="${C.vien}"/>`);
     const yt = y + 23;
