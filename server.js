@@ -4221,7 +4221,7 @@ const TDOI_NHOM = [
   { k: 'catrung', ten: 'CÁ + TRỨNG', dv: 'đ', nh: ['17', '19'], ten2: ['cá (hải sản)', 'trứng'] },
   // THỊT HEO ĐỊA PHƯƠNG (kg): ưu tiên file "Nhập xuất bán Fresh theo siêu thị" (Ngành hàng - Phân tích = Thịt Địa Phương, cột SL thực xuất);
   // chưa có file đó thì tạm lấy nhóm 2848 Thịt Heo Các Loại (Sản lượng bán) trong file POS 835
-  { k: 'thitheo', ten: 'THỊT HEO ĐỊA PHƯƠNG', dv: 'kg', nhom: '2848' },
+  { k: 'thitheo', ten: 'THỊT HEO ĐỊA PHƯƠNG', dv: 'kg', nhom: '2848', locTen: /heo\s*địa\s*phương/i }, // 02/11: file 835 ngành Thịt gia cầm -> lọc nhóm "Thịt heo địa phương" 
 ];
 // MỤC TIÊU NGÀY theo siêu thị (anh đưa 01/11). Siêu thị chưa có ở đây -> trung bình ngày tháng trước × TDOI_HE_SO
 const TDOI_MT = {
@@ -4233,6 +4233,10 @@ function tdoiTenNH(v) { return String(v || '').trim().toLowerCase().replace(/^\d
 async function napTheoDoi(sheets, header, dataRows, fileName) {
   const i = (c) => header.indexOf(c);
   const c = { ngay: i('Ngày xuất'), st: i('Mã siêu thị'), nh: i('Ngành hàng BHX'), nhom: i('Nhóm hàng'), dt: i('Doanh thu'), sl: i('Sản lượng bán') };
+  // 02/11: tên cột nhóm / sản lượng có thể khác -> dò theo chữ
+  if (c.nhom < 0) c.nhom = header.findIndex((h) => /nhóm/i.test(String(h || '')));
+  if (c.sl < 0) c.sl = header.findIndex((h) => /sản lượng|số lượng|^sl\b/i.test(String(h || '')));
+  const cotLoc = header.map((h, j) => j).filter((j) => /nhóm|phân tích|sản phẩm|model/i.test(String(header[j] || ''))); // cột để lọc "heo địa phương" 
   const gop = new Map(); // ngày|st -> {dmsk,hpm,catrung,thitheo}
   for (const r of dataRows) {
     const ngay = keyNgayExcel(r[c.ngay]), st = chuanHoaMaST(r[c.st]);
@@ -4241,7 +4245,7 @@ async function napTheoDoi(sheets, header, dataRows, fileName) {
     if (!gop.has(k)) gop.set(k, { ngay, st, ten: tenNganSieuThi(r[c.st]).replace(/^BHX_\w+_\w+\s*-\s*/, ''), dmsk: 0, hpm: 0, catrung: 0, thitheo: 0, co: new Set() });
     const o = gop.get(k), nh = tdoiMaNH(r[c.nh]), tenNH = tdoiTenNH(r[c.nh]), nhom = c.nhom < 0 ? '' : tdoiMaNH(r[c.nhom]);
     for (const g of TDOI_NHOM) {
-      const khop = g.nhom ? nhom === g.nhom : g.nh.includes(nh) || g.ten2.includes(tenNH);
+      const khop = g.nhom ? nhom === g.nhom || (g.locTen && cotLoc.some((j) => g.locTen.test(String(r[j] || '')))) : g.nh.includes(nh) || g.ten2.includes(tenNH);
       if (khop) { o[g.k] += g.dv === 'kg' ? (c.sl < 0 ? 0 : soGV(r[c.sl])) : soGV(r[c.dt]); o.co.add(g.k); }
     }
   }
