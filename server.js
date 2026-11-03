@@ -3621,7 +3621,7 @@ const TAB_TD_BAN_NGAY = 'TD_BAN_NGAY';
 const TAB_TD_BAN_LK = 'TD_BAN_LK';
 const TD_ST_LOAI = new Set(['14978', '14652', ...ST_CHUA_KHAI_TRUONG]); // Phạm Hùng, 244 Trương Công Định: đã off
 // 01/11: CHỈ LẤY DATA CELANO (robot không lấy mã Joyday/Milo/C2 nữa). Lấy lại: thêm 'joyday', 'milo', 'c2' vào đây.
-const TD_LAY = new Set(['celym', 'c2']); // 02/11: thêm 'c2' (báo cáo riêng BC C2, 7 mã theo hình KV) // 01/11 15h: chỉ CELANO 4 SKU (bỏ Celano có thạch). Lấy lại: thêm 'celth'
+const TD_LAY = new Set(['celym', 'c2', 'g888']); // 03/11: thêm 'g888' (Nước giặt 888, hiện chung BC C2) // 02/11: thêm 'c2' (báo cáo riêng BC C2, 7 mã theo hình KV) // 01/11 15h: chỉ CELANO 4 SKU (bỏ Celano có thạch). Lấy lại: thêm 'celth'
 const TD_NHOM = [
   {
     k: 'joyday', ten: 'KEM JOYDAY', phu: 'mốc ×2 so T10', mau: '#7B4BB7', dv: 'SP',
@@ -3632,6 +3632,7 @@ const TD_NHOM = [
   { k: 'celth', ten: 'CELANO CÓ THẠCH', phu: 'mốc 200k/tuần', mau: '#0E9AA7', dv: 'hộp', ma: ['2610000626', '2610000627', '2610000628'] },
   { k: 'milo', ten: 'MILO LON', phu: 'bán nhiêu tính nhiêu', mau: '#2E7D32', dv: 'lon', ma: ['1706010219'] },
   { k: 'c2', ten: 'C2', phu: 'bán nhiêu tính nhiêu', mau: '#D4A017', dv: 'chai', ma: ['2601001494', '2203000875', '2204000011', '2006000354', '2011000232', '2110003778', '2509013159'] }, // 02/11: đúng 7 mã theo hình KV
+  { k: 'g888', ten: 'NƯỚC GIẶT 888', phu: '', mau: '#1565C0', dv: 'túi', ma: ['2505002080'] }, // 03/11: hiện chung BC C2
 ].filter((g) => TD_LAY.has(g.k));
 // 01/11: bảng CHỈ hiện Celano (tuần 1 RSM chọn CELANO). Hiện lại nhóm khác: thêm 'joyday', 'milo', 'c2' vào đây.
 const TD_HIEN = new Set(['celym']); // 02/11: bảng THI ĐUA chỉ Celano; C2 xem lệnh BC C2
@@ -3662,8 +3663,19 @@ const TD_SP_IN = {
   celym: ['2609001656 Yến mạch vị Café latte 180ml', '2609001221 Yến mạch vị Matcha latte 180ml', '2609001657 Yến mạch vị Nguyên bản 180ml', '2609001223 Trà sữa vị Gạo rang có thạch 170ml'],
   celth: ['2610000626 Sữa tươi TT vị Đậu xanh có thạch 170ml', '2610000627 Sữa tươi TT vị Cốm dừa có thạch 170ml', '2610000628 Sữa tươi TT vị Mè đen có thạch 170ml'],
   milo: ['1706010219 Sữa Milo lon 240ml'],
+  g888: ['2505002080 Nước giặt xả 888 hương phấn thơm túi 3.2kg'],
   c2: ['2601001494 Nước sâm hoa cúc thảo mộc C2 Cool chai 280ml', '2203000875 Trà đen hương dâu anh đào C2 Freeze chai 455ml', '2204000011 Trà xanh C2 hương chanh tuyết bạc hà C2 Freeze chai 455ml', '2006000354 Trà hồng C2 vị vải chai 455ml', '2011000232 Trà xanh C2 vị chanh chai 225ml TH24', '2110003778 Trà đen C2 hương đào chai 225ml TH24', '2509013159 Trà xanh C2 ổi hồng chanh dây chai 225ml'],
 };
+
+// 03/11: số 888 anh gửi 17:24 03/11 (file luỹ kế 01→02/11 + file bán 03/11). Chỉ dùng khi Sheet CHƯA có số của mã này
+//  (anh gửi file luỹ kế mới / robot nạp bán hôm nay thì tự thay). Hết tháng 11 thì xoá được.
+const TD_SEED = [{ ma: '2505002080', ten: 'NƯỚC GIẶT XẢ 888 HƯƠNG PHẤN THƠM TÚI 3.2KG', lkMoc: '2026-11-02', lkCap: 'hết 02/11', lk: [["6477",39,3064815],["14536",8,625925],["5405",7,561111],["5153",5,404629],["7661",23,1866666],["6294",37,2904629],["29778",6,469444],["9153",19,1540741],["8104",19,1498148],["6525",5,404630],["14986",4,339814],["34706",4,312963],["28717",3,248148],["28724",19,1500000],["35544",2,156481],["14586",16,1246296],["6135",12,1013888],["6384",5,404630],["8153",10,836111],["14592",6,496296],["14564",14,1095370],["28632",2,156481],["8828",5,404629],["5414",34,2713889],["9020",24,1877777],["7664",12,938889],["14664",11,874074],["36041",4,312963],["6434",49,3847222],["14823",30,2347222],["5489",21,1683333],["6136",11,878703],["14012",5,404629],["5152",51,4003704],["14619",10,809259],["5396",7,565741],["5151",36,2816667],["6785",14,1122222],["7665",6,469444],["34610",3,248148],["5818",10,782407],["14551",2,156481],["8363",18,1408333],["9495",6,496296],["36327",4,339815],["36325",5,431482]], ngay: '2026-11-03', ngayCap: '17:24 03/11', hn: [["5414",4,312963],["9153",6,469444],["6477",7,561111],["9020",24,1877778],["8104",12,938889],["7664",6,505556],["14664",8,625926],["34706",8,625926],["28724",4,312963],["5152",24,1877778],["14619",4,312963],["6434",12,938889],["35544",4,312963],["5396",3,248148],["5151",14,1095370],["6135",9,717593],["6785",2,156481],["8153",2,156481],["14823",5,404630],["5489",4,312963],["5405",38,2973148],["6136",2,156481],["7665",6,469444],["34610",2,156481],["36191",2,156481],["5818",10,782407],["14564",6,469444],["7661",8,625926],["8363",16,1251852],["14012",2,156481],["6294",12,938889],["9495",8,625926],["28632",2,156481],["8828",4,312963],["36327",4,312963]] }];
+function tdThemSeed(lk, ng) {
+  for (const S of TD_SEED) {
+    if (!lk.some((r) => String(r[0]).trim() === S.ma && String(r[6] || '').slice(0, 7) === TD_THANG)) for (const [st, sl, dt] of S.lk) lk.push([S.ma, S.ten, st, '', sl, dt, S.lkMoc, S.lkCap]);
+    if (!ng.some((r) => String(r[0]) === S.ngay && String(r[1]).trim() === S.ma)) for (const [st, sl, dt] of S.hn) ng.push([S.ngay, S.ma, S.ten, st, '', sl, dt, S.ngayCap]);
+  }
+}
 
 function tdCoMa(header, dataRows) {
   const iMa = header.indexOf('Mã Model'), iTen = header.indexOf('Model');
@@ -3768,6 +3780,7 @@ async function docDuLieuThiDua(maST) {
   const ton = (await docTabAnToan(sheets, TAB_TD_TON)).slice(1).filter((r) => r[0]);
   const lk = (await docTabAnToan(sheets, TAB_TD_BAN_LK)).slice(1).filter((r) => r[0]);
   const ng = (await docTabAnToan(sheets, TAB_TD_BAN_NGAY)).slice(1).filter((r) => r[0]);
+  tdThemSeed(lk, ng); // 03/11: số 888 gửi tay
   if (!ton.length && !lk.length && !ng.length) throw new Error('Chưa có dữ liệu THI ĐUA T11. Anh gửi file "BC Tồn Theo Model" và "Doanh Thu Theo Model" (từ 01/11) vào group giúp em.');
   const st = new Map();
   const lay = (ma, ten) => {
@@ -4097,13 +4110,12 @@ function laTriggerThiDua(text) {
 //  Dùng chung data THI ĐUA (tab TD_TON / TD_BAN_NGAY / TD_BAN_LK). Lệnh: "BC C2" (thêm mã ST để xem 1 siêu thị)
 // ---------------------------------------------------------------------------
 function laTriggerC2(text) {
-  return TD_BAT && TD_LAY.has('c2') && coTuKhoa(text, ['bc c2', 'báo cáo c2', 'bao cao c2', 'tồn bán c2', 'ton ban c2']);
+  return TD_BAT && TD_LAY.has('c2') && coTuKhoa(text, ['bc c2', 'báo cáo c2', 'bao cao c2', 'tồn bán c2', 'ton ban c2', 'bc 888', 'báo cáo 888', 'bao cao 888']);
 }
 function veSvgC2(d) {
-  // 02/11 13h40: giữ bố cục cũ (rộng 1400) · thêm cột BÁN HÔM NAY + LUỸ KẾ 01/11 → ngày mới nhất
-  //  Tỉ lệ: tiêu đề ~10% · bảng ~80% (chữ to) · sản phẩm ~10%
-  const g = TD_NHOM.find((x) => x.k === 'c2');
-  const W = 1400, PAD = 24, ROW = 42;
+  // 03/11: BC C2 + NƯỚC GIẶT 888 chung 1 ảnh · mỗi nhóm 3 cột TỒN | BÁN hôm nay | LUỸ KẾ 01/11 → ngày mới nhất
+  const NH = ['c2', 'g888'].map((k) => TD_NHOM.find((x) => x.k === k)).filter(Boolean);
+  const W = 1720, PAD = 24, ROW = 42;
   const C = { xanh: '#00873C', xanhDam: '#0B5A2B', chan: '#FAFCFA', vien: '#EDF0ED', phu: '#56655A', xam: '#B0B8B2', do: '#C62828', vang: '#FFD200', nau: '#B8860B' };
   const t = (x, y, s, o = {}) =>
     `<text x="${x}" y="${y}" font-size="${o.size || 17}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1D2B1F'}" text-anchor="${o.anchor || 'start'}"${o.ls ? ` letter-spacing="${o.ls}"` : ''}>${escXml(s)}</text>`;
@@ -4111,61 +4123,71 @@ function veSvgC2(d) {
   const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '');
   const p = [];
   const C2_CHU_KY = 'CHU KỲ: 01/11 → 30/11 (cả tháng)'; // đổi chu kỳ thì sửa dòng này
-  const nhanLK = `LUỸ KẾ 01/11 → ${dm(d.ngayCuoi) || '…'}`;
-  // ── Tiêu đề (gọn, ~10%)
+  // ── Tiêu đề
   const HH = 250;
   p.push(`<defs><linearGradient id="c2g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#006B2F"/><stop offset="0.55" stop-color="#00A94A"/><stop offset="1" stop-color="#007A36"/></linearGradient></defs>`);
   p.push(`<rect x="0" y="0" width="${W}" height="${HH}" fill="url(#c2g)"/>`);
   p.push(`<rect x="${PAD + 14}" y="18" width="${W - PAD * 2 - 28}" height="${HH - 36}" rx="14" fill="#000000" fill-opacity="0.10" stroke="${C.vang}" stroke-width="4"/>`);
   p.push(t(W / 2, 54, 'BÁCH HÓA XANH · BÁO CÁO TỒN / BÁN', { size: 15, bold: true, fill: '#FFE680', anchor: 'middle', ls: 4 }));
-  p.push(t(W / 2, 100, `TRÀ C2 – ${g.ma.length} SKU`, { size: 46, bold: true, fill: '#FFFFFF', anchor: 'middle', ls: 2 }));
+  p.push(t(W / 2, 100, 'TRÀ C2 & NƯỚC GIẶT 888', { size: 46, bold: true, fill: '#FFFFFF', anchor: 'middle', ls: 2 }));
   const rw = 500, rx = (W - rw) / 2;
   p.push(`<rect x="${rx}" y="116" width="${rw}" height="44" rx="10" fill="${C.vang}"/>`);
   p.push(t(W / 2, 147, 'KV QLTP QUỐC NAM 40909', { size: 26, bold: true, fill: '#0B4A22', anchor: 'middle', ls: 1.5 }));
   const cw = C2_CHU_KY.length * 10 + 40, cx = (W - cw) / 2;
   p.push(`<rect x="${cx}" y="170" width="${cw}" height="32" rx="16" fill="#FFFFFF"/>`);
   p.push(t(W / 2, 192, C2_CHU_KY, { size: 17, bold: true, fill: '#C62828', anchor: 'middle' }));
-  p.push(t(W / 2, 224, `Đơn vị: chai · Tồn ${d.capTon || '–'} · Bán ${d.capBan || 'chưa có'} · xếp theo Luỹ kế cao → thấp`, { size: 15, fill: '#FFFFFF', anchor: 'middle' }));
+  p.push(t(W / 2, 224, `C2: chai · 888: túi · Tồn ${d.capTon || '–'} · Bán ${d.capBan || 'chưa có'} · xếp theo Luỹ kế C2 cao → thấp`, { size: 15, fill: '#FFFFFF', anchor: 'middle' }));
   let y = HH + 18;
-  // ── Bảng (~80%, chữ to)
-  const xTen = PAD + 62, xLK = W - PAD - 26, xHN = xLK - 270, xTon = xHN - 220;
-  const vach = [xTon - 230, xTon + 26, xHN + 26]; // đậm sau SIÊU THỊ · mảnh giữa các cột số
-  // 02/11: canh giữa tiêu đề + số trong từng cột TỒN | BÁN | LUỸ KẾ
-  const gTon = (vach[0] + vach[1]) / 2, gHN = (vach[1] + vach[2]) / 2, gLK = (vach[2] + W - PAD) / 2;
+  // ── Bảng: SIÊU THỊ | [C2: TỒN BÁN LK] | [888: TỒN BÁN LK]
+  const xTen = PAD + 62, x0 = 640, wNhom = (W - PAD - x0) / NH.length, wCot = wNhom / 3;
+  const gx = (gi, ci) => x0 + gi * wNhom + wCot * (ci + 0.5); // tâm cột
   const yKeTop = y;
-  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="48" fill="${g.mau}"/>`);
-  p.push(t(PAD + 40, y + 32, '#', { size: 18, bold: true, fill: '#FFFFFF', anchor: 'end' }));
-  p.push(t(xTen, y + 32, 'SIÊU THỊ', { size: 18, bold: true, fill: '#FFFFFF' }));
-  p.push(t(gTon, y + 32, 'TỒN', { size: 18, bold: true, fill: '#FFFFFF', anchor: 'middle' }));
-  p.push(t(gHN, y + 32, `BÁN ${dm(d.ngayCuoi) || 'HÔM NAY'}`.toUpperCase(), { size: 18, bold: true, fill: '#FFFFFF', anchor: 'middle' }));
-  p.push(t(gLK, y + 32, nhanLK.toUpperCase(), { size: 18, bold: true, fill: '#FFFFFF', anchor: 'middle' }));
-  y += 48;
+  // hàng 1: tên nhóm
+  p.push(`<rect x="${PAD}" y="${y}" width="${x0 - PAD}" height="84" fill="${C.xanhDam}"/>`);
+  p.push(t(PAD + 40, y + 52, '#', { size: 18, bold: true, fill: '#FFFFFF', anchor: 'end' }));
+  p.push(t(xTen, y + 52, 'SIÊU THỊ', { size: 18, bold: true, fill: '#FFFFFF' }));
+  NH.forEach((g, gi) => {
+    p.push(`<rect x="${x0 + gi * wNhom}" y="${y}" width="${wNhom}" height="40" fill="${g.mau}"/>`);
+    p.push(t(x0 + gi * wNhom + wNhom / 2, y + 28, `${g.k === 'c2' ? 'TRÀ C2' : g.ten} – ${g.ma.length} SKU (${g.dv})`, { size: 19, bold: true, fill: '#FFFFFF', anchor: 'middle' }));
+    p.push(`<rect x="${x0 + gi * wNhom}" y="${y + 40}" width="${wNhom}" height="44" fill="${g.mau}" fill-opacity="0.82"/>`);
+    ['TỒN', `BÁN ${dm(d.ngayCuoi) || 'HÔM NAY'}`, `LK 01/11→${dm(d.ngayCuoi) || '…'}`].forEach((nh, ci) => p.push(t(gx(gi, ci), y + 70, nh.toUpperCase(), { size: 16, bold: true, fill: '#FFFFFF', anchor: 'middle' })));
+  });
+  y += 84;
   const ds = d.dsST;
-  const tTon = ds.reduce((s, x) => s + (x.ton.c2 || 0), 0), tHN = ds.reduce((s, x) => s + ((x.banNay || {}).c2 || 0), 0), tLK = ds.reduce((s, x) => s + (x.ban.c2 || 0), 0);
+  const so3 = (r, k) => [r.ton[k] || 0, (r.banNay || {})[k] || 0, r.ban[k] || 0];
+  // hàng tổng
   p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 8}" fill="${C.xanh}"/>`);
-  p.push(t(xTen, y + 34, d.nhanTong, { size: 24, bold: true, fill: '#FFFFFF' }));
-  p.push(t(gTon, y + 34, fs(tTon), { size: 24, bold: true, fill: '#FFFFFF', anchor: 'middle' }));
-  p.push(t(gHN, y + 34, fs(tHN), { size: 24, bold: true, fill: '#FFFFFF', anchor: 'middle' }));
-  p.push(t(gLK, y + 34, fs(tLK), { size: 26, bold: true, fill: C.vang, anchor: 'middle' }));
+  p.push(t(xTen, y + 34, d.nhanTong, { size: 22, bold: true, fill: '#FFFFFF' }));
+  NH.forEach((g, gi) => {
+    const tg = ds.reduce((a, r) => so3(r, g.k).map((v, j) => a[j] + v), [0, 0, 0]);
+    tg.forEach((v, ci) => p.push(t(gx(gi, ci), y + 34, fs(v), { size: ci === 2 ? 25 : 23, bold: true, fill: ci === 2 ? C.vang : '#FFFFFF', anchor: 'middle' })));
+  });
   y += ROW + 8;
   ds.forEach((r, i) => {
-    const ton = r.ton.c2 || 0, hn = (r.banNay || {}).c2 || 0, lk = r.ban.c2 || 0;
     if (i % 2 === 1) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${C.chan}"/>`); // không tô vàng 8104
     p.push(`<line x1="${PAD}" y1="${y + ROW}" x2="${W - PAD}" y2="${y + ROW}" stroke="${C.vien}"/>`);
     const yt = y + 29;
     p.push(t(PAD + 40, yt, i + 1, { size: 19, fill: C.phu, anchor: 'end' }));
-    p.push(`<text x="${xTen}" y="${yt}" font-size="22" fill="#1D2B1F"><tspan font-weight="700">${escXml(r.ma)}</tspan> · ${escXml(rutGonTen(String(r.ten).replace(/\(\s+/g, '(').replace(/\s+\)/g, ')'), 40))}</text>`);
-    p.push(t(gTon, yt, fs(ton), { size: 23, anchor: 'middle', bold: true, fill: ton <= 0 ? C.do : '#1D2B1F' }));
-    p.push(t(gHN, yt, fs(hn), { size: 23, anchor: 'middle', bold: hn > 0, fill: hn > 0 ? '#1D2B1F' : C.xam }));
-    p.push(t(gLK, yt, fs(lk), { size: 23, anchor: 'middle', bold: true, fill: lk > 0 ? '#1F7AC2' : C.xam }));
+    p.push(`<text x="${xTen}" y="${yt}" font-size="21" fill="#1D2B1F"><tspan font-weight="700">${escXml(r.ma)}</tspan> · ${escXml(rutGonTen(String(r.ten).replace(/\(\s+/g, '(').replace(/\s+\)/g, ')'), 30))}</text>`);
+    NH.forEach((g, gi) => {
+      const [ton, hn, lk] = so3(r, g.k);
+      p.push(t(gx(gi, 0), yt, fs(ton), { size: 22, anchor: 'middle', bold: true, fill: ton <= 0 ? C.do : '#1D2B1F' }));
+      p.push(t(gx(gi, 1), yt, fs(hn), { size: 22, anchor: 'middle', bold: hn > 0, fill: hn > 0 ? '#1D2B1F' : C.xam }));
+      p.push(t(gx(gi, 2), yt, fs(lk), { size: 22, anchor: 'middle', bold: true, fill: lk > 0 ? '#1F7AC2' : C.xam }));
+    });
     y += ROW;
   });
-  vach.forEach((vx, k) => p.push(`<line x1="${vx}" y1="${yKeTop}" x2="${vx}" y2="${y}" stroke="${k ? '#E6ECE7' : '#DFE8E1'}" stroke-width="${k ? 1.5 : 3}"/>`));
+  // kẻ dọc: đậm giữa các nhóm, mảnh giữa các cột
+  p.push(`<line x1="${x0}" y1="${yKeTop}" x2="${x0}" y2="${y}" stroke="#DFE8E1" stroke-width="3"/>`);
+  NH.forEach((g, gi) => {
+    for (let ci = 1; ci < 3; ci++) p.push(`<line x1="${x0 + gi * wNhom + wCot * ci}" y1="${yKeTop + 40}" x2="${x0 + gi * wNhom + wCot * ci}" y2="${y}" stroke="#E6ECE7" stroke-width="1.5"/>`);
+    if (gi) p.push(`<line x1="${x0 + gi * wNhom}" y1="${yKeTop}" x2="${x0 + gi * wNhom}" y2="${y}" stroke="#FFFFFF" stroke-width="4"/><line x1="${x0 + gi * wNhom}" y1="${yKeTop + 84}" x2="${x0 + gi * wNhom}" y2="${y}" stroke="#C9D6CD" stroke-width="3"/>`);
+  });
   y += 20;
-  // ── Sản phẩm (~10%)
-  const ten = TD_SP_IN.c2, nua = Math.ceil(ten.length / 2), hSP = 46 + nua * 25;
-  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${hSP}" rx="10" fill="#FFF8E1"/><rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="4" rx="2" fill="${g.mau}"/>`);
-  p.push(t(PAD + 18, y + 30, `SẢN PHẨM TRONG BÁO CÁO (${ten.length} SKU C2)`, { size: 18, bold: true, fill: C.nau }));
+  // ── Sản phẩm
+  const ten = [...(TD_SP_IN.c2 || []).map((s) => `C2 · ${s}`), ...(TD_SP_IN.g888 || []).map((s) => `888 · ${s}`)], nua = Math.ceil(ten.length / 2), hSP = 46 + nua * 25;
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${hSP}" rx="10" fill="#FFF8E1"/><rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="4" rx="2" fill="${C.nau}"/>`);
+  p.push(t(PAD + 18, y + 30, `SẢN PHẨM TRONG BÁO CÁO (${ten.length} SKU: ${(TD_SP_IN.c2 || []).length} C2 + ${(TD_SP_IN.g888 || []).length} nước giặt 888)`, { size: 18, bold: true, fill: C.nau }));
   ten.forEach((s, n) => {
     const c = n < nua ? 0 : 1, k = n < nua ? n : n - nua;
     p.push(t(PAD + 22 + c * ((W - PAD * 2) / 2), y + 56 + k * 25, `${n + 1}. ${s}`, { size: 15 }));
@@ -4185,7 +4207,7 @@ async function veAnhC2(maST) {
   return { png: svgThanhPng(svg, Math.round(W * 1.5)), preview: svgThanhPng(svg, 600) };
 }
 async function generateC2Report(text) {
-  const maST = await timMaST(String(text || '').replace(/\bc2\b/gi, ' '));
+  const maST = await timMaST(String(text || '').replace(/\bc2\b/gi, ' ').replace(/\b888\b/g, ' '));
   const { png, preview } = await veAnhC2(maST);
   const id = `c2-${maST || 'kv'}-${Date.now().toString(36)}`;
   luuAnh(id, png, preview);
@@ -4612,7 +4634,7 @@ async function taoMenuFlex() {
           hangNut([nutMenu(`Mốc DT tháng ${st}`, `LÀM CHỦ ${st}`, cam), nutMenu(`BC ngày 22H ${st}`, `BC NGÀY ${st}`, cam)]),
           tieuDeMuc('🏆', 'THI ĐUA', 'tự cập nhật'),
           ...(TD_BAT ? [hangNut([nutMenu('Thi đua T11 KV', 'THI ĐUA T11', xanh), nutMenu(`Thi đua T11 ${st}`, `THI ĐUA T11 ${st}`, xanh)])] : []),
-          ...(TD_BAT && TD_LAY.has('c2') ? [hangNut([nutMenu('Tồn / Bán C2 KV', 'BC C2', xanh), nutMenu(`Tồn / Bán C2 ${st}`, `BC C2 ${st}`, xanh)])] : []),
+          ...(TD_BAT && TD_LAY.has('c2') ? [hangNut([nutMenu('C2 + 888 KV', 'BC C2', xanh), nutMenu(`C2 + 888 ${st}`, `BC C2 ${st}`, xanh)])] : []),
           tieuDeMuc('📊', 'THEO DÕI NGÀY + LUỸ KẾ', 'tự cập nhật'),
           hangNut([nutMenu('ĐMSK + Hoá mỹ phẩm', 'THEO DÕI ĐMSK HPM', xanh), nutMenu('Cá trứng + Thịt heo', 'THEO DÕI CÁ TRỨNG', xanh)]),
           tieuDeMuc('📁', 'BÁO CÁO GỬI FILE', 'số lần gửi file gần nhất'),
