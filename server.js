@@ -4173,7 +4173,9 @@ function veSvgC2(d) {
     NH.forEach((g, gi) => {
       const [ton, hn, lk] = so3(r, g.k);
       p.push(t(gx(gi, 0), yt, fs(ton), { size: 22, anchor: 'middle', bold: true, fill: ton <= 0 ? C.do : '#1D2B1F' }));
-      p.push(t(gx(gi, 1), yt, fs(hn), { size: 22, anchor: 'middle', bold: hn > 0, fill: hn > 0 ? '#1D2B1F' : C.xam }));
+      const do888 = g.k === 'g888' && hn < 10; // 03/11: 888 bán hôm nay dưới 10 túi -> tô đỏ
+      if (do888) p.push(`<rect x="${x0 + gi * wNhom + wCot + 3}" y="${y + 3}" width="${wCot - 6}" height="${ROW - 6}" rx="6" fill="#FDE2E1"/>`);
+      p.push(t(gx(gi, 1), yt, fs(hn), { size: 22, anchor: 'middle', bold: hn > 0 || do888, fill: do888 ? C.do : hn > 0 ? '#1D2B1F' : C.xam }));
       p.push(t(gx(gi, 2), yt, fs(lk), { size: 22, anchor: 'middle', bold: true, fill: lk > 0 ? '#1F7AC2' : C.xam }));
     });
     y += ROW;
@@ -4194,7 +4196,7 @@ function veSvgC2(d) {
     p.push(t(PAD + 22 + c * ((W - PAD * 2) / 2), y + 56 + k * 25, `${n + 1}. ${s}`, { size: 15 }));
   });
   y += hSP + 26;
-  p.push(t(W / 2, y, 'Tồn đỏ = hết hàng · Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh - 197042', { size: 14, fill: '#7A877D', anchor: 'middle' }));
+  p.push(t(W / 2, y, 'Tồn đỏ = hết hàng · 888 bán dưới 10 túi = đỏ · Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh - 197042', { size: 14, fill: '#7A877D', anchor: 'middle' }));
   const H = y + 22;
   return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`, W };
 }
