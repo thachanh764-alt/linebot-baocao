@@ -341,7 +341,6 @@ async function napFileVaoSheet(fileName, buffer, ngayChiDinh, laBaseDmsk, laBase
   const header = allRows[0].map((h) => (h || '').toString().trim());
   const dataRows = allRows.slice(1).filter((r) => r && r.some((v) => v !== null && v !== ''));
 
-  if (laFileChamCong(header)) return napFileChamCong(sheets, header, dataRows, fileName); // 04/11
   if (laFileKmFmcg(header)) return napFileKmFmcg(sheets, header, dataRows);
   if (laFileThsKV(header)) return napFileThsKV(sheets, header, dataRows, fileName);
   if (laFileNganhBHX(header)) return napFileNganhBHX(sheets, header, dataRows, fileName);
@@ -4440,7 +4439,6 @@ async function chayLenh(text) {
   // TẮT 27/10: ĐMSK, THS + Trứng, DT NGÀNH HÀNG, ĐẶT MỨC, BNNB, DTLK KV (BC NGÀY bật lại 31/10: mẫu KHUNG 22H)
   const tat = [[laTriggerDtNganhHang, 'DT NGÀNH HÀNG'], [laTriggerThst, 'THS + Trứng'], [laTriggerBnnb, 'BNNB'], [laTriggerDmsk, 'ĐMSK'], [(x) => /đ[ặa]t\s*m[ứu]c/i.test(x), 'ĐẶT MỨC'], [laTriggerDtlk, 'DTLK'], [laTriggerGiaVon, 'GIÁ VỐN'], [laTriggerHuyMmkk, 'HUỶ MMKK'], [laTriggerCvst, 'BC CVST'], [laTriggerSua, 'SỮA CELANO + C2']].find(([f]) => f(text)); // TẮT 31/10: BC SỮA
   if (tat) return { ten: 'Đã tắt', ket: { type: 'text', text: `Báo cáo ${tat[1]} đã tắt. Gõ MENU để xem các báo cáo đang dùng.` } };
-  if (laTriggerChamCong(text)) return { ten: 'Chấm công', ket: await generateChamCongReport(text) }; // 04/11
   if (laTriggerC2(text)) return { ten: 'BC C2', ket: await generateC2Report(text) };
   if (laTriggerThiDua(text)) return { ten: 'Thi đua T11', ket: await generateThiDuaReport(text) };
   const datMuc = null;
@@ -4586,137 +4584,6 @@ async function ghiCauHinhRobot(capNhat) {
 function laLenhMenu(text) {
   return /^\s*(menu|mênu|bảng lệnh|bang lenh)\s*$/i.test((text || '').normalize('NFC'));
 }
-// ---------------------------------------------------------------------------
-// CHẤM CÔNG (04/11) — giờ chấm từng nhân viên siêu thị (robot lấy từ bhxwork "Xác nhận chấm công") -> tab CHAMCONG
-//  Quy tắc: so giờ chấm với giờ bắt đầu CA ĐẦU TIÊN trong ngày của NV (5:30 / 8:00 / 12:00 / 14:00 ...):
-//  chấm đúng phút bắt đầu hoặc sớm hơn = ĐÚNG GIỜ · trễ từ 1 phút = TRỄ. Không tính giờ công.
-//  Lệnh: "CHẤM CÔNG" (hôm nay) · "CHẤM CÔNG HÔM QUA" · "CHẤM CÔNG 03/11"
-// ---------------------------------------------------------------------------
-const TAB_CC = 'CHAMCONG';
-const CC_COT = ['Ngày chấm công', 'Mã NV', 'Họ tên', 'Ca', 'Giờ bắt đầu ca', 'Giờ kết thúc ca', 'Giờ chấm', 'Mã siêu thị'];
-function laFileChamCong(header) { return header.includes('Ngày chấm công') && header.includes('Giờ chấm') && header.includes('Mã NV'); }
-async function napFileChamCong(sheets, header, dataRows, fileName) {
-  const idx = CC_COT.map((c) => header.indexOf(c));
-  const cap = capNhatTuTen(fileName) || bayGioVN();
-  const moi = dataRows.map((r) => { const o = idx.map((j) => (j < 0 || r[j] == null ? '' : String(r[j]).trim())); o[0] = keyNgayExcel(r[idx[0]]); o.push(cap); return o; }).filter((r) => r[0] && r[1]);
-  if (!moi.length) return { loai: 'chamcong', soDong: 0 };
-  const ngayMoi = new Set(moi.map((r) => r[0]));
-  const giuTu = (() => { const d = new Date(Date.now() + 7 * 3600e3); d.setUTCMonth(d.getUTCMonth() - 1, 1); return d.toISOString().slice(0, 10); })();
-  const cu = (await docTabAnToan(sheets, TAB_CC)).slice(1).filter((r) => r[0] && String(r[0]) >= giuTu && !ngayMoi.has(String(r[0])));
-  const rows = [...cu, ...moi].sort((a, b) => String(a[0]).localeCompare(String(b[0])) || String(a[1]).localeCompare(String(b[1])));
-  await ghiDeTab(sheets, TAB_CC, [...CC_COT, 'Cập nhật'], rows);
-  return { loai: 'chamcong', tenTab: TAB_CC, soDong: moi.length };
-}
-function ccPhut(s) { const m = String(s || '').match(/(\d{1,2}):(\d{2})/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; }
-function ccGio(p) { return p == null ? '' : `${String(Math.floor(p / 60)).padStart(2, '0')}:${String(p % 60).padStart(2, '0')}`; }
-function ccNgayTuLenh(text) {
-  const s = String(text || '').toLowerCase().normalize('NFC');
-  const hn = homNayVN();
-  if (/h[oô]m\s*qua/.test(s)) return new Date(Date.parse(hn) - 86400000).toISOString().slice(0, 10);
-  const m = s.match(/(\d{1,2})\s*[\/\-.]\s*(\d{1,2})/);
-  if (m) return taoKeyNgay(hn.slice(0, 4), m[2], m[1]);
-  return '';
-}
-function laTriggerChamCong(text) { return /ch[aấ]m\s*c[oô]ng/i.test(String(text || '').normalize('NFC')); }
-async function docChamCong(ngayHoi) {
-  const rows = (await docTabAnToan(getSheetsClient(), TAB_CC)).slice(1).filter((r) => r[0]);
-  if (!rows.length) throw new Error('Chưa có số chấm công. Robot lấy từ bhxwork mỗi giờ (phút 17) — nếu lâu chưa có, trên MacBook chạy: cd ~/pos-robot && npm run dang-nhap-bhx');
-  const cacNgay = [...new Set(rows.map((r) => String(r[0])))].sort();
-  const ngay = ngayHoi || cacNgay[cacNgay.length - 1];
-  const trongNgay = rows.filter((r) => String(r[0]) === ngay);
-  if (!trongNgay.length) throw new Error(`Chưa có số chấm công ngày ${fmtNgay(ngay)}.`);
-  const hn = homNayVN();
-  const bayGio = (() => { const d = new Date(Date.now() + 7 * 3600e3); return d.getUTCHours() * 60 + d.getUTCMinutes(); })();
-  const tinh = (ds) => {
-    const nv = new Map();
-    for (const r of ds) {
-      const ma = String(r[1]); const o = nv.get(ma) || { ma, ten: String(r[2] || ''), ca: [], bd: null, cham: null, st: String(r[7] || '') };
-      o.ca.push(String(r[3] || '').replace(/^Ca\s*/i, ''));
-      const bd = ccPhut(r[4]); if (bd != null && (o.bd == null || bd < o.bd)) o.bd = bd;
-      const ch = ccPhut(r[6]); if (ch != null && (o.cham == null || ch < o.cham)) o.cham = ch;
-      nv.set(ma, o);
-    }
-    return [...nv.values()];
-  };
-  const ds = tinh(trongNgay).map((o) => {
-    o.ca = [...new Set(o.ca)].sort();
-    if (o.cham == null) o.kq = ngay === hn && o.bd != null && bayGio < o.bd ? 'chuatoi' : 'chuacham';
-    else o.tre = o.cham - (o.bd ?? o.cham), o.kq = o.tre >= 1 ? 'tre' : 'dung';
-    return o;
-  });
-  // Số lần trễ trong tháng (tới ngày đang xem)
-  const thang = ngay.slice(0, 7), treThang = new Map(), chuaThang = new Map();
-  for (const d of cacNgay.filter((x) => x.startsWith(thang) && x <= ngay)) {
-    for (const o of tinh(rows.filter((r) => String(r[0]) === d))) {
-      if (o.cham != null && o.bd != null && o.cham - o.bd >= 1) treThang.set(o.ma, (treThang.get(o.ma) || 0) + 1);
-      if (o.cham == null && !(d === hn)) chuaThang.set(o.ma, (chuaThang.get(o.ma) || 0) + 1);
-    }
-  }
-  for (const o of ds) { o.treT = treThang.get(o.ma) || 0; o.chuaT = chuaThang.get(o.ma) || 0; }
-  ds.sort((a, b) => (a.bd ?? 9999) - (b.bd ?? 9999) || (a.cham ?? 9999) - (b.cham ?? 9999) || a.ten.localeCompare(b.ten));
-  const cap = trongNgay.map((r) => String(r[8] || '')).filter(Boolean).sort().pop() || '';
-  return { ngay, ds, st: (ds[0] && ds[0].st) || MENU_MA_ST, cap, cacNgay };
-}
-function veSvgChamCong(d) {
-  const W = 1200, PAD = 24, ROW = 52;
-  const C = { xanh: '#00873C', xanhDam: '#0B5A2B', do: '#C62828', doNhat: '#FDE7E6', xanhNhat: '#E6F4EC', xam: '#8A968D', chan: '#FAFCFA', vien: '#E3EAE5', vang: '#FFD200', cam: '#C2570C' };
-  const t = (x, y, s, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 18}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1D2B1F'}" text-anchor="${o.anchor || 'start'}"${o.ls ? ` letter-spacing="${o.ls}"` : ''}>${escXml(s)}</text>`;
-  const thu = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'][new Date(d.ngay + 'T00:00:00Z').getUTCDay()];
-  const p = [];
-  const HH = 214;
-  p.push(`<defs><linearGradient id="ccg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#006B2F"/><stop offset="0.55" stop-color="#00A94A"/><stop offset="1" stop-color="#007A36"/></linearGradient></defs>`);
-  p.push(`<rect x="0" y="0" width="${W}" height="${HH}" fill="url(#ccg)"/>`);
-  p.push(`<rect x="${PAD + 10}" y="16" width="${W - PAD * 2 - 20}" height="${HH - 32}" rx="14" fill="#000" fill-opacity="0.10" stroke="${C.vang}" stroke-width="4"/>`);
-  p.push(t(W / 2, 54, 'BÁCH HÓA XANH · GIỜ CHẤM CÔNG', { size: 15, bold: true, fill: '#FFE680', anchor: 'middle', ls: 4 }));
-  p.push(t(W / 2, 102, `SIÊU THỊ ${d.st} – ${thu.toUpperCase()} ${fmtNgay(d.ngay)}/${d.ngay.slice(0, 4)}`, { size: 38, bold: true, fill: '#FFFFFF', anchor: 'middle' }));
-  const nD = d.ds.filter((o) => o.kq === 'dung').length, nT = d.ds.filter((o) => o.kq === 'tre').length, nC = d.ds.filter((o) => o.kq === 'chuacham').length, nCT = d.ds.filter((o) => o.kq === 'chuatoi').length;
-  const chip = [[`ĐÚNG GIỜ ${nD}`, '#FFFFFF', C.xanhDam], [`TRỄ ${nT}`, nT ? C.do : '#FFFFFF', nT ? '#FFFFFF' : C.xanhDam], [`CHƯA CHẤM ${nC}`, nC ? C.do : '#FFFFFF', nC ? '#FFFFFF' : C.xanhDam], ...(nCT ? [[`CHƯA TỚI CA ${nCT}`, '#FFFFFF', C.xam]] : [])];
-  const cw = 200, tong = chip.length * cw + (chip.length - 1) * 14; let cx = (W - tong) / 2;
-  for (const [s, nen, chu] of chip) { p.push(`<rect x="${cx}" y="124" width="${cw}" height="38" rx="19" fill="${nen}"/>`); p.push(t(cx + cw / 2, 150, s, { size: 18, bold: true, fill: chu, anchor: 'middle' })); cx += cw + 14; }
-  p.push(t(W / 2, 188, `Chấm đúng giờ bắt đầu ca đầu hoặc sớm hơn = đúng giờ · trễ từ 1 phút = trễ · cập nhật ${d.cap || '–'}`, { size: 14, fill: '#FFFFFF', anchor: 'middle' }));
-  let y = HH + 18;
-  const x = { stt: PAD + 34, ten: PAD + 52, ca: 560, bd: 700, cham: 830, kq: 990, thang: W - PAD - 60 };
-  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="46" fill="${C.xanhDam}"/>`);
-  [['#', x.stt, 'end'], ['NHÂN VIÊN', x.ten, 'start'], ['CA', x.ca, 'middle'], ['VÀO CA', x.bd, 'middle'], ['GIỜ CHẤM', x.cham, 'middle'], ['KẾT QUẢ', x.kq, 'middle'], [`TRỄ T${Number(d.ngay.slice(5, 7))}`, x.thang, 'middle']]
-    .forEach(([s, xx, a]) => p.push(t(xx, y + 30, s, { size: 17, bold: true, fill: '#FFFFFF', anchor: a })));
-  y += 46;
-  d.ds.forEach((o, i) => {
-    const xau = o.kq === 'tre' || o.kq === 'chuacham';
-    p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${xau ? C.doNhat : i % 2 ? C.chan : '#FFFFFF'}"/>`);
-    p.push(`<line x1="${PAD}" y1="${y + ROW}" x2="${W - PAD}" y2="${y + ROW}" stroke="${C.vien}"/>`);
-    const yt = y + 34;
-    p.push(t(x.stt, yt, i + 1, { size: 18, fill: C.xam, anchor: 'end' }));
-    p.push(`<text x="${x.ten}" y="${yt}" font-size="21" fill="#1D2B1F"><tspan font-weight="700">${escXml(rutGonTen(o.ten, 26))}</tspan><tspan font-size="15" fill="${C.xam}"> · ${escXml(o.ma)}</tspan></text>`);
-    p.push(t(x.ca, yt, o.ca.join(', '), { size: 18, anchor: 'middle', fill: '#3B4A3F' }));
-    p.push(t(x.bd, yt, ccGio(o.bd), { size: 21, anchor: 'middle', bold: true }));
-    const mauCham = o.kq === 'tre' ? C.do : o.kq === 'dung' ? C.xanh : C.xam;
-    p.push(t(x.cham, yt, o.cham == null ? '—' : ccGio(o.cham), { size: 23, anchor: 'middle', bold: true, fill: mauCham }));
-    const [nhan, nen, chu] = o.kq === 'dung' ? ['ĐÚNG GIỜ', C.xanhNhat, C.xanh] : o.kq === 'tre' ? [`TRỄ ${o.tre} PHÚT`, C.do, '#FFFFFF'] : o.kq === 'chuacham' ? ['CHƯA CHẤM', C.do, '#FFFFFF'] : ['CHƯA TỚI CA', '#EEF1EF', C.xam];
-    p.push(`<rect x="${x.kq - 82}" y="${y + 10}" width="164" height="32" rx="16" fill="${nen}"/>`);
-    p.push(t(x.kq, y + 32, nhan, { size: 16, bold: true, fill: chu, anchor: 'middle' }));
-    const tt = o.treT ? `${o.treT} lần` : '0';
-    p.push(t(x.thang, yt, tt, { size: 19, anchor: 'middle', bold: o.treT > 0, fill: o.treT >= 3 ? C.do : o.treT > 0 ? C.cam : C.xam }));
-    y += ROW;
-  });
-  y += 30;
-  p.push(t(W / 2, y, 'Nguồn: bhxwork · Xác nhận chấm công · 1 lần chấm/ngày, so với giờ bắt đầu ca đầu tiên trong ngày', { size: 14, fill: '#7A877D', anchor: 'middle' }));
-  y += 22;
-  p.push(t(W / 2, y, 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh - 197042', { size: 14, fill: '#7A877D', anchor: 'middle' }));
-  const H = y + 22;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`;
-}
-async function veAnhChamCong(ngay) {
-  const d = await docChamCong(ngay || '');
-  const svg = veSvgChamCong(d);
-  return { d, png: svgThanhPng(svg, 1800), preview: svgThanhPng(svg, 600) };
-}
-async function generateChamCongReport(text) {
-  const { d, png, preview } = await veAnhChamCong(ccNgayTuLenh(text));
-  const id = `cc-${d.ngay}-${Date.now().toString(36)}`;
-  luuAnh(id, png, preview);
-  return { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?loai=cc&n=${d.ngay}`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?loai=cc&n=${d.ngay}&nho=1` };
-}
-
 function laLenhRobotNhom(text) {
   return /robot\s*(nh[oó]m|đăng ký|dang ky)/i.test((text || '').normalize('NFC'));
 }
@@ -4771,8 +4638,6 @@ async function taoMenuFlex() {
           tieuDeMuc('🏆', 'THI ĐUA', 'tự cập nhật'),
           ...(TD_BAT ? [hangNut([nutMenu('Thi đua T11 KV', 'THI ĐUA T11', xanh), nutMenu(`Thi đua T11 ${st}`, `THI ĐUA T11 ${st}`, xanh)])] : []),
           ...(TD_BAT && TD_LAY.has('c2') ? [hangNut([nutMenu('C2 + 888 KV', 'BC C2', xanh), nutMenu(`C2 + 888 ${st}`, `BC C2 ${st}`, xanh)])] : []),
-          tieuDeMuc('🕐', 'CHẤM CÔNG', 'giờ chấm từng NV'),
-          hangNut([nutMenu(`Chấm công ${st} hôm nay`, 'CHẤM CÔNG', xanh), nutMenu('Chấm công hôm qua', 'CHẤM CÔNG HÔM QUA', xanh)]),
           tieuDeMuc('📊', 'THEO DÕI NGÀY + LUỸ KẾ', 'tự cập nhật'),
           hangNut([nutMenu('ĐMSK + Hoá mỹ phẩm', 'THEO DÕI ĐMSK HPM', xanh), nutMenu('Cá trứng + Thịt heo', 'THEO DÕI CÁ TRỨNG', xanh)]),
           tieuDeMuc('📁', 'BÁO CÁO GỬI FILE', 'số lần gửi file gần nhất'),
@@ -5340,8 +5205,6 @@ app.get('/anh/:id.png', async (req, res) => {
         ve = await veAnhDmsk(String(req.query.st || ''));
       } else if (req.query.loai === 'tdoi1' || req.query.loai === 'tdoi2') {
         ve = await veAnhTheoDoi(req.query.loai, String(req.query.st || ''));
-      } else if (req.query.loai === 'cc') {
-        ve = await veAnhChamCong(String(req.query.n || ''));
       } else if (req.query.loai === 'c2') {
         ve = await veAnhC2(String(req.query.st || ''));
       } else if (req.query.loai === 'td') {
