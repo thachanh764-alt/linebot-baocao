@@ -4256,7 +4256,7 @@ const TDOI_NHOM = [
 // MỤC TIÊU NGÀY theo siêu thị (anh đưa 01/11). Siêu thị chưa có ở đây -> trung bình ngày tháng trước × TDOI_HE_SO
 const TDOI_MT = {
   '8104': { dmsk: 22000000, hpm: 18000000, catrung: 5200000, thitheo: 63 },
-  '7665': { catrung: 4800000, thitheo: 33 },
+  '7665': { dmsk: 13700000, hpm: 14300000, catrung: 4800000, thitheo: 33 },
 };
 function tdoiMaNH(v) { const m = String(v || '').match(/^\s*(\d+)\s*-/); return m ? m[1] : ''; }
 function tdoiTenNH(v) { return String(v || '').trim().toLowerCase().replace(/^\d+\s*-\s*/, ''); }
