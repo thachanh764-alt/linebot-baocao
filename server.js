@@ -4241,7 +4241,9 @@ async function generateThiDuaReport(text) {
 //  Luỹ kế từ ngày 01 của tháng. Cần hôm nay = mục tiêu ngày × số ngày đã chạy − luỹ kế trước hôm nay (cộng dồn ngày thiếu).
 // ---------------------------------------------------------------------------
 const TAB_THEODOI = 'THEODOI_NGAY';
-const TDOI_CHI_ST = '8104'; // 02/11: THEO DÕI (ĐMSK+HPM, Cá trứng+Thịt) chỉ nạp + hiện siêu thị này. Bỏ lọc: để ''
+const TDOI_DS_ST = ['8104', '7665']; // 05/11: THEO DÕI (ĐMSK+HPM, Cá trứng+Thịt) nạp các siêu thị này. Siêu thị đầu = mặc định (menu); 7665 chỉ hiện khi gõ lệnh có 7665
+const TDOI_CHI_ST = TDOI_DS_ST[0];
+const tdoiCo = (ma) => TDOI_DS_ST.includes(String(ma));
 const TDOI_HE_SO = 1; // mục tiêu = trung bình ngày tháng trước × hệ số này (đổi 1.2 = tăng 20%)
 const TDOI_NHOM = [
   { k: 'dmsk', ten: 'ĐÔNG MÁT SỮA KEM', dv: 'đ', nh: ['10', '12', '13', '14'], ten2: ['sữa - thức uống bổ dưỡng các loại', 'thực phẩm đông lạnh - hàng mát các loại', 'sản phẩm từ sữa - bảo quản mát', 'kem các loại'] },
@@ -4297,12 +4299,12 @@ async function napTheoDoiThit(sheets, header, dataRows, fileName) {
 }
 // Ghi vào THEODOI_NGAY: chỉ thay các nhóm có trong file (file lẻ từng ngành không xoá nhóm khác)
 async function ghiTheoDoi(sheets, moi, fileName) {
-  if (TDOI_CHI_ST) moi = moi.filter((o) => String(o.st) === TDOI_CHI_ST); // chỉ nạp số 8104
+  moi = moi.filter((o) => tdoiCo(o.st)); // chỉ nạp các siêu thị theo dõi (8104, 7665)
   if (!moi.length) return;
   const cap = capNhatTuTen(fileName) || bayGioVN();
   const khoa = new Set(moi.map((o) => `${o.ngay}|${o.st}`));
   const giuTu = (() => { const d = new Date(Date.now() + 7 * 3600e3); d.setUTCMonth(d.getUTCMonth() - 1, 1); return d.toISOString().slice(0, 10); })(); // giữ tháng trước + tháng này
-  const tatCa = (await docTabAnToan(sheets, TAB_THEODOI)).slice(1).filter((r) => r[0] && String(r[0]) >= giuTu && (!TDOI_CHI_ST || chuanHoaMaST(r[1]) === TDOI_CHI_ST));
+  const tatCa = (await docTabAnToan(sheets, TAB_THEODOI)).slice(1).filter((r) => r[0] && String(r[0]) >= giuTu && tdoiCo(chuanHoaMaST(r[1])));
   const cuTheoKhoa = new Map(tatCa.map((r) => [`${r[0]}|${chuanHoaMaST(r[1])}`, r]));
   const cu = tatCa.filter((r) => !khoa.has(`${r[0]}|${chuanHoaMaST(r[1])}`));
   const rows = [...cu, ...moi.map((o) => {
@@ -4316,7 +4318,8 @@ async function ghiTheoDoi(sheets, moi, fileName) {
 }
 
 async function docDuLieuTheoDoi(maST) {
-  const rows = (await docTabAnToan(getSheetsClient(), TAB_THEODOI)).slice(1).filter((r) => r[0] && (!TDOI_CHI_ST || chuanHoaMaST(r[1]) === TDOI_CHI_ST));
+  maST = maST || TDOI_CHI_ST; // không gõ mã -> 8104 (nút menu)
+  const rows = (await docTabAnToan(getSheetsClient(), TAB_THEODOI)).slice(1).filter((r) => r[0] && tdoiCo(chuanHoaMaST(r[1])));
   if (!rows.length) throw new Error('Chưa có số theo dõi. Chờ robot nạp file POS 835 (Doanh thu theo ngành hàng BHX) hoặc anh gửi file đó vào group.');
   const hn = homNayVN(), thang = hn.slice(0, 7), thangTr = thangTruoc(thang);
   const ngayTr = new Date(Number(thang.slice(0, 4)), Number(thang.slice(5, 7)) - 1, 0).getDate();
