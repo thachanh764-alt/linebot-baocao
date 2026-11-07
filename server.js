@@ -4560,7 +4560,7 @@ async function chayLenh(text) {
   if (laLenhKmSP(text)) return { ten: 'SP KM', ket: await lenhKmSP(text) };
   { const l = lenhTheoDoi(text); if (l) return { ten: 'Theo dõi', ket: await generateTheoDoiReport(text, l) }; }
   // TẮT 27/10: ĐMSK, THS + Trứng, DT NGÀNH HÀNG, ĐẶT MỨC, BNNB, DTLK KV (BC NGÀY bật lại 31/10: mẫu KHUNG 22H)
-  const tat = [[laTriggerDtNganhHang, 'DT NGÀNH HÀNG'], [laTriggerThst, 'THS + Trứng'], [laTriggerBnnb, 'BNNB'], [laTriggerDmsk, 'ĐMSK'], [(x) => /đ[ặa]t\s*m[ứu]c/i.test(x), 'ĐẶT MỨC'], [laTriggerDtlk, 'DTLK'], [laTriggerGiaVon, 'GIÁ VỐN'], [laTriggerHuyMmkk, 'HUỶ MMKK'], [laTriggerCvst, 'BC CVST'], [laTriggerSua, 'SỮA CELANO + C2']].find(([f]) => f(text)); // TẮT 31/10: BC SỮA
+  const tat = [[laTriggerDtNganhHang, 'DT NGÀNH HÀNG'], [laTriggerThst, 'THS + Trứng'], [laTriggerBnnb, 'BNNB'], [laTriggerDmsk, 'ĐMSK'], [(x) => /đ[ặa]t\s*m[ứu]c/i.test(x), 'ĐẶT MỨC'], [laTriggerDtlk, 'DTLK'], [laTriggerHuyMmkk, 'HUỶ MMKK'], [laTriggerCvst, 'BC CVST'], [laTriggerSua, 'SỮA CELANO + C2']].find(([f]) => f(text)); // TẮT 31/10: BC SỮA
   if (tat) return { ten: 'Đã tắt', ket: { type: 'text', text: `Báo cáo ${tat[1]} đã tắt. Gõ MENU để xem các báo cáo đang dùng.` } };
   if (laTriggerC2(text)) return { ten: 'BC C2', ket: await generateC2Report(text) };
   if (laTriggerThiDua(text)) return { ten: 'Thi đua T11', ket: await generateThiDuaReport(text) };
@@ -4763,6 +4763,7 @@ async function taoMenuFlex() {
           ...(TD_BAT && TD_LAY.has('c2') ? [hangNut([nutMenu('C2 + 888 KV', 'BC C2', xanh), nutMenu(`C2 + 888 ${st}`, `BC C2 ${st}`, xanh)])] : []),
           tieuDeMuc('📊', 'THEO DÕI NGÀY + LUỸ KẾ', 'tự cập nhật'),
           hangNut([nutMenu('ĐMSK + Hoá mỹ phẩm', 'THEO DÕI ĐMSK HPM', xanh), nutMenu('Cá trứng + Thịt heo', 'THEO DÕI CÁ TRỨNG', xanh)]),
+          hangNut([nutMenu(`Giá vốn + LN Fresh ${st}`, `GIÁ VỐN ${st}`, xanh)]), // 07/11: bật lại Giá vốn (robot nạp POS 3933 + 3624 mỗi giờ)
           tieuDeMuc('📁', 'BÁO CÁO GỬI FILE', 'số lần gửi file gần nhất'),
           hangNut([nutMenu('Đặt hàng FMCG KV', 'ĐẶT HÀNG FMCG', xam), nutMenu(`Đặt hàng FMCG ${st}`, `ĐẶT HÀNG FMCG ${st}`, xam)]),
         ],
@@ -5181,7 +5182,8 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
         }
 
         if (kq.loai === 'giavon' || kq.loai === 'fresh_ban') {
-          await guiTraLoi(event, targetId, { type: 'text', text: 'Báo cáo Giá vốn đã tắt (28/10), em chỉ lưu file, không gửi báo cáo.' });
+          try { await guiTraLoi(event, targetId, await generateGiaVonReport('', kq.dsST)); } // 07/11: bật lại Giá vốn
+          catch (e) { await guiTraLoi(event, targetId, { type: 'text', text: `✅ Đã nạp file giá vốn.\n⚠️ ${e.message}` }); }
           continue;
         }
 
