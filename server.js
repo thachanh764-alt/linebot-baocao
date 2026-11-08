@@ -4292,22 +4292,24 @@ function veSvgPS(d) {
   const cw = PS_CK.nhan.length * 10 + 40, cx = (W - cw) / 2;
   p.push(`<rect x="${cx}" y="170" width="${cw}" height="32" rx="16" fill="#FFFFFF"/>`);
   p.push(t(W / 2, 192, PS_CK.nhan, { size: 17, bold: true, fill: C.do, anchor: 'middle' }));
-  p.push(t(W / 2, 224, `Giá sốc 35k · Đạt khi bán ≥ cùng kỳ ${PS_CK.ckNhan} +10% · Thưởng 2.000đ/tuýp · Tồn ${d.capTon || '–'} · Bán ${d.capBan || 'chưa có'}`, { size: 15, fill: '#FFFFFF', anchor: 'middle' }));
+  p.push(t(W / 2, 224, `Giá sốc 35k · Đạt khi bán ≥ cùng kỳ ${PS_CK.ckNhan} +10% · Thưởng 2.000đ/tuýp · Tồn ${d.capTon || '–'} · ${d.daChay ? `Bán ${d.capBan || 'chưa có'}` : `Bán tính từ ${PS_CK.tu.slice(8, 10)}/${PS_CK.tu.slice(5, 7)}`}`, { size: 15, fill: '#FFFFFF', anchor: 'middle' }));
   let y = HH + 18;
   const xTen = PAD + 62, x0 = 620;
-  const COT = [['TỒN'], ['CÙNG KỲ', PS_CK.ckNhan], ['MỤC TIÊU', '+10%'], ['BÁN', 'HÔM NAY'], ['BÁN', 'TUẦN'], ['%', 'ĐẠT'], ['THƯỞNG ST', '(đồng)']];
-  const wCot = (W - PAD - x0) / COT.length, gx = (ci) => x0 + wCot * (ci + 0.5);
+  const COT_ALL = [['TỒN'], ['CÙNG KỲ', PS_CK.ckNhan], ['MỤC TIÊU', '+10%'], ['BÁN', 'HÔM NAY'], ['BÁN', 'TUẦN'], ['%', 'ĐẠT'], ['THƯỞNG ST', '(đồng)']];
+  const giu = d.daChay ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 4, 5, 6]; // 08/11: chưa tới chu kỳ -> ẩn cột BÁN HÔM NAY
+  const COT = giu.map((i) => COT_ALL[i]);
+  const wCot = (W - PAD - x0) / COT.length, gx = (ci) => x0 + wCot * (giu.indexOf(ci) + 0.5);
   const yKeTop = y;
   p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="56" fill="${C.xanhDam}"/>`);
   p.push(t(PAD + 40, y + 35, '#', { size: 17, bold: true, fill: '#FFFFFF', anchor: 'end' }));
   p.push(t(xTen, y + 35, 'SIÊU THỊ', { size: 17, bold: true, fill: '#FFFFFF' }));
-  COT.forEach((c, ci) => c.forEach((dong, li) => p.push(t(gx(ci), y + (c.length === 1 ? 35 : 25 + li * 21), dong, { size: li ? 14 : 16, bold: true, fill: ci === 4 ? C.vang : '#FFFFFF', anchor: 'middle' }))));
+  giu.forEach((ci) => { const c = COT_ALL[ci]; c.forEach((dong, li) => p.push(t(gx(ci), y + (c.length === 1 ? 35 : 25 + li * 21), dong, { size: li ? 14 : 16, bold: true, fill: ci === 4 ? C.vang : '#FFFFFF', anchor: 'middle' }))); });
   y += 56;
   const tg = d.ds.reduce((a, o) => ({ ton: a.ton + o.ton, ck: a.ck + (o.ck || 0), mt: a.mt + o.mt, hn: a.hn + o.hn, tuan: a.tuan + o.tuan, thuong: a.thuong + o.thuong, dat: a.dat + (o.dat ? 1 : 0), coMT: a.coMT + (o.mt ? 1 : 0) }), { ton: 0, ck: 0, mt: 0, hn: 0, tuan: 0, thuong: 0, dat: 0, coMT: 0 });
   const pctTong = tg.mt ? (tg.tuan / tg.mt) * 100 : null;
   p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 8}" fill="${C.xanh}"/>`);
   p.push(t(xTen, y + 32, d.nhanTong, { size: 20, bold: true, fill: '#FFFFFF' }));
-  [fs(tg.ton), fs(tg.ck), fs(tg.mt), fs(tg.hn), fs(tg.tuan), pctTong == null ? '–' : `${pctTong.toFixed(1).replace('.', ',')}%`, `${tg.dat}/${tg.coMT} ST`].forEach((v, ci) =>
+  [fs(tg.ton), fs(tg.ck), fs(tg.mt), fs(tg.hn), fs(tg.tuan), pctTong == null ? '–' : `${pctTong.toFixed(1).replace('.', ',')}%`, `${tg.dat}/${tg.coMT} ST`].forEach((v, ci) => giu.includes(ci) &&
     p.push(t(gx(ci), y + 32, v, { size: ci === 4 ? 24 : 21, bold: true, fill: ci === 4 ? C.vang : '#FFFFFF', anchor: 'middle' })));
   y += ROW + 8;
   d.ds.forEach((o, i) => {
@@ -4319,11 +4321,11 @@ function veSvgPS(d) {
     p.push(t(gx(0), yt, fs(o.ton), { size: 19, bold: true, anchor: 'middle', fill: o.ton <= 0 ? C.do : '#1D2B1F' }));
     p.push(t(gx(1), yt, o.moi ? 'MỚI' : fs(o.ck), { size: 19, anchor: 'middle', fill: o.moi ? C.nau : '#1D2B1F', bold: o.moi }));
     p.push(t(gx(2), yt, o.moi ? '—' : fs(o.mt), { size: 19, bold: true, anchor: 'middle', fill: o.moi ? C.xam : '#1D2B1F' }));
-    p.push(t(gx(3), yt, fs(o.hn), { size: 19, anchor: 'middle', fill: o.hn > 0 ? '#1D2B1F' : C.xam, bold: o.hn > 0 }));
+    if (giu.includes(3)) p.push(t(gx(3), yt, fs(o.hn), { size: 19, anchor: 'middle', fill: o.hn > 0 ? '#1D2B1F' : C.xam, bold: o.hn > 0 }));
     p.push(t(gx(4), yt, fs(o.tuan), { size: 20, bold: true, anchor: 'middle', fill: o.tuan > 0 ? C.xd : C.xam }));
     if (o.pct != null) {
       const mau = o.dat ? C.xanh : C.do;
-      p.push(`<rect x="${x0 + wCot * 5 + 14}" y="${y + 6}" width="${wCot - 28}" height="${ROW - 12}" rx="${(ROW - 12) / 2}" fill="${mau}" fill-opacity="0.12"/>`);
+      p.push(`<rect x="${x0 + wCot * giu.indexOf(5) + 14}" y="${y + 6}" width="${wCot - 28}" height="${ROW - 12}" rx="${(ROW - 12) / 2}" fill="${mau}" fill-opacity="0.12"/>`);
       p.push(t(gx(5), yt, `${o.pct.toFixed(0)}%`, { size: 19, bold: true, anchor: 'middle', fill: mau }));
     } else p.push(t(gx(5), yt, '—', { size: 19, anchor: 'middle', fill: C.xam }));
     p.push(t(gx(6), yt, o.thuong ? fs(o.thuong) : '–', { size: 19, bold: !!o.thuong, anchor: 'middle', fill: o.thuong ? C.xanh : C.xam }));
