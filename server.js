@@ -4382,7 +4382,7 @@ async function docDuLieuCelTh(maST) {
   for (const o of ds) {
     o.pct = (o.dt / CT_CK.moc) * 100;
     o.dat = o.dt >= CT_CK.moc;
-    o.thung = o.tuan / CT_CK.hopThung;
+    o.thung = Math.floor(o.tuan / CT_CK.hopThung); // 13/11: chỉ tính thùng chẵn (đủ 48 hộp mới được 1 thùng)
     o.thuong = o.dat ? Math.round(o.thung * CT_CK.thuong) : 0;
   }
   let nhanTong = `TỔNG KHU VỰC (${ds.length} SIÊU THỊ)`;
@@ -4412,7 +4412,7 @@ function veSvgCelTh(d) {
   p.push(t(W / 2, 224, `Siêu thị bán ≥ 200.000đ/tuần mới tính thưởng · Thưởng 20.000đ/thùng · Tồn ${d.capTon || '–'} · ${d.daChay ? `Bán ${d.capBan || 'chưa có'}` : `Bán tính từ ${CT_CK.tu.slice(8, 10)}/${CT_CK.tu.slice(5, 7)}`}`, { size: 15, fill: '#FFFFFF', anchor: 'middle' }));
   let y = HH + 18;
   const xTen = PAD + 62, x0 = 600;
-  const COT_ALL = [['TỒN', '(hộp)'], ['BÁN', 'HÔM NAY'], ['BÁN TUẦN', '(hộp)'], ['DT TUẦN', '(đồng)'], ['% MỐC', '200K'], ['QUY', 'THÙNG'], ['THƯỞNG ST', '(đồng)']];
+  const COT_ALL = [['TỒN', '(hộp)'], ['BÁN', 'HÔM NAY'], ['BÁN TUẦN', '(hộp)'], ['DT TUẦN', '(đồng)'], ['% MỐC', '200K'], ['SỐ THÙNG', '(đủ 48 hộp)'], ['THƯỞNG ST', '(đồng)']];
   const giu = d.daChay ? [0, 1, 2, 3, 4, 5, 6] : [0, 2, 3, 4, 5, 6]; // chưa tới chu kỳ -> ẩn cột BÁN HÔM NAY
   const wCot = (W - PAD - x0) / giu.length, gx = (ci) => x0 + wCot * (giu.indexOf(ci) + 0.5);
   const yKeTop = y;
@@ -4424,7 +4424,7 @@ function veSvgCelTh(d) {
   const tg = d.ds.reduce((a, o) => ({ ton: a.ton + o.ton, hn: a.hn + o.hn, tuan: a.tuan + o.tuan, dt: a.dt + o.dt, thung: a.thung + o.thung, thuong: a.thuong + o.thuong, dat: a.dat + (o.dat ? 1 : 0) }), { ton: 0, hn: 0, tuan: 0, dt: 0, thung: 0, thuong: 0, dat: 0 });
   p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW + 8}" fill="${C.xanh}"/>`);
   p.push(t(xTen, y + 32, d.nhanTong, { size: 20, bold: true, fill: '#FFFFFF' }));
-  [fs(tg.ton), fs(tg.hn), fs(tg.tuan), fs(tg.dt), `${tg.dat}/${d.ds.length} ĐẠT`, f1(tg.thung), fs(tg.thuong)].forEach((v, ci) => giu.includes(ci) &&
+  [fs(tg.ton), fs(tg.hn), fs(tg.tuan), fs(tg.dt), `${tg.dat}/${d.ds.length} ĐẠT`, fs(tg.thung), fs(tg.thuong)].forEach((v, ci) => giu.includes(ci) &&
     p.push(t(gx(ci), y + 32, v, { size: ci === 3 ? 23 : 20, bold: true, fill: ci === 3 ? C.vang : '#FFFFFF', anchor: 'middle' })));
   y += ROW + 8;
   d.ds.forEach((o, i) => {
@@ -4440,8 +4440,9 @@ function veSvgCelTh(d) {
     const mau = o.dat ? C.xanh : C.do;
     p.push(`<rect x="${x0 + wCot * giu.indexOf(4) + 14}" y="${y + 6}" width="${wCot - 28}" height="${ROW - 12}" rx="${(ROW - 12) / 2}" fill="${mau}" fill-opacity="0.12"/>`);
     p.push(t(gx(4), yt, o.dat ? 'ĐẠT' : `${Math.floor(o.pct)}%`, { size: 19, bold: true, anchor: 'middle', fill: mau }));
-    p.push(t(gx(5), yt, o.tuan ? f1(o.thung) : '–', { size: 19, anchor: 'middle', fill: o.tuan ? '#1D2B1F' : C.xam }));
-    p.push(t(gx(6), yt, o.thuong ? fs(o.thuong) : '–', { size: 19, bold: !!o.thuong, anchor: 'middle', fill: o.thuong ? C.xanh : C.xam }));
+    p.push(t(gx(5), yt, o.thung ? fs(o.thung) : '0', { size: 19, bold: o.thung > 0, anchor: 'middle', fill: o.thung ? '#1D2B1F' : C.xam }));
+    if (o.dat && !o.thung) p.push(t(gx(6), yt, `thiếu ${CT_CK.hopThung - o.tuan} hộp`, { size: 16, bold: true, anchor: 'middle', fill: '#E08A00' })); // đạt mốc nhưng chưa đủ 1 thùng
+    else p.push(t(gx(6), yt, o.thuong ? fs(o.thuong) : '–', { size: 19, bold: !!o.thuong, anchor: 'middle', fill: o.thuong ? C.xanh : C.xam }));
     y += ROW;
   });
   p.push(`<line x1="${x0}" y1="${yKeTop}" x2="${x0}" y2="${y}" stroke="#C9D6CD" stroke-width="2.5"/>`);
@@ -4451,7 +4452,7 @@ function veSvgCelTh(d) {
   p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${hSP}" rx="10" fill="#FFF8E1"/><rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="4" rx="2" fill="${C.nau}"/>`);
   p.push(t(PAD + 18, y + 30, 'SẢN PHẨM (3 SKU lốc 4 gộp 1 cột, đơn vị hộp)', { size: 18, bold: true, fill: C.nau }));
   (TD_SP_IN.celth || []).forEach((s, n) => p.push(t(PAD + 22 + n * ((W - PAD * 2) / 3), y + 60, `${n + 1}. ${s}`, { size: 14 })));
-  p.push(t(PAD + 22, y + 92, `% mốc = DT tuần ÷ 200.000đ · Quy thùng = số hộp bán tuần ÷ ${CT_CK.hopThung} · Thưởng ST = số thùng × 20.000đ khi DT tuần ≥ 200.000đ · Chia: RSM 5% · QLTP 5% · QLST 25% · NV 65%`, { size: 14, fill: C.phu }));
+  p.push(t(PAD + 22, y + 92, `% mốc = DT tuần ÷ 200.000đ · Số thùng = chỉ tính thùng đủ ${CT_CK.hopThung} hộp (12 lốc), hộp lẻ không tính (đạt mốc mà chưa đủ 1 thùng thì hiện số hộp còn thiếu) · Thưởng ST = số thùng × 20.000đ khi DT tuần ≥ 200.000đ · Chia: RSM 5% · QLTP 5% · QLST 25% · NV 65%`, { size: 14, fill: C.phu }));
   y += hSP + 26;
   p.push(t(W / 2, y, 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh - 197042', { size: 14, fill: '#7A877D', anchor: 'middle' }));
   const H = y + 22;
