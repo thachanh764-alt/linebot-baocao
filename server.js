@@ -5522,6 +5522,16 @@ app.post('/robot/bao', express.json({ limit: '100kb' }), async (req, res) => {
   try {
     const text = String(req.body?.text || '').slice(0, 4000);
     if (!text) throw new Error('Thiếu nội dung');
+    // 14/11: robot gửi kèm thẻ Flex (thông báo nạp data) -> gửi thẻ; thẻ lỗi thì quay về tin chữ
+    const flex = req.body?.flex;
+    if (flex && flex.contents) {
+      try {
+        const daGui = await guiNhomRobot({ type: 'flex', altText: String(flex.altText || text).slice(0, 400), contents: flex.contents });
+        return res.json({ ok: true, daGui, kieu: 'flex' });
+      } catch (e) {
+        console.error('[robot/bao] gửi thẻ lỗi, chuyển sang tin chữ:', chiTietLoiLine(e));
+      }
+    }
     const daGui = await guiNhomRobot({ type: 'text', text });
     res.json({ ok: true, daGui });
   } catch (err) {
