@@ -347,7 +347,7 @@ async function napFileVaoSheet(fileName, buffer, ngayChiDinh, laBaseDmsk, laBase
   if (laFileCVST(header)) return napFileCVST(sheets, header, dataRows);
   if (laFileDtSieuThi(header)) return napFileDtSieuThi(sheets, header, dataRows, fileName);
   if (laFileGiaVon(header)) return napFileGiaVon(sheets, header, dataRows, fileName);
-  if (laFileFreshBan(header)) { try { await napTheoDoiThit(sheets, header, dataRows, fileName); } catch (e) { console.error('[theodoi] thịt:', e.message); } return { ...(await napFileFreshBan(sheets, header, dataRows, fileName)), theoDoiThit: true }; }
+  if (laFileFreshBan(header)) { return await napFileFreshBan(sheets, header, dataRows, fileName); } // TẮT 14/11: bỏ nạp thịt theo dõi
   if (laFileHuyMmkk(header)) return napFileHuyMmkk(sheets, header, dataRows);
   if (laFileTonModel(header)) return napTonChung(sheets, header, dataRows, fileName);
   if (laFileDoanhThuModel(header) && (await laFileBanSua(sheets, header, dataRows))) return napBanChung(sheets, header, dataRows, fileName, ngayChiDinh);
@@ -2766,7 +2766,7 @@ async function napFileNganhBHX(sheets, header, dataRows, fileName) {
   // File chỉ vài ngành (xuất lẻ để theo dõi) -> chỉ nạp THEO DÕI, không đè BC NGÀY / DT hôm nay
   const soNganh = new Set(dataRows.map((r) => tdoiTenNH(r[c.nh])).filter(Boolean)).size;
   if (soNganh < 8) {
-    await napTheoDoi(sheets, header, dataRows, fileName);
+    // TẮT 14/11: không nạp THEO DÕI nữa
     return { loai: 'theodoi', soDong: moi.length, dsST: [...new Set(moi.map((r) => r[1]))] };
   }
   const khoa = new Set(moi.map((r) => `${r[0]}|${r[1]}`));
@@ -2789,7 +2789,7 @@ async function napFileNganhBHX(sheets, header, dataRows, fileName) {
     const cuCT = (await docTabAnToan(sheets, TAB_NH_CHITIET)).slice(1).filter((r) => String(r[0]) >= giuTu && !khoaCT.has(`${r[0]}|${r[1]}`));
     await ghiDeTab(sheets, TAB_NH_CHITIET, ['Ngày', 'Mã siêu thị', 'Ngành hàng BHX', 'Doanh thu'], [...cuCT, ...moiCT]);
   } catch (e) { console.error('[bcngay] lỗi lưu chi tiết ngành:', e.message); }
-  try { await napTheoDoi(sheets, header, dataRows, fileName); } catch (e) { console.error('[theodoi] lỗi nạp:', e.message); }
+  // TẮT 14/11: không nạp THEO DÕI nữa
   return { loai: 'bcngay', tenTab: TAB_BCNGAY, soDong: moi.length, dsST: [...new Set(moi.map((r) => r[1]))] };
 }
 async function docDuLieuBcNgay(maST) {
@@ -4682,7 +4682,7 @@ async function chayLenh(text) {
   text = (text || '').normalize('NFC');
   // 02/11: lệnh SP KM (đổi danh sách đặt hàng) xét TRƯỚC — tin có chữ "celano", "c2"... không bị nhảy qua báo cáo khác
   if (laLenhKmSP(text)) return { ten: 'SP KM', ket: await lenhKmSP(text) };
-  { const l = lenhTheoDoi(text); if (l) return { ten: 'Theo dõi', ket: await generateTheoDoiReport(text, l) }; }
+  { const l = lenhTheoDoi(text); if (l) return { ten: 'Đã tắt', ket: { type: 'text', text: 'Báo cáo theo dõi ĐMSK + Hoá mỹ phẩm và Cá trứng + Thịt heo đã tắt. Gõ MENU để xem các báo cáo đang dùng.' } }; } // TẮT 14/11
   // TẮT 27/10: ĐMSK, THS + Trứng, DT NGÀNH HÀNG, ĐẶT MỨC, BNNB, DTLK KV (BC NGÀY bật lại 31/10: mẫu KHUNG 22H)
   const tat = [[laTriggerDtNganhHang, 'DT NGÀNH HÀNG'], [laTriggerThst, 'THS + Trứng'], [laTriggerBnnb, 'BNNB'], [laTriggerDmsk, 'ĐMSK'], [(x) => /đ[ặa]t\s*m[ứu]c/i.test(x), 'ĐẶT MỨC'], [laTriggerDtlk, 'DTLK'], [laTriggerHuyMmkk, 'HUỶ MMKK'], [laTriggerCvst, 'BC CVST'], [laTriggerSua, 'SỮA CELANO + C2']].find(([f]) => f(text)); // TẮT 31/10: BC SỮA
   if (tat) return { ten: 'Đã tắt', ket: { type: 'text', text: `Báo cáo ${tat[1]} đã tắt. Gõ MENU để xem các báo cáo đang dùng.` } };
@@ -4886,7 +4886,7 @@ async function taoMenuFlex() {
           ...(TD_BAT ? (() => { const tn = tdTuanDangChay() === 'celth' ? 'Celano thạch' : 'P/S'; return [hangNut([nutMenu(`Thi đua ${tn} KV`, 'THI ĐUA T11', xanh), nutMenu(`Thi đua ${tn} ${st}`, `THI ĐUA T11 ${st}`, xanh)])]; })() : []), // 13/11: từ 16/11 tự đổi sang Celano thạch
           ...(TD_BAT && TD_LAY.has('c2') ? [hangNut([nutMenu('C2 + 888 KV', 'BC C2', xanh), nutMenu(`C2 + 888 ${st}`, `BC C2 ${st}`, xanh)])] : []),
           tieuDeMuc('📊', 'THEO DÕI NGÀY + LUỸ KẾ', 'tự cập nhật'),
-          hangNut([nutMenu('ĐMSK + Hoá mỹ phẩm', 'THEO DÕI ĐMSK HPM', xanh), nutMenu('Cá trứng + Thịt heo', 'THEO DÕI CÁ TRỨNG', xanh)]),
+          // TẮT 14/11: bỏ nút ĐMSK + Hoá mỹ phẩm và Cá trứng + Thịt heo
           hangNut([nutMenu(`Giá vốn + LN Fresh ${st}`, `GIÁ VỐN ${st}`, xanh)]), // 07/11: bật lại Giá vốn (robot nạp POS 3933 + 3624 mỗi giờ)
           tieuDeMuc('📁', 'BÁO CÁO GỬI FILE', 'số lần gửi file gần nhất'),
           hangNut([nutMenu('Đặt hàng FMCG KV', 'ĐẶT HÀNG FMCG', xam), nutMenu(`Đặt hàng FMCG ${st}`, `ĐẶT HÀNG FMCG ${st}`, xam)]),
@@ -5294,7 +5294,8 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
           continue;
         }
 
-        if (kq.loai === 'theodoi' || (kq.loai === 'fresh_ban' && kq.theoDoiThit)) {
+        if (kq.loai === 'theodoi') { await guiTraLoi(event, targetId, { type: 'text', text: '✅ Đã nhận file. Báo cáo theo dõi ĐMSK/HPM/Cá trứng/Thịt heo đã tắt nên không trả ảnh.' }); continue; } // TẮT 14/11
+        if (false) {
           try {
             const st = (kq.dsST && kq.dsST.length === 1) ? ` ${kq.dsST[0]}` : '';
             const anh = kq.loai === 'theodoi' ? [await generateTheoDoiReport(st, TDOI_LENH[0]), await generateTheoDoiReport(st, TDOI_LENH[1])] : [await generateTheoDoiReport(st, TDOI_LENH[1])];
