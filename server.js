@@ -1056,6 +1056,7 @@ async function docDuLieuNam(maST) {
   const st = { ma, ten: '', capNhat: '', sp: new Map(), ck: 0, ckSL: 0 };
   for (const r of rows) {
     if (chuanHoaMaST(r[1]) !== ma) continue;
+    if (/miến|mien\s/i.test(String(r[4] || '').normalize('NFC'))) continue; // 15/11: anh dặn trừ Miến (POS xếp chung nhóm Nấm)
     st.ten = st.ten || tenNganSieuThi(r[2]) || String(r[2] || '');
     st.capNhat = st.capNhat || String(r[8] || '');
     const ky = String(r[0]), sl = soGV(r[6]), dt = soGV(r[7]);
