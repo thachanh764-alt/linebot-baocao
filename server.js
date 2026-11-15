@@ -1074,6 +1074,7 @@ async function docDuLieuNam(maST) {
     st.td = {
       base: Number(cfg.namBase) || NAM_TD_MAC_DINH.base, moc: Number(cfg.namMoc) || NAM_TD_MAC_DINH.moc,
       mocTop: Number(cfg.namMocTop) || NAM_TD_MAC_DINH.mocTop, ngay: cfg.namMocNgay || NAM_TD_MAC_DINH.ngay,
+      mucTieu: Number(cfg.namMucTieu) || NAM_TD_MAC_DINH.mucTieu,
     };
   }
   const m = String(st.capNhat).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
@@ -1083,7 +1084,16 @@ async function docDuLieuNam(maST) {
   return st;
 }
 // 15/11: mốc theo trang "Tra cứu thi đua nấm" 8104 ngày 15/11 — DT mốc 100% = 32,82tr ÷ 104,21%; Top 1–5 (3.000.000đ) hiện ở 103,21%, mục tiêu an toàn 104,21%
-const NAM_TD_MAC_DINH = { base: 31494000, moc: 104.21, mocTop: 103.21, ngay: '15/11' };
+const NAM_TD_MAC_DINH = { base: 31494000, moc: 104.21, mocTop: 103.21, ngay: '15/11', mucTieu: 40000000 }; // 15/11: anh đặt mục tiêu ăn chắc 40tr
+// Lệnh: "MỤC TIÊU NẤM 40" = mục tiêu DT nấm cả tháng (triệu)
+function laLenhMucTieuNam(text) { return /^\s*m[ụu]c\s*ti[êe]u\s*n[ấa]m\b/i.test(String(text || '').normalize('NFC')); }
+async function datMucTieuNam(text) {
+  const m = String(text).normalize('NFC').match(/\d+(?:[.,]\d+)?/);
+  if (!m) return { type: 'text', text: 'Anh gõ: MỤC TIÊU NẤM 40 (triệu, DT nấm cả tháng)' };
+  const v = Number(m[0].replace(',', '.'));
+  await ghiCauHinhRobot({ namMucTieu: String(Math.round(v < 1000 ? v * 1e6 : v)) });
+  return generateNamReport('');
+}
 // Lệnh: "MỐC NẤM 31,494 104,21 103,21" = DT mốc 100% (triệu) · % mục tiêu 3tr · % Top 1–5 hiện tại
 function laLenhMocNam(text) { return /^\s*m[ốo]c\s*n[ấa]m\b/i.test(String(text || '').normalize('NFC')); }
 async function datMocNam(text) {
@@ -1162,7 +1172,7 @@ function veSvgNam(st) {
     const pc = (v) => v.toFixed(2).replace('.', ',') + '%';
     y += 30;
     p.push(`<rect x="0" y="${y}" width="${W}" height="40" fill="${C.xanhDam}"/>`);
-    p.push(t(PAD, y + 27, 'THI ĐUA NẤM T11 (QLST) · DỰ KIẾN + MỤC TIÊU TỪNG NẤC ĐỂ ĐẠT 3.000.000đ', { size: 17, bold: true, fill: '#FFFFFF' }));
+    p.push(t(PAD, y + 27, 'THI ĐUA NẤM T11 (QLST) · DỰ KIẾN + MỤC TIÊU TỪNG NẤC (3.000.000đ)', { size: 17, bold: true, fill: '#FFFFFF' }));
     p.push(t(W - PAD, y + 27, `mốc cập nhật ${td.ngay}`, { size: 12, fill: '#D7F0DF', anchor: 'end' }));
     y += 52;
     const o4W = (W - PAD * 2 - 36) / 4;
@@ -1186,7 +1196,8 @@ function veSvgNam(st) {
     const nac = [
       ['Điều kiện xếp hạng (≥100%)', 100, false],
       ['Top 1–5 · mốc hiện tại', td.mocTop, false],
-      ['Top 1–5 · MỤC TIÊU 3.000.000đ', td.moc, true],
+      ['Top 1–5 · mốc an toàn (3tr)', td.moc, false],
+      [`MỤC TIÊU ĂN CHẮC ${Math.round(td.mucTieu / 1e6)}tr`, (td.mucTieu / td.base) * 100, true],
     ];
     nac.forEach(([ten, pct, chinh], i) => {
       const can = td.base * pct / 100, thieu = Math.max(can - lkQua, 0), moiNgay = thieu / conNgay;
@@ -1203,10 +1214,13 @@ function veSvgNam(st) {
     });
     p.push(`<rect x="${PAD}" y="${yT2}" width="${W - PAD * 2}" height="${y - yT2}" rx="6" fill="none" stroke="${C.vien}"/>`);
     y += 22;
-    const canChinh = (td.base * td.moc / 100 - lkQua) / conNgay;
-    p.push(t(PAD, y, `→ Để chắc 3.000.000đ: mỗi ngày từ hôm nay đến ${st.soNgay}/${String(st.capNhat).match(/\/(\d{1,2})\//) ? String(st.capNhat).match(/\/(\d{1,2})\//)[1] : ''} bán ${tr(canChinh)}tr nấm (TB hiện tại ${tr(tb)}tr/ngày, cần tăng ${tb > 0 ? Math.max(((canChinh / tb) - 1) * 100, 0).toFixed(1).replace('.', ',') : '–'}%)`, { size: 14, bold: true, fill: C.xanhDam }));
+    const canChinh = (td.mucTieu - lkQua) / conNgay;
+    const thang = (String(st.capNhat).match(/\/(\d{1,2})\//) || [])[1] || '';
+    p.push(t(PAD, y, `→ Mục tiêu ${Math.round(td.mucTieu / 1e6)}tr: mỗi ngày đến ${st.soNgay}/${thang} bán ${tr(canChinh)}tr nấm (TB hiện tại ${tr(tb)}tr/ngày, cần tăng ${tb > 0 ? Math.max(((canChinh / tb) - 1) * 100, 0).toFixed(1).replace('.', ',') : '–'}%)`, { size: 14, bold: true, fill: C.xanhDam }));
     y += 20;
-    p.push(t(PAD, y, 'DT tính từ POS 126 (chưa VAT, đã trừ Miến) nên có thể lệch nhẹ với trang thi đua. Mốc Top 1–5 đổi theo BXH; cập nhật: MỐC NẤM <DT mốc 100% tr> <% mục tiêu> <% Top 1–5>', { size: 12, fill: C.phu }));
+    p.push(t(PAD, y, 'DT lấy POS 126 (chưa VAT, trừ Miến) nên lệch nhẹ với trang thi đua. Mốc Top 1–5 đổi theo bảng xếp hạng.', { size: 12, fill: C.phu }));
+    y += 17;
+    p.push(t(PAD, y, 'Đổi mốc: MỐC NẤM 31,494 104,21 103,21 (mốc 100% tr · % an toàn · % Top 1–5) · Đổi mục tiêu: MỤC TIÊU NẤM 40', { size: 12, fill: C.phu }));
   }
   y += 24;
   const khongBan = ds.filter((x) => !x.slHn).length;
@@ -4908,6 +4922,7 @@ async function chayLenh(text) {
   if (laTriggerDtNganhHang(text)) return { ten: 'DT Ngành Hàng', ket: await generateDtNganhHangReport(text) };
   if (laTriggerGiaVon(text)) return { ten: 'Giá Vốn', ket: await generateGiaVonReport(text) };
   if (laLenhMocNam(text)) return { ten: 'Mốc Nấm', ket: await datMocNam(text) };
+  if (laLenhMucTieuNam(text)) return { ten: 'Mục tiêu Nấm', ket: await datMucTieuNam(text) };
   if (laTriggerNam(text)) return { ten: 'Nấm', ket: await generateNamReport(text) };
   if (laTriggerHuyMmkk(text)) return { ten: 'Huỷ MMKK', ket: await generateHuyMmkkReport(text) };
   if (laTriggerSua(text)) return { ten: 'BC Sữa', ket: await generateSuaReport(text) };
