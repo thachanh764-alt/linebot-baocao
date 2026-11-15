@@ -897,6 +897,8 @@ function veSvgGiaVon(st) {
   const t = (x, y, s, o = {}) =>
     `<text x="${x}" y="${y}" font-size="${o.size || 15}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1a1a1a'}" text-anchor="${o.anchor || 'start'}">${escXml(s)}</text>`;
   const coBan = st.nganh.some((x) => x.dtHomNay != null);
+  // 15/11: POS 3933 trong ngày trả "Giá vốn cơ bản hôm nay" = 0 (chưa tính) -> không so Bán − GV, để trống
+  const coGV = st.nganh.some((x) => x.gvHomNay > 0);
   const ds = st.nganh.slice().sort((a, b) => a.ln - b.ln);
   const sum = (k) => ds.reduce((s, x) => s + (x[k] || 0), 0);
   const tong = { dt: sum('dt'), gvLk: sum('gvLk'), ln: sum('ln'), ln3t: sum('ln3t'), chenh: sum('chenh'), gvHomNay: sum('gvHomNay'), dtHomNay: sum('dtHomNay') };
@@ -921,8 +923,10 @@ function veSvgGiaVon(st) {
     p.push(t(x + 12, y + 54, gt, { size: 25, bold: true, fill: mau || '#1a1a1a' }));
     if (phu) p.push(t(x + oW - 12, y + 54, phu, { size: 12, fill: '#777777', anchor: 'end' }));
   };
-  o(0, 'Giá vốn nhập hôm nay', trGV(tong.gvHomNay));
-  if (coBan) o(1, 'DT bán hôm nay', trGV(tong.dtHomNay), tong.dtHomNay >= tong.gvHomNay ? C.xanh : C.do, `= ${fPct(pct(tong.dtHomNay, tong.gvHomNay))} GV`);
+  if (coGV) o(0, 'Giá vốn nhập hôm nay', trGV(tong.gvHomNay));
+  else o(0, 'Giá vốn nhập hôm nay', '–', C.phu, 'POS chưa tính');
+  if (coBan && !coGV) o(1, 'DT bán hôm nay', trGV(tong.dtHomNay), '#1a1a1a');
+  else if (coBan) o(1, 'DT bán hôm nay', trGV(tong.dtHomNay), tong.dtHomNay >= tong.gvHomNay ? C.xanh : C.do, `= ${fPct(pct(tong.dtHomNay, tong.gvHomNay))} GV`);
   else o(1, 'DT bán hôm nay', '–', C.phu, 'gửi file nhập xuất');
   o(2, 'LN luỹ kế tháng', trGV(tong.ln), mauLN(tong.ln), `DT/GV ${fPct(tiLeTong)}`);
   o(3, 'So TB 3 tháng trước', trGVdau(tong.chenh), mauLN(tong.chenh), `TB 3T ${trGV(tong.ln3t)}`);
@@ -944,13 +948,15 @@ function veSvgGiaVon(st) {
     const nen = tongDong ? C.xanh : k % 2 === 1 ? C.chan : null;
     if (nen) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${nen}"/>`);
     const yt = y + 22, wt = tongDong ? '#FFFFFF' : null;
-    const co = x.dtHomNay != null;
+    const coGvDong = coGV;
+    const co = x.dtHomNay != null && coGvDong;
+    const coDt = x.dtHomNay != null;
     const chHn = co ? x.dtHomNay - x.gvHomNay : null;
     const tlHn = co ? pct(x.dtHomNay, x.gvHomNay) : null;
     p.push(t(cot.ten, yt, tongDong ? 'TỔNG FRESH' : tenNganGV(x.ten), { bold: tongDong || x.ln < 0, fill: wt || '#1a1a1a' }));
     if (!tongDong) p.push(t(cot.sl, yt, (Math.round(x.slNhap * 10) / 10).toFixed(1).replace('.', ','), { fill: C.phu, anchor: 'end' }));
-    p.push(t(cot.gvHn, yt, trGV(x.gvHomNay), { fill: wt || C.phu, anchor: 'end', bold: tongDong }));
-    p.push(t(cot.dtHn, yt, co ? trGV(x.dtHomNay) : '–', { fill: wt || '#1a1a1a', anchor: 'end', bold: true }));
+    p.push(t(cot.gvHn, yt, coGvDong ? trGV(x.gvHomNay) : '–', { fill: wt || C.phu, anchor: 'end', bold: tongDong }));
+    p.push(t(cot.dtHn, yt, coDt ? trGV(x.dtHomNay) : '–', { fill: wt || '#1a1a1a', anchor: 'end', bold: true }));
     p.push(t(cot.chHn, yt, co ? trGVdau(chHn) : '–', { fill: wt || (co ? mauLN(chHn) : C.phu), anchor: 'end', bold: true }));
     p.push(t(cot.tlHn, yt, co && x.gvHomNay > 0 ? fPct(tlHn) : '–', { fill: wt || (co ? (tlHn >= 100 ? C.xanh : C.do) : C.phu), anchor: 'end', bold: true }));
     p.push(t(cot.dt, yt, trGV(x.dt), { anchor: 'end', fill: wt || '#1a1a1a', bold: tongDong }));
@@ -970,7 +976,9 @@ function veSvgGiaVon(st) {
   // Cảnh báo + việc cần làm
   y += 26;
   const dong = [];
-  if (coBan) {
+  if (coBan && !coGV) {
+    dong.push('● POS chưa tính giá vốn nhập hôm nay (cột GV = 0 trên POS 3933) nên chưa so được Bán − GV; luỹ kế tháng vẫn đúng.');
+  } else if (coBan) {
     const thieu = ds.filter((x) => x.dtHomNay != null && x.dtHomNay < x.gvHomNay).sort((a, b) => (a.dtHomNay - a.gvHomNay) - (b.dtHomNay - b.gvHomNay));
     if (thieu.length) dong.push(`● Hôm nay cần bán thêm để bù giá vốn nhập: ${thieu.map((x) => `${tenNganGV(x.ten)} ${trGV(x.gvHomNay - x.dtHomNay)}`).join(' · ')} (tổng ${trGV(thieu.reduce((s, x) => s + x.gvHomNay - x.dtHomNay, 0))} tr)`);
     else dong.push('✔ Hôm nay tất cả ngành đã bán vượt giá vốn nhập.');
