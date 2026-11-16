@@ -88,13 +88,26 @@ function getSheetsClient() {
   return google.sheets({ version: 'v4', auth });
 }
 
-async function docTabThanhMangDong(sheets, tenTab) {
+// 16/11: BỘ NHỚ TẠM đọc Sheet -> bấm nút báo cáo không phải đọc lại Google Sheet mỗi lần (nhanh hơn nhiều).
+// Xoá khi có ghi Sheet (ghiDeTab / robot nạp) hoặc sau 10 phút.
+const CACHE_SHEET = new Map(); // tenTab -> { t, rows }
+const CACHE_SHEET_TTL = 10 * 60 * 1000;
+function xoaCacheSheet(tenTab) { if (tenTab) CACHE_SHEET.delete(tenTab); else CACHE_SHEET.clear(); }
+async function docSheetCoCache(sheets, tenTab) {
+  const c = CACHE_SHEET.get(tenTab);
+  if (c && Date.now() - c.t < CACHE_SHEET_TTL) return c.rows.map((r) => r.slice());
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: GOOGLE_SHEET_ID,
     range: tenTab,
     valueRenderOption: 'UNFORMATTED_VALUE',
   });
   const rows = res.data.values || [];
+  CACHE_SHEET.set(tenTab, { t: Date.now(), rows });
+  return rows.map((r) => r.slice());
+}
+
+async function docTabThanhMangDong(sheets, tenTab) {
+  const rows = await docSheetCoCache(sheets, tenTab);
   if (rows.length === 0) {
     throw new Error(`Tab "${tenTab}" trong Google Sheet đang trống hoặc không tồn tại`);
   }
@@ -104,12 +117,7 @@ async function docTabThanhMangDong(sheets, tenTab) {
 // Đọc tab, nếu chưa có thì trả mảng rỗng (không báo lỗi)
 async function docTabAnToan(sheets, tenTab) {
   try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: GOOGLE_SHEET_ID,
-      range: tenTab,
-      valueRenderOption: 'UNFORMATTED_VALUE',
-    });
-    return res.data.values || [];
+    return await docSheetCoCache(sheets, tenTab);
   } catch (err) {
     if (/Unable to parse range|not found/i.test(err.message || '')) return [];
     throw err;
@@ -131,6 +139,7 @@ async function damBaoCoTab(sheets, tenTab) {
 
 // Ghi đè toàn bộ tab (xoá sạch rồi ghi header + data). Ghi RAW để ngày giữ dạng chữ YYYY-MM-DD.
 async function ghiDeTab(sheets, tenTab, header, rows) {
+  xoaCacheSheet(tenTab);
   await damBaoCoTab(sheets, tenTab);
   await sheets.spreadsheets.values.clear({ spreadsheetId: GOOGLE_SHEET_ID, range: tenTab });
   await sheets.spreadsheets.values.update({
@@ -5705,6 +5714,7 @@ app.get('/anh/:id.png', async (req, res) => {
 
 // ---- Robot POS gửi file vào đây (thay cho việc gửi file vào group) ----
 app.post('/robot/nap', express.raw({ type: '*/*', limit: '20mb' }), async (req, res) => {
+  res.on('finish', () => xoaCacheSheet()); // robot vừa nạp số mới -> lần bấm sau đọc lại Sheet
   if (!kiemTraKhoaRobot(req, res)) return;
   const fileName = String(req.query.ten || 'robot.xlsx');
   const ngayChiDinh = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.ngay || '')) ? String(req.query.ngay) : null;
