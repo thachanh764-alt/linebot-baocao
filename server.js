@@ -5110,17 +5110,9 @@ async function taoMenuFlex() {
       body: {
         type: 'box', layout: 'vertical', paddingAll: '14px', spacing: 'none',
         contents: [
-          tieuDeMuc('⏱', 'REALTIME HÔM NAY', 'tự cập nhật'),
-          hangNut([nutMenu('DT hôm nay KV', 'DT HÔM NAY', cam), nutMenu(`DT hôm nay ${st}`, `DT HÔM NAY ${st}`, cam)]),
-          hangNut([nutMenu(`Mốc DT tháng ${st}`, `LÀM CHỦ ${st}`, cam), nutMenu(`BC ngày 22H ${st}`, `BC NGÀY ${st}`, cam)]),
-          tieuDeMuc('🏆', 'THI ĐUA', 'tự cập nhật'),
-          ...(TD_BAT ? (() => { const tn = tdTuanDangChay() === 'celth' ? 'Celano thạch' : 'P/S'; return [hangNut([nutMenu(`Thi đua ${tn} KV`, 'THI ĐUA T11', xanh), nutMenu(`Thi đua ${tn} ${st}`, `THI ĐUA T11 ${st}`, xanh)])]; })() : []), // 13/11: từ 16/11 tự đổi sang Celano thạch
-          ...(TD_BAT && TD_LAY.has('c2') ? [hangNut([nutMenu('C2 + 888 KV', 'BC C2', xanh), nutMenu(`C2 + 888 ${st}`, `BC C2 ${st}`, xanh)])] : []),
-          tieuDeMuc('📊', 'THEO DÕI NGÀY + LUỸ KẾ', 'tự cập nhật'),
-          // TẮT 14/11: bỏ nút ĐMSK + Hoá mỹ phẩm và Cá trứng + Thịt heo
-          hangNut([nutMenu(`Giá vốn + LN Fresh ${st}`, `GIÁ VỐN ${st}`, xanh), nutMenu(`Nấm ${st}`, `NẤM ${st}`, xanh)]), // 15/11: thêm nút Nấm // 07/11: bật lại Giá vốn (robot nạp POS 3933 + 3624 mỗi giờ)
-          tieuDeMuc('📁', 'BÁO CÁO GỬI FILE', 'số lần gửi file gần nhất'),
-          hangNut([nutMenu('Đặt hàng FMCG KV', 'ĐẶT HÀNG FMCG', xam), nutMenu(`Đặt hàng FMCG ${st}`, `ĐẶT HÀNG FMCG ${st}`, xam)]),
+          // 18/11: anh chỉ giữ 2 nút KV (Thi đua Celano thạch KV + C2 + 888 KV), tắt hết các nút khác kể cả nút 8104
+          tieuDeMuc('🏆', 'THI ĐUA KV', 'tự cập nhật'),
+          hangNut([nutMenu('Thi đua Celano thạch KV', 'THI ĐUA T11', xanh), nutMenu('C2 + 888 KV', 'BC C2', xanh)]),
         ],
       },
       footer: {
