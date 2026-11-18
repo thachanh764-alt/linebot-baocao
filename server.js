@@ -4499,6 +4499,7 @@ async function docDuLieuCherry(maST) {
     m.set(o.ma, o); if (a && (!tu || a < tu)) tu = a; if (b && b > den) den = b; if (c) cap = c;
   }
   try { for (const st of await dsSieuThi()) if (!m.has(st.ma)) m.set(st.ma, { ma: st.ma, ten: String(st.ten || '').split(' - ').slice(1).join(' - ').trim() || st.ten, n: 0, x: 0, gg: 0, h: 0, tien: 0 }); } catch (_) { /* chưa có danh sách ST */ }
+  for (const k of TD_ST_LOAI) if (!(m.get(k) || {}).n && !(m.get(k) || {}).x) m.delete(k); // bỏ ST đã off / chưa khai trương (nếu không có số)
   let ds = [...m.values()].map((o) => ({ ...o, ton: o.n - o.x - o.h, pct: o.n > 0 ? o.x / o.n : 0, gia: o.x > 0 ? o.tien / o.x : 0 }));
   ds.forEach((o) => { o.dat = o.n > 0 && o.pct >= CHERRY.pct && o.gia > CHERRY.gia; });
   if (maST) ds = ds.filter((o) => o.ma === String(maST));
