@@ -359,6 +359,7 @@ async function napFileVaoSheet(fileName, buffer, ngayChiDinh, laBaseDmsk, laBase
   if (laFileNam(header)) return napFileNam(sheets, header, dataRows);
   if (laFileFreshBan(header)) { return await napFileFreshBan(sheets, header, dataRows, fileName); } // TẮT 14/11: bỏ nạp thịt theo dõi
   if (laFileHuyMmkk(header)) return napFileHuyMmkk(sheets, header, dataRows);
+  if (laFileCherry(header)) return napFileCherry(sheets, header, dataRows, fileName); // 18/11: thi đua Táo Cherry (POS 3624)
   if (laFileTonModel(header)) return napTonChung(sheets, header, dataRows, fileName);
   if (laFileDoanhThuModel(header) && (await laFileBanSua(sheets, header, dataRows))) return napBanChung(sheets, header, dataRows, fileName, ngayChiDinh);
   // File Doanh Thu Theo Model có mã THI ĐUA T11 (gửi tay, luỹ kế từ 01/11) -> chỉ lấy các mã thi đua
@@ -4448,6 +4449,143 @@ async function generateC2Report(text) {
   return { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?${q}`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?${q}&nho=1` };
 }
 
+// ---------------------------------------------------------------------------
+// 18/11: THI ĐUA TÁO CHERRY HỘP 500GR · KV 40909 · 21/11 → 28/11/2026 (sếp đã duyệt mẫu)
+//  Nguồn: POS 3624 "BC nhập xuất Rau Đà Lạt, Trứng" (robot nạp luỹ kế 21/11 → hôm nay, hoặc gửi file tay).
+//  Nhập / Bán / Tồn cộng dồn từ 21/11 tới hết 28/11. Bán = SL thực xuất. Tồn = Nhập − Bán − Hủy − MMKK.
+//  ĐẠT: Bán/Nhập ≥ 90% VÀ Đơn giá TB (thành tiền chưa VAT ÷ SL bán) > 42.000đ/hộp. Lệnh: "TÁO CHERRY"
+// ---------------------------------------------------------------------------
+const TAB_CHERRY = 'TAO_CHERRY';
+const CHERRY = { ma: '1232854000547', tu: '2026-11-21', den: '2026-11-28', pct: 0.9, gia: 42000 };
+function laTriggerCherry(text) { return coTuKhoa(text, ['táo cherry', 'tao cherry', 'cherry']); }
+function laFileCherry(header) { return ['SL thực nhập', 'SL thực xuất', 'Mã sản phẩm', 'Tên sản phẩm', 'Mã siêu thị'].every((h) => header.includes(h)); }
+function ngayIsoTuO(v) {
+  if (v == null || v === '') return '';
+  if (typeof v === 'number') return new Date(Math.round((v - 25569) * 86400000)).toISOString().slice(0, 10);
+  if (v instanceof Date) return new Date(v.getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  return '';
+}
+async function napFileCherry(sheets, header, dataRows, fileName) {
+  const i = (h) => header.indexOf(h);
+  const [iNgay, iST, iTen, iMa, iTenSP, iN, iX, iGG, iHuy, iMM, iTien] = ['Ngày', 'Mã siêu thị', 'Tên siêu thị', 'Mã sản phẩm', 'Tên sản phẩm', 'SL thực nhập', 'SL thực xuất', 'SL s.thị bán giảm giá', 'SL hủy tồn', 'SL mất mát kiểm kê', 'Thành tiền phải thu khách hàng (chưa VAT)'].map(i);
+  const so = (v) => Number(v) || 0;
+  const m = new Map(); let minN = '', maxN = '';
+  for (const r of dataRows) {
+    const laCherry = String(r[iMa] || '').trim() === CHERRY.ma || /táo\s*cherry|tao\s*cherry/i.test(String(r[iTenSP] || ''));
+    if (!laCherry) continue;
+    const ng = iNgay >= 0 ? ngayIsoTuO(r[iNgay]) : '';
+    if (ng && (ng < CHERRY.tu || ng > CHERRY.den)) continue; // chỉ tính 21/11 → 28/11
+    if (ng) { if (!minN || ng < minN) minN = ng; if (!maxN || ng > maxN) maxN = ng; }
+    const ma = String(r[iST]).trim();
+    const o = m.get(ma) || { ma, ten: String(r[iTen] || '').split(' - ').slice(1).join(' - ').trim(), n: 0, x: 0, gg: 0, h: 0, tien: 0 };
+    o.n += so(r[iN]); o.x += so(r[iX]); o.gg += so(r[iGG]); o.h += so(r[iHuy]) + so(r[iMM]); o.tien += so(r[iTien]);
+    m.set(ma, o);
+  }
+  const cap = capNhatTuTen(fileName) || bayGioVN();
+  const rows = [...m.values()].map((o) => [o.ma, o.ten, o.n, o.x, o.gg, o.h, Math.round(o.tien), minN, maxN, cap]);
+  await ghiDeTab(sheets, TAB_CHERRY, ['Mã siêu thị', 'Tên siêu thị', 'Nhập', 'Bán', 'Bán giảm giá', 'Hủy + MMKK', 'Thành tiền chưa VAT', 'Từ ngày', 'Đến ngày', 'Cập nhật'], rows);
+  return { loai: 'cherry', tenTab: TAB_CHERRY, soDong: rows.length };
+}
+async function docDuLieuCherry(maST) {
+  const rows = (await docTabAnToan(getSheetsClient(), TAB_CHERRY)).slice(1);
+  const m = new Map();
+  let tu = '', den = '', cap = '';
+  for (const r of rows) {
+    const [ma, ten, n, x, gg, h, tien, a, b, c] = r;
+    const o = { ma: String(ma), ten: String(ten || ''), n: Number(n) || 0, x: Number(x) || 0, gg: Number(gg) || 0, h: Number(h) || 0, tien: Number(tien) || 0 };
+    m.set(o.ma, o); if (a && (!tu || a < tu)) tu = a; if (b && b > den) den = b; if (c) cap = c;
+  }
+  try { for (const st of await dsSieuThi()) if (!m.has(st.ma)) m.set(st.ma, { ma: st.ma, ten: String(st.ten || '').split(' - ').slice(1).join(' - ').trim() || st.ten, n: 0, x: 0, gg: 0, h: 0, tien: 0 }); } catch (_) { /* chưa có danh sách ST */ }
+  let ds = [...m.values()].map((o) => ({ ...o, ton: o.n - o.x - o.h, pct: o.n > 0 ? o.x / o.n : 0, gia: o.x > 0 ? o.tien / o.x : 0 }));
+  ds.forEach((o) => { o.dat = o.n > 0 && o.pct >= CHERRY.pct && o.gia > CHERRY.gia; });
+  if (maST) ds = ds.filter((o) => o.ma === String(maST));
+  ds.sort((a, b) => (b.dat - a.dat) || ((b.n > 0 || b.x > 0) - (a.n > 0 || a.x > 0)) || (b.pct - a.pct) || (b.gia - a.gia) || (b.x - a.x));
+  return { ds, tu, den, cap, maST };
+}
+function veSvgCherry(d) {
+  const W = 1560, PAD = 24, ROW = 40;
+  const C = { xanh: '#0B8A3E', xanhDam: '#0B5D2A', chan: '#F6FAF7', vien: '#E3E8E4', phu: '#56655A', xam: '#B0B8B2', do: '#D00000', ok: '#0A8A3A', vang: '#FFD400', nau: '#B36B00', lam: '#1F4FA8' };
+  const t = (x, y, s, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 19}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1D2B1F'}" text-anchor="${o.anchor || 'start'}"${o.ls ? ` letter-spacing="${o.ls}"` : ''}>${escXml(s)}</text>`;
+  const fs = (v) => String(Math.round(v)).replace(/-/, '−').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '');
+  const p = [];
+  const HH = 236;
+  p.push(`<defs><linearGradient id="chg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0B8A3E"/><stop offset="1" stop-color="#076B30"/></linearGradient></defs>`);
+  p.push(`<rect x="0" y="0" width="${W}" height="${HH}" fill="url(#chg)"/>`);
+  p.push(t(W / 2, 44, 'BÁCH HOÁ XANH · BÁO CÁO THI ĐUA', { size: 17, bold: true, fill: '#D7F0DF', anchor: 'middle', ls: 4 }));
+  p.push(t(W / 2, 98, 'TÁO CHERRY HỘP 500GR', { size: 48, bold: true, fill: '#FFFFFF', anchor: 'middle', ls: 2 }));
+  p.push(`<rect x="${(W - 440) / 2}" y="116" width="440" height="42" rx="8" fill="${C.vang}"/>`);
+  p.push(t(W / 2, 146, 'KV QLTP QUỐC NAM 40909', { size: 24, bold: true, fill: '#0B4A22', anchor: 'middle', ls: 1 }));
+  p.push(`<rect x="${(W - 420) / 2}" y="168" width="420" height="32" rx="16" fill="#FFFFFF"/>`);
+  p.push(t(W / 2, 191, 'CHU KỲ: 21/11 → 28/11/2026', { size: 18, bold: true, fill: '#C62828', anchor: 'middle' }));
+  p.push(t(W / 2, 224, d.tu ? `Số luỹ kế ${dm(d.tu)} → ${dm(d.den)} · cập nhật ${d.cap}` : 'Chưa có số (thi đua bắt đầu 21/11)', { size: 16, fill: '#FFFFFF', anchor: 'middle' }));
+  let y = HH;
+  p.push(`<rect x="0" y="${y}" width="${W}" height="48" fill="#FFF8E1"/><rect x="0" y="${y + 46}" width="${W}" height="3" fill="#F0C000"/>`);
+  p.push(`<text x="${W / 2}" y="${y + 32}" font-size="20" fill="#5A4500" text-anchor="middle">ĐIỀU KIỆN ĐẠT: <tspan font-weight="700">Bán / Nhập ≥ 90%</tspan> và <tspan font-weight="700">Đơn giá bán TB &gt; 42.000đ/hộp (chưa VAT)</tspan></text>`);
+  y += 62;
+  // cột: [nhãn, x tâm/phải]
+  const xTen = PAD + 56;
+  const cot = [['NHẬP', 640], ['BÁN', 735], ['GIẢM GIÁ', 850], ['TỒN', 950], ['% BÁN/NHẬP', 1080], ['DOANH THU', 1225], ['ĐƠN GIÁ TB', 1362], ['KẾT QUẢ', 1480]];
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="54" fill="${C.xanhDam}"/>`);
+  p.push(t(PAD + 34, y + 35, '#', { bold: true, fill: '#FFFFFF', anchor: 'middle' }));
+  p.push(t(xTen, y + 35, 'SIÊU THỊ', { bold: true, fill: '#FFFFFF' }));
+  cot.forEach(([n, x]) => p.push(t(x, y + 35, n, { size: 17, bold: true, fill: '#FFFFFF', anchor: 'middle' })));
+  y += 54;
+  const ds = d.ds;
+  const tg = ds.reduce((a, o) => ({ n: a.n + o.n, x: a.x + o.x, gg: a.gg + o.gg, ton: a.ton + o.ton, tien: a.tien + o.tien, dat: a.dat + (o.dat ? 1 : 0) }), { n: 0, x: 0, gg: 0, ton: 0, tien: 0, dat: 0 });
+  const tPct = tg.n ? tg.x / tg.n : 0, tGia = tg.x ? tg.tien / tg.x : 0;
+  const veDong = (o, i, tong) => {
+    const h = tong ? ROW + 8 : ROW;
+    if (tong) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" fill="#DFF2E5"/>`);
+    else if (o.ma === '8104') p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" fill="#FFFBE0"/>`);
+    else if (i % 2 === 1) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" fill="${C.chan}"/>`);
+    p.push(`<line x1="${PAD}" y1="${y + h}" x2="${W - PAD}" y2="${y + h}" stroke="${C.vien}"/>`);
+    const yt = y + (tong ? 32 : 28), sz = tong ? 22 : 20, co = o.n > 0 || o.x > 0;
+    if (!tong) p.push(t(PAD + 34, yt, i + 1, { size: 18, fill: C.phu, anchor: 'middle' }));
+    if (tong) p.push(t(xTen, yt, `TỔNG KHU VỰC (${ds.length} SIÊU THỊ)`, { size: 22, bold: true }));
+    else p.push(`<text x="${xTen}" y="${yt}" font-size="20" fill="#1D2B1F"><tspan font-weight="700">${escXml(o.ma)}</tspan> · ${escXml(rutGonTen(String(o.ten).replace(/\(\s+/g, '(').replace(/\s+\)/g, ')'), 30))}</text>`);
+    const pct = tong ? tPct : o.pct, gia = tong ? tGia : o.gia;
+    const vals = [
+      [fs(o.n), co ? '#1D2B1F' : C.xam, false], [fs(o.x), co ? '#1D2B1F' : C.xam, true], [fs(o.gg), o.gg > 0 ? C.nau : C.xam, false],
+      [fs(o.ton), o.ton < 0 ? C.do : C.lam, true],
+      [o.n > 0 ? `${Math.round(pct * 100)}%` : '–', o.n > 0 ? (pct >= CHERRY.pct ? C.ok : C.do) : C.xam, true],
+      [fs(o.tien), co ? '#1D2B1F' : C.xam, false],
+      [o.x > 0 ? fs(gia) : '–', o.x > 0 ? (gia > CHERRY.gia ? C.ok : C.do) : C.xam, true],
+    ];
+    vals.forEach(([v, f, b], k) => p.push(t(cot[k][1], yt, v, { size: sz, bold: b || tong, fill: f, anchor: 'middle' })));
+    const xk = cot[7][1];
+    if (tong) p.push(t(xk, yt, `${tg.dat}/${ds.length} ĐẠT`, { size: 20, bold: true, anchor: 'middle' }));
+    else { p.push(`<rect x="${xk - 46}" y="${y + 8}" width="92" height="${h - 16}" rx="12" fill="${o.dat ? '#0A9A44' : co ? '#D93030' : '#C9CFCB'}"/>`); p.push(t(xk, yt - 1, o.dat ? 'ĐẠT' : 'CHƯA', { size: 16, bold: true, fill: '#FFFFFF', anchor: 'middle' })); }
+    y += h;
+  };
+  if (!d.maST) veDong({ ...tg, ma: '', ten: '' }, 0, true);
+  ds.forEach((o, i) => veDong(o, i, false));
+  y += 14;
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="62" rx="8" fill="#FFF8E1"/>`);
+  p.push(t(PAD + 16, y + 26, 'Sản phẩm: 1232854000547 · Táo Cherry hộp 500gr · Nguồn POS 3624 · Nhập, Bán, Tồn cộng dồn từ 21/11 · Bán = SL thực xuất', { size: 16, fill: '#555555' }));
+  p.push(t(PAD + 16, y + 50, 'Tồn = Nhập − Bán − Hủy − MMKK · Đơn giá TB = Thành tiền chưa VAT ÷ SL bán · Xanh = đạt ngưỡng, Đỏ = chưa đạt · Đạt xếp trước', { size: 16, fill: '#555555' }));
+  y += 88;
+  p.push(t(W / 2, y, 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh - 197042', { size: 14, fill: '#888888', anchor: 'middle' }));
+  const H = y + 20;
+  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`, W };
+}
+async function veAnhCherry(maST) {
+  const d = await docDuLieuCherry(maST);
+  const { svg, W } = veSvgCherry(d);
+  return { png: svgThanhPng(svg, Math.round(W * 1.4)), preview: svgThanhPng(svg, 600) };
+}
+async function generateCherryReport(text) {
+  const maST = await timMaST(String(text || ''));
+  const { png, preview } = await veAnhCherry(maST);
+  const id = `cherry-${maST || 'kv'}-${Date.now().toString(36)}`;
+  luuAnh(id, png, preview);
+  const q = `loai=cherry${maST ? `&st=${maST}` : ''}`;
+  return { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?${q}`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?${q}&nho=1` };
+}
+
 async function veAnhThiDua(maST) {
   const d = await docDuLieuThiDua(maST);
   const { svg, W } = veSvgThiDua(d);
@@ -4915,6 +5053,7 @@ async function chayLenh(text) {
   const tat = [[laTriggerDtNganhHang, 'DT NGÀNH HÀNG'], [laTriggerThst, 'THS + Trứng'], [laTriggerBnnb, 'BNNB'], [laTriggerDmsk, 'ĐMSK'], [(x) => /đ[ặa]t\s*m[ứu]c/i.test(x), 'ĐẶT MỨC'], [laTriggerDtlk, 'DTLK'], [laTriggerHuyMmkk, 'HUỶ MMKK'], [laTriggerCvst, 'BC CVST'], [laTriggerSua, 'SỮA CELANO + C2']].find(([f]) => f(text)); // TẮT 31/10: BC SỮA
   if (tat) return { ten: 'Đã tắt', ket: { type: 'text', text: `Báo cáo ${tat[1]} đã tắt. Gõ MENU để xem các báo cáo đang dùng.` } };
   if (laTriggerC2(text)) return { ten: 'BC C2', ket: await generateC2Report(text) };
+  if (laTriggerCherry(text)) return { ten: 'Táo Cherry', ket: await generateCherryReport(text) }; // 18/11
   if (laTriggerThiDua(text)) return { ten: 'Thi đua T11', ket: await generateThiDuaReport(text) };
   const datMuc = null;
   if (datMuc) return { ten: 'Đặt mức', ket: datMuc };
@@ -5114,6 +5253,7 @@ async function taoMenuFlex() {
           // 18/11: anh chỉ giữ 2 nút KV (Thi đua Celano thạch KV + C2 + 888 KV), tắt hết các nút khác kể cả nút 8104
           tieuDeMuc('🏆', 'THI ĐUA KV', 'tự cập nhật'),
           hangNut([nutMenu('Thi đua Celano thạch KV', 'THI ĐUA T11', xanh), nutMenu('C2 + 888 KV', 'BC C2', xanh)]),
+          hangNut([nutMenu('Táo Cherry KV', 'TÁO CHERRY', cam)]), // 18/11: thi đua Táo Cherry 21–28/11
         ],
       },
       footer: {
@@ -5705,6 +5845,8 @@ app.get('/anh/:id.png', async (req, res) => {
         ve = await veAnhDmsk(String(req.query.st || ''));
       } else if (req.query.loai === 'tdoi1' || req.query.loai === 'tdoi2') {
         ve = await veAnhTheoDoi(req.query.loai, String(req.query.st || ''));
+      } else if (req.query.loai === 'cherry') {
+        ve = await veAnhCherry(String(req.query.st || ''));
       } else if (req.query.loai === 'c2') {
         ve = await veAnhC2(String(req.query.st || ''));
       } else if (req.query.loai === 'td') {
