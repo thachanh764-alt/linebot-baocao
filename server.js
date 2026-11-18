@@ -5253,7 +5253,10 @@ async function taoMenuFlex() {
         contents: [
           // 18/11: anh chỉ giữ 2 nút KV (Thi đua Celano thạch KV + C2 + 888 KV), tắt hết các nút khác kể cả nút 8104
           tieuDeMuc('🏆', 'THI ĐUA KV', 'tự cập nhật'),
-          hangNut([nutMenu('Thi đua Celano thạch KV', 'THI ĐUA T11', xanh), nutMenu('C2 + 888 KV', 'BC C2', xanh)]),
+          // 18/11: thi đua Celano thạch hết 22/11 -> từ 23/11 bỏ nút Celano, chỉ còn C2 + 888 (anh dặn)
+          hangNut(homNayVN() <= '2026-11-22'
+            ? [nutMenu('Thi đua Celano thạch KV', 'THI ĐUA T11', xanh), nutMenu('C2 + 888 KV', 'BC C2', xanh)]
+            : [nutMenu('C2 + 888 KV', 'BC C2', xanh)]),
           hangNut([nutMenu('Táo Cherry KV', 'TÁO CHERRY', cam)]), // 18/11: thi đua Táo Cherry 21–28/11
         ],
       },
