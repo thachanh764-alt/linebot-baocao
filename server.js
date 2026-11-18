@@ -5094,7 +5094,8 @@ async function taoMenuFlex() {
   const xanh = { nen: '#F1F8F3', vien: '#BFDCC8', chu: '#0B8A3E' };
   const xam = { nen: '#F5F5F5', vien: '#DDDDDD', chu: '#555555' };
   const st = MENU_MA_ST;
-  const capNhat = cfg.capNhatDtst ? `robot nạp lúc ${cfg.capNhatDtst}` : 'chưa có lần robot nạp';
+  const gioNap = cfg.capNhat_sua || cfg.capNhatDtst; // 18/11: robot chỉ còn nạp sữa -> lấy giờ nạp sữa
+  const capNhat = gioNap ? `robot nạp lúc ${gioNap}` : 'chưa có lần robot nạp';
   return {
     type: 'flex',
     altText: 'Menu báo cáo — bấm nút để xem',
