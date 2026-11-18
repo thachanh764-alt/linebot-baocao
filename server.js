@@ -5307,6 +5307,29 @@ async function traLoiCauHoiAI(event, targetId, question) {
   }
 }
 
+// 18/11: trong NHÓM chỉ 3 tài khoản được dùng bot (bấm menu, gõ lệnh, gửi file): anh Quốc Nam 40909, anh Hoàng Anh 197042, BOT_AI_KV (Claude bấm thay anh).
+// Người khác bấm/gõ -> bot im lặng, không trả gì. Thêm người: biến môi trường BOT_CHO_PHEP_TEN (tên LINE, cách nhau dấu phẩy).
+const chuanTen = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const TEN_DUOC_PHEP = new Set(['STR_QUỐC NAM 40909', 'STR_HHN_Anh_197042', 'BOT_AI_KV', ...String(process.env.BOT_CHO_PHEP_TEN || '').split(',')].map(chuanTen).filter(Boolean));
+const quyenCache = new Map(); // userId -> { ok, luc }
+async function duocDungBot(event) {
+  const src = event.source || {};
+  if (src.type !== 'group' && src.type !== 'room') return true; // chat 1:1 với bot: không chặn
+  const uid = src.userId;
+  if (!uid) return false;
+  const c = quyenCache.get(uid);
+  if (c && Date.now() - c.luc < 6 * 3600 * 1000) return c.ok;
+  let ten = '';
+  try {
+    const p = src.groupId ? await client.getGroupMemberProfile(src.groupId, uid) : await client.getRoomMemberProfile(src.roomId, uid);
+    ten = (p && p.displayName) || '';
+  } catch (_) { /* không lấy được tên -> không cho */ }
+  const ok = TEN_DUOC_PHEP.has(chuanTen(ten));
+  quyenCache.set(uid, { ok, luc: Date.now() });
+  if (!ok) console.log(`[quyen] bỏ qua "${ten}" (${uid.slice(0, 8)}…)`);
+  return ok;
+}
+
 app.post('/webhook', line.middleware(config), async (req, res) => {
   res.status(200).end();
   const events = req.body.events || [];
@@ -5315,6 +5338,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
   for (const event of events) {
     const isGroup = event.source?.type === 'group' || event.source?.type === 'room';
     const targetId = event.source?.groupId || event.source?.roomId || event.source?.userId;
+    if ((event.type === 'message' || event.type === 'postback') && !(await duocDungBot(event).catch(() => false))) continue; // 18/11: người không có quyền -> im lặng
     // Dấu chìm trên ảnh = mã NV (hoặc tên LINE) của người vừa bấm / vừa gõ
     ngCanhNV.enterWith({ nv: await layNVCuaNguoiGui(event).catch(() => MA_NV) });
 
