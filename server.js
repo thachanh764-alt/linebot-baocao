@@ -5437,7 +5437,20 @@ function tieuDeMuc(icon, ten, ghiChu) {
   };
 }
 
-async function taoMenuFlex() {
+// 19/11: nhóm "BIA NƯỚC - QUỐC NAM" có menu riêng chỉ 1 nút Bia Corona KV (anh dặn, nhóm ANH EM SÓC TRĂNG giữ như cũ)
+const tenNhomCache = new Map();
+async function tenNhom(groupId) {
+  if (!groupId) return '';
+  const c = tenNhomCache.get(groupId);
+  if (c && Date.now() - c.luc < 6 * 3600 * 1000) return c.ten;
+  let ten = '';
+  try { ten = (await client.getGroupSummary(groupId)).groupName || ''; } catch (_) { /* không lấy được */ }
+  tenNhomCache.set(groupId, { ten, luc: Date.now() });
+  return ten;
+}
+const laNhomBiaNuoc = async (groupId) => /BIA\s*N[ƯU][ỚO]C/i.test((await tenNhom(groupId)).normalize('NFC'));
+async function taoMenuFlex(groupId = '') {
+  if (await laNhomBiaNuoc(groupId)) return taoMenuBiaNuoc();
   let cfg = {};
   try { cfg = await docCauHinhRobot(); } catch (_) { /* chưa có tab */ }
   const cam = { nen: '#FFF5EA', vien: '#F2C08A', chu: '#C2570C' };
@@ -5475,6 +5488,39 @@ async function taoMenuFlex() {
         contents: [
           { type: 'text', text: 'Tra siêu thị khác: @bot + lệnh + mã ST', size: 'xxs', color: '#666666', wrap: true },
           { type: 'text', text: 'vd: @bot dt hôm nay 7661 · @bot bc sữa 5818', size: 'xxs', color: '#666666', wrap: true },
+        ],
+      },
+    },
+  };
+}
+
+
+function taoMenuBiaNuoc() {
+  const xanh = { nen: '#F1F8F3', vien: '#BFDCC8', chu: '#0B8A3E' };
+  return {
+    type: 'flex',
+    altText: 'Menu báo cáo — bấm nút để xem',
+    contents: {
+      type: 'bubble', size: 'mega',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#0B8A3E', paddingAll: '16px',
+        contents: [
+          { type: 'text', text: 'MENU BÁO CÁO', weight: 'bold', size: 'lg', color: '#FFFFFF' },
+          { type: 'text', text: 'Tự cập nhật mỗi giờ, phút 17 · KV QLTP Quốc Nam 40909', size: 'xxs', color: '#D7F0DF', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '14px', spacing: 'none',
+        contents: [
+          tieuDeMuc('🍺', 'BIA NƯỚC KV', 'tự cập nhật'),
+          hangNut([nutMenu('Bia Corona KV', 'CORONA', xanh)]),
+        ],
+      },
+      footer: {
+        type: 'box', layout: 'vertical', backgroundColor: '#FAFAF7', paddingAll: '12px',
+        contents: [
+          { type: 'text', text: 'Bia Corona Extra chai 250ml · tồn + bán hôm nay + luỹ kế tháng (thùng)', size: 'xxs', color: '#666666', wrap: true },
+          { type: 'text', text: 'Tra 1 siêu thị: @bot corona + mã ST · vd: @bot corona 5818', size: 'xxs', color: '#666666', wrap: true },
         ],
       },
     },
@@ -5704,7 +5750,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
       const lenh = new URLSearchParams(event.postback?.data || '').get('lenh') || '';
       if (!lenh) continue;
       try {
-        if (laLenhMenu(lenh)) { await guiTraLoi(event, targetId, await taoMenuFlex()); continue; }
+        if (laLenhMenu(lenh)) { await guiTraLoi(event, targetId, await taoMenuFlex(event.source?.groupId || '')); continue; }
         const kq = await chayLenh(lenh);
         const daGui = await guiTraLoi(event, targetId, kq ? kq.ket : { type: 'text', text: `Em chưa có lệnh "${lenh}".` });
         if (kq && daGui) ghiDaTra(lenh, targetId);
@@ -5944,7 +5990,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
 
     // Gõ "menu" (trong group không cần @tag) -> thẻ menu nút bấm
     if (laLenhMenu(question)) {
-      try { await guiTraLoi(event, targetId, await taoMenuFlex()); } catch (err) { console.error('[menu] lỗi:', err); }
+      try { await guiTraLoi(event, targetId, await taoMenuFlex(event.source?.groupId || '')); } catch (err) { console.error('[menu] lỗi:', err); }
       continue;
     }
 
@@ -5969,7 +6015,7 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
     }
 
     if (laLenhMenu(question)) {
-      await guiTraLoi(event, targetId, await taoMenuFlex());
+      await guiTraLoi(event, targetId, await taoMenuFlex(event.source?.groupId || ''));
       continue;
     }
     const maNVMoi = laLenhMaNV(question);
