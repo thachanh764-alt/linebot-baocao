@@ -359,6 +359,7 @@ async function napFileVaoSheet(fileName, buffer, ngayChiDinh, laBaseDmsk, laBase
   if (laFileNam(header)) return napFileNam(sheets, header, dataRows);
   if (laFileFreshBan(header)) { return await napFileFreshBan(sheets, header, dataRows, fileName); } // TẮT 14/11: bỏ nạp thịt theo dõi
   if (laFileHuyMmkk(header)) return napFileHuyMmkk(sheets, header, dataRows);
+  if (laFileCorona(header)) return napFileCorona(sheets, header, dataRows, fileName); // 19/11: Bia Corona
   if (laFileRauKM(header)) return napFileRauKM(sheets, header, dataRows, fileName); // 19/11: lô gói dưa leo / bắp Mỹ
   if (laFileCherry(header)) return napFileCherry(sheets, header, dataRows, fileName); // 18/11: thi đua Táo Cherry (POS 3624)
   if (laFileTonModel(header)) return napTonChung(sheets, header, dataRows, fileName);
@@ -4698,6 +4699,97 @@ async function generateRauKMReport(text, sp) {
 // SP rau KM đang chạy hôm nay (để gửi kèm sau ảnh C2 mỗi giờ)
 const rauKmHomNay = () => { const h = homNayVN(); return RAU_KM.filter((x) => h >= x.tu && h <= x.den); };
 
+
+// ---------------------------------------------------------------------------
+// 19/11: BÁO CÁO BIA CORONA EXTRA CHAI 250ML · KV 40909 (chỉ đúng 1 SP anh gửi). Robot nạp mỗi giờ (file đầu cột "Corona Mã model").
+//  Tồn = POS 322 (không tính hàng đi đường) · Bán hôm nay + Bán luỹ kế từ đầu tháng = POS 126. Lệnh: "CORONA".
+// ---------------------------------------------------------------------------
+const TAB_CORONA = 'CORONA';
+function laTriggerCorona(text) { return coTuKhoa(text, ['corona', 'bia corona']); }
+function laFileCorona(header) { return header[0] === 'Corona Mã model'; }
+async function napFileCorona(sheets, header, dataRows, fileName) {
+  const cap = capNhatTuTen(fileName) || bayGioVN();
+  const rows = dataRows.map((r) => [...r.slice(0, 9), cap]);
+  await ghiDeTab(sheets, TAB_CORONA, ['Mã model', 'Tên SP', 'Mã siêu thị', 'Tên siêu thị', 'Tồn', 'Bán hôm nay', 'Bán LK', 'Từ ngày', 'Ngày', 'Cập nhật'], rows);
+  return { loai: 'corona', tenTab: TAB_CORONA, soDong: rows.length };
+}
+async function docDuLieuCorona(maST) {
+  const rows = (await docTabAnToan(getSheetsClient(), TAB_CORONA)).slice(1);
+  const m = new Map(); let tu = '', ngay = '', cap = '', ten = 'BIA CORONA EXTRA CHAI 250ML';
+  for (const r of rows) {
+    const o = { ma: String(r[2]).trim(), ten: String(r[3] || '').split(' - ').slice(1).join(' - ').trim() || String(r[3] || ''), ton: Number(r[4]) || 0, ban: Number(r[5]) || 0, lk: Number(r[6]) || 0 };
+    m.set(o.ma, o); if (r[1]) ten = String(r[1]); if (r[7]) tu = String(r[7]); if (r[8]) ngay = String(r[8]); if (r[9]) cap = String(r[9]);
+  }
+  try { for (const st of await dsSieuThi()) if (!m.has(st.ma)) m.set(st.ma, { ma: st.ma, ten: String(st.ten || '').split(' - ').slice(1).join(' - ').trim() || st.ten, ton: 0, ban: 0, lk: 0 }); } catch (_) { /* chưa có danh sách ST */ }
+  for (const k of TD_ST_LOAI) { const o = m.get(k); if (o && !o.ton && !o.ban && !o.lk) m.delete(k); }
+  let ds = [...m.values()];
+  if (maST) ds = ds.filter((o) => o.ma === String(maST));
+  ds.sort((a, b) => (b.lk - a.lk) || (b.ban - a.ban) || (b.ton - a.ton));
+  return { ds, tu, ngay, cap, ten, maST };
+}
+function veSvgCorona(d) {
+  const W = 1200, PAD = 24, ROW = 40;
+  const C = { xanhDam: '#0B5D2A', chan: '#F6FAF7', vien: '#E3E8E4', phu: '#56655A', xam: '#B0B8B2', do: '#D00000', vang: '#FFD400', lam: '#1F4FA8' };
+  const t = (x, y, s, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 19}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1D2B1F'}" text-anchor="${o.anchor || 'start'}"${o.ls ? ` letter-spacing="${o.ls}"` : ''}>${escXml(s)}</text>`;
+  const fs = (v) => String(Math.round(v)).replace(/-/, '−').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '');
+  const p = []; const HH = 236;
+  p.push(`<defs><linearGradient id="crg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0B8A3E"/><stop offset="1" stop-color="#076B30"/></linearGradient></defs>`);
+  p.push(`<rect x="0" y="0" width="${W}" height="${HH}" fill="url(#crg)"/>`);
+  p.push(t(W / 2, 44, 'BÁCH HOÁ XANH · BÁO CÁO TỒN / BÁN', { size: 17, bold: true, fill: '#D7F0DF', anchor: 'middle', ls: 4 }));
+  p.push(t(W / 2, 98, d.ten, { size: 40, bold: true, fill: '#FFFFFF', anchor: 'middle', ls: 1 }));
+  p.push(`<rect x="${(W - 440) / 2}" y="116" width="440" height="42" rx="8" fill="${C.vang}"/>`);
+  p.push(t(W / 2, 146, 'KV QLTP QUỐC NAM 40909', { size: 24, bold: true, fill: '#0B4A22', anchor: 'middle', ls: 1 }));
+  p.push(`<rect x="${(W - 520) / 2}" y="168" width="520" height="32" rx="16" fill="#FFFFFF"/>`);
+  p.push(t(W / 2, 191, d.ngay ? `BÁN NGÀY ${dm(d.ngay)} · LUỸ KẾ ${dm(d.tu)} → ${dm(d.ngay)}` : 'CHƯA CÓ SỐ', { size: 18, bold: true, fill: '#C62828', anchor: 'middle' }));
+  p.push(t(W / 2, 224, d.cap ? `Cập nhật ${d.cap}` : '', { size: 16, fill: '#FFFFFF', anchor: 'middle' }));
+  let y = HH + 14;
+  const xTen = PAD + 56;
+  const cot = [['TỒN (chai)', 760], ['BÁN HÔM NAY', 920], [`BÁN LUỸ KẾ`, 1085]];
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="54" fill="${C.xanhDam}"/>`);
+  p.push(t(PAD + 34, y + 35, '#', { bold: true, fill: '#FFFFFF', anchor: 'middle' }));
+  p.push(t(xTen, y + 35, 'SIÊU THỊ', { bold: true, fill: '#FFFFFF' }));
+  cot.forEach(([n, x]) => p.push(t(x, y + 35, n, { size: 17, bold: true, fill: '#FFFFFF', anchor: 'middle' })));
+  y += 54;
+  const ds = d.ds;
+  const tg = ds.reduce((a, o) => ({ ton: a.ton + o.ton, ban: a.ban + o.ban, lk: a.lk + o.lk }), { ton: 0, ban: 0, lk: 0 });
+  const veDong = (o, i, tong) => {
+    const h = tong ? ROW + 8 : ROW;
+    if (tong) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" fill="#DFF2E5"/>`);
+    else if (i % 2 === 1) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" fill="${C.chan}"/>`);
+    p.push(`<line x1="${PAD}" y1="${y + h}" x2="${W - PAD}" y2="${y + h}" stroke="${C.vien}"/>`);
+    const yt = y + (tong ? 32 : 28), sz = tong ? 22 : 20;
+    if (!tong) p.push(t(PAD + 34, yt, i + 1, { size: 18, fill: C.phu, anchor: 'middle' }));
+    if (tong) p.push(t(xTen, yt, `TỔNG KHU VỰC (${ds.length} SIÊU THỊ)`, { size: 22, bold: true }));
+    else p.push(`<text x="${xTen}" y="${yt}" font-size="20" fill="#1D2B1F"><tspan font-weight="700">${escXml(o.ma)}</tspan> · ${escXml(rutGonTen(String(o.ten).replace(/\(\s+/g, '(').replace(/\s+\)/g, ')'), 30))}</text>`);
+    [[fs(o.ton), o.ton < 0 ? C.do : o.ton ? C.lam : C.xam, false], [fs(o.ban), o.ban ? '#1D2B1F' : C.xam, true], [fs(o.lk), o.lk ? '#1D2B1F' : C.xam, true]]
+      .forEach(([v, f, b], k) => p.push(t(cot[k][1], yt, v, { size: sz, bold: b || tong, fill: f, anchor: 'middle' })));
+    y += h;
+  };
+  if (!d.maST) veDong(tg, 0, true);
+  ds.forEach((o, i) => veDong(o, i, false));
+  y += 14;
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="62" rx="8" fill="#FFF8E1"/>`);
+  p.push(t(PAD + 16, y + 26, 'Sản phẩm: 1253021000263 · Bia Corona Extra chai 250ml · Tồn: POS 322 (không tính hàng đi đường) · Bán: POS 126', { size: 16, fill: '#555555' }));
+  p.push(t(PAD + 16, y + 50, 'Luỹ kế tính từ ngày 01 của tháng đến hôm nay · Xếp bán luỹ kế cao → thấp', { size: 16, fill: '#555555' }));
+  y += 88;
+  p.push(t(W / 2, y, 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh - 197042', { size: 14, fill: '#888888', anchor: 'middle' }));
+  const H = y + 20;
+  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`, W };
+}
+async function veAnhCorona(maST) {
+  const { svg, W } = veSvgCorona(await docDuLieuCorona(maST));
+  return { png: svgThanhPng(svg, Math.round(W * 1.4)), preview: svgThanhPng(svg, 600) };
+}
+async function generateCoronaReport(text) {
+  const maST = await timMaST(String(text || '').replace(/\d{10,}/g, ' '));
+  const { png, preview } = await veAnhCorona(maST);
+  const id = `corona-${maST || 'kv'}-${Date.now().toString(36)}`;
+  luuAnh(id, png, preview);
+  const q = `loai=corona${maST ? `&st=${maST}` : ''}`;
+  return { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?${q}`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?${q}&nho=1` };
+}
+
 async function veAnhThiDua(maST) {
   const d = await docDuLieuThiDua(maST);
   const { svg, W } = veSvgThiDua(d);
@@ -5169,6 +5261,7 @@ async function chayLenh(text) {
     if (!/\d{4,}/.test(text)) for (const sp of rauKmHomNay()) { try { ket.push(await taoAnhRauKM(sp, '')); } catch (err) { console.error('[raukm]', err.message); } }
     return { ten: 'BC C2', ket: ket.length === 1 ? ket[0] : ket };
   }
+  if (laTriggerCorona(text)) return { ten: 'Bia Corona', ket: await generateCoronaReport(text) }; // 19/11
   { const sp = laTriggerRauKM(text); if (sp) return { ten: sp.ten, ket: await generateRauKMReport(text, sp) }; } // 19/11
   if (laTriggerCherry(text)) return { ten: 'Táo Cherry', ket: await generateCherryReport(text) }; // 18/11
   if (laTriggerThiDua(text)) return { ten: 'Thi đua T11', ket: await generateThiDuaReport(text) };
@@ -5969,6 +6062,8 @@ app.get('/anh/:id.png', async (req, res) => {
         ve = await veAnhDmsk(String(req.query.st || ''));
       } else if (req.query.loai === 'tdoi1' || req.query.loai === 'tdoi2') {
         ve = await veAnhTheoDoi(req.query.loai, String(req.query.st || ''));
+      } else if (req.query.loai === 'corona') {
+        ve = await veAnhCorona(String(req.query.st || ''));
       } else if (req.query.loai === 'raukm') {
         ve = await veAnhRauKM(String(req.query.k || ''), String(req.query.st || ''));
       } else if (req.query.loai === 'cherry') {
