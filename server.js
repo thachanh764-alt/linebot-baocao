@@ -4731,8 +4731,8 @@ function veSvgCorona(d) {
   const W = 1200, PAD = 24, ROW = 40;
   const C = { xanhDam: '#0B5D2A', chan: '#F6FAF7', vien: '#E3E8E4', phu: '#56655A', xam: '#B0B8B2', do: '#D00000', vang: '#FFD400', lam: '#1F4FA8' };
   const t = (x, y, s, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 19}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1D2B1F'}" text-anchor="${o.anchor || 'start'}"${o.ls ? ` letter-spacing="${o.ls}"` : ''}>${escXml(s)}</text>`;
-  // 19/11: anh dặn quy ra THÙNG (1 thùng = 24 chai), 1 số lẻ
-  const fs = (v) => { const th = Math.round((v / 24) * 10) / 10; const [n, l] = Math.abs(th).toFixed(1).split('.'); return `${th < 0 ? '−' : ''}${n.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${l}`; };
+  // 19/11: anh dặn quy ra THÙNG (1 thùng = 24 chai), làm tròn
+  const fs = (v) => String(Math.round(v / 24)).replace(/-/, '−').replace(/\B(?=(\d{3})+(?!\d))/g, '.'); // 19/11: làm tròn số thùng
   const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '');
   const p = []; const HH = 236;
   p.push(`<defs><linearGradient id="crg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0B8A3E"/><stop offset="1" stop-color="#076B30"/></linearGradient></defs>`);
@@ -4772,7 +4772,7 @@ function veSvgCorona(d) {
   y += 14;
   p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="62" rx="8" fill="#FFF8E1"/>`);
   p.push(t(PAD + 16, y + 26, 'Sản phẩm: 1253021000263 · Bia Corona Extra chai 250ml · Tồn: POS 322 (không tính hàng đi đường) · Bán: POS 126', { size: 16, fill: '#555555' }));
-  p.push(t(PAD + 16, y + 50, 'Đơn vị: THÙNG (1 thùng = 24 chai) · Luỹ kế tính từ ngày 01 của tháng đến hôm nay · Xếp bán luỹ kế cao → thấp', { size: 16, fill: '#555555' }));
+  p.push(t(PAD + 16, y + 50, 'Đơn vị: THÙNG (1 thùng = 24 chai, làm tròn) · Luỹ kế tính từ ngày 01 của tháng đến hôm nay · Xếp bán luỹ kế cao → thấp', { size: 16, fill: '#555555' }));
   y += 88;
   p.push(t(W / 2, y, 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh - 197042', { size: 14, fill: '#888888', anchor: 'middle' }));
   const H = y + 20;
