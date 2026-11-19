@@ -5312,15 +5312,18 @@ async function guiTraLoi(event, targetId, message) {
   message = ganNVVaoLink(message);
   try {
     await client.replyMessage(event.replyToken, message);
+    return true;
   } catch (err) {
     console.error('[webhook] Reply thất bại:', chiTietLoiLine(err), '-> thử push');
     try {
       await client.pushMessage(targetId, message);
+      return true;
     } catch (pushErr) {
       console.error('[webhook] Push cũng thất bại:', chiTietLoiLine(pushErr));
       console.error('[webhook] Kích thước JSON tin nhắn (ký tự):', JSON.stringify(message).length);
     }
   }
+  return false;
 }
 
 // ---- Mã nhân viên của từng người (đăng ký 1 lần: "@bot mã nv 123456") ----
@@ -5493,7 +5496,8 @@ app.post('/webhook', line.middleware(config), async (req, res) => {
       try {
         if (laLenhMenu(lenh)) { await guiTraLoi(event, targetId, await taoMenuFlex()); continue; }
         const kq = await chayLenh(lenh);
-        await guiTraLoi(event, targetId, kq ? kq.ket : { type: 'text', text: `Em chưa có lệnh "${lenh}".` });
+        const daGui = await guiTraLoi(event, targetId, kq ? kq.ket : { type: 'text', text: `Em chưa có lệnh "${lenh}".` });
+        if (kq && daGui) ghiDaTra(lenh, targetId);
         console.log(`[menu] bấm nút "${lenh}"`);
       } catch (err) {
         console.error('[menu] lỗi:', err);
@@ -5894,6 +5898,15 @@ app.post('/robot/nap', express.raw({ type: '*/*', limit: '20mb' }), async (req, 
     console.error('[robot] lỗi nạp:', err);
     res.status(500).json({ ok: false, loi: err.message });
   }
+});
+
+// ---- 19/11: script máy Dell hỏi bot đã trả ảnh cho nút nào (thay cho việc đếm ảnh trên màn hình LINE) ----
+const DA_TRA = []; // { lenh, nhom, t }
+function ghiDaTra(lenh, nhom) { DA_TRA.push({ lenh, nhom, t: Date.now() }); while (DA_TRA.length > 200) DA_TRA.shift(); }
+app.get('/robot/da-tra', (req, res) => {
+  if (!kiemTraKhoaRobot(req, res)) return;
+  const tu = Number(req.query.tu || 0); // ms epoch
+  res.json({ ok: true, ds: DA_TRA.filter((x) => x.t >= tu) });
 });
 
 // ---- Robot hỏi: cần lấy mã sữa nào, siêu thị nào cho từng báo cáo ----
