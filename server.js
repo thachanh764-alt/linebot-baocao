@@ -359,6 +359,7 @@ async function napFileVaoSheet(fileName, buffer, ngayChiDinh, laBaseDmsk, laBase
   if (laFileNam(header)) return napFileNam(sheets, header, dataRows);
   if (laFileFreshBan(header)) { return await napFileFreshBan(sheets, header, dataRows, fileName); } // TẮT 14/11: bỏ nạp thịt theo dõi
   if (laFileHuyMmkk(header)) return napFileHuyMmkk(sheets, header, dataRows);
+  if (laFileRauKM(header)) return napFileRauKM(sheets, header, dataRows, fileName); // 19/11: lô gói dưa leo / bắp Mỹ
   if (laFileCherry(header)) return napFileCherry(sheets, header, dataRows, fileName); // 18/11: thi đua Táo Cherry (POS 3624)
   if (laFileTonModel(header)) return napTonChung(sheets, header, dataRows, fileName);
   if (laFileDoanhThuModel(header) && (await laFileBanSua(sheets, header, dataRows))) return napBanChung(sheets, header, dataRows, fileName, ngayChiDinh);
@@ -4587,6 +4588,118 @@ async function generateCherryReport(text) {
   return { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?${q}`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?${q}&nho=1` };
 }
 
+
+// ---------------------------------------------------------------------------
+// 19/11: LÔ GÓI KM RAU — DƯA LEO (KG) 9k (20–21/11) · BẮP MỸ (TRÁI) 3 trái 18k (21–22/11) · KV 40909
+//  Robot nạp mỗi giờ từ POS 3624 (file đầu cột "RauKM Mã SP"), cộng dồn từ ngày đầu chương trình.
+//  (Tồn hệ thống của rau đang âm/sai nên KHÔNG dùng BC tồn theo model.)
+//  TỒN hôm nay = Nhập LK − Hủy/MMKK LK − Bán các ngày trước · BÁN = bán hôm nay · % = BÁN ÷ TỒN, xếp cao → thấp.
+//  Lệnh: "DƯA LEO", "BẮP MỸ"; ngày có chương trình thì gửi kèm sau ảnh C2.
+// ---------------------------------------------------------------------------
+const TAB_RAU_KM = 'RAU_KM';
+const RAU_KM = [
+  { k: 'dualeo', ma: '2701122050100', ten: 'DƯA LEO (KG)', gia: 'GIÁ KM 9.000đ/KG', dv: 'kg', le: 1, tu: '2026-11-20', den: '2026-11-21', tuKhoa: ['dưa leo', 'dua leo'] },
+  { k: 'bap', ma: '1232844000034', ten: 'BẮP MỸ (TRÁI)', gia: 'GIÁ KM 3 TRÁI 18.000đ', dv: 'trái', le: 0, tu: '2026-11-21', den: '2026-11-22', tuKhoa: ['bắp mỹ', 'bap my', 'bắp my', 'bap mỹ'] },
+];
+const rauKmTheoK = (k) => RAU_KM.find((x) => x.k === k);
+function laTriggerRauKM(text) { return RAU_KM.find((x) => coTuKhoa(text, x.tuKhoa)) || null; }
+function laFileRauKM(header) { return header[0] === 'RauKM Mã SP'; }
+async function napFileRauKM(sheets, header, dataRows, fileName) {
+  const cap = capNhatTuTen(fileName) || bayGioVN();
+  const rows = dataRows.map((r) => [...r.slice(0, 10), cap]);
+  await ghiDeTab(sheets, TAB_RAU_KM, ['Mã SP', 'Tên SP', 'Mã siêu thị', 'Tên siêu thị', 'Nhập LK', 'Hủy + MMKK LK', 'Bán ngày trước', 'Bán hôm nay', 'Từ ngày', 'Ngày', 'Cập nhật'], rows);
+  return { loai: 'raukm', tenTab: TAB_RAU_KM, soDong: rows.length };
+}
+async function docDuLieuRauKM(sp, maST) {
+  const rows = (await docTabAnToan(getSheetsClient(), TAB_RAU_KM)).slice(1).filter((r) => String(r[0]).trim() === sp.ma);
+  const m = new Map(); let ngay = '', tu = '', cap = '';
+  for (const r of rows) {
+    const o = { ma: String(r[2]).trim(), ten: String(r[3] || '').split(' - ').slice(1).join(' - ').trim() || String(r[3] || ''), nhap: Number(r[4]) || 0, huy: Number(r[5]) || 0, truoc: Number(r[6]) || 0, ban: Number(r[7]) || 0 };
+    m.set(o.ma, o); if (r[8]) tu = String(r[8]); if (r[9]) ngay = String(r[9]); if (r[10]) cap = String(r[10]);
+  }
+  try { for (const st of await dsSieuThi()) if (!m.has(st.ma)) m.set(st.ma, { ma: st.ma, ten: String(st.ten || '').split(' - ').slice(1).join(' - ').trim() || st.ten, nhap: 0, huy: 0, truoc: 0, ban: 0 }); } catch (_) { /* chưa có danh sách ST */ }
+  for (const k of TD_ST_LOAI) { const o = m.get(k); if (o && !o.nhap && !o.ban) m.delete(k); }
+  let ds = [...m.values()].map((o) => { const ton = Math.max(0, o.nhap - o.huy - o.truoc); const con = ton - o.ban; return { ...o, ton, con, lk: o.truoc + o.ban, pct: ton > 0 ? o.ban / ton : 0 }; });
+  if (maST) ds = ds.filter((o) => o.ma === String(maST));
+  ds.sort((a, b) => (b.pct - a.pct) || (b.ban - a.ban) || (b.ton - a.ton));
+  return { sp, ds, ngay, tu, cap, maST };
+}
+function veSvgRauKM(d) {
+  const sp = d.sp, W = 1280, PAD = 24, ROW = 40;
+  const C = { xanhDam: '#0B5D2A', chan: '#F6FAF7', vien: '#E3E8E4', phu: '#56655A', xam: '#B0B8B2', do: '#D00000', ok: '#0A8A3A', vang: '#FFD400', cam: '#C26A00', lam: '#1F4FA8' };
+  const t = (x, y, s, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 19}" font-weight="${o.bold ? 700 : 400}" fill="${o.fill || '#1D2B1F'}" text-anchor="${o.anchor || 'start'}"${o.ls ? ` letter-spacing="${o.ls}"` : ''}>${escXml(s)}</text>`;
+  const fq = (v) => (sp.le ? (Math.round(v * 10) / 10).toFixed(1).replace('.', ',') : String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, '.'));
+  const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '');
+  const p = []; const HH = 236;
+  p.push(`<defs><linearGradient id="rkg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0B8A3E"/><stop offset="1" stop-color="#076B30"/></linearGradient></defs>`);
+  p.push(`<rect x="0" y="0" width="${W}" height="${HH}" fill="url(#rkg)"/>`);
+  p.push(t(W / 2, 44, 'BÁCH HOÁ XANH · LÔ GÓI KHUYẾN MÃI', { size: 17, bold: true, fill: '#D7F0DF', anchor: 'middle', ls: 4 }));
+  p.push(t(W / 2, 98, sp.ten, { size: 48, bold: true, fill: '#FFFFFF', anchor: 'middle', ls: 2 }));
+  p.push(`<rect x="${(W - 440) / 2}" y="116" width="440" height="42" rx="8" fill="${C.vang}"/>`);
+  p.push(t(W / 2, 146, 'KV QLTP QUỐC NAM 40909', { size: 24, bold: true, fill: '#0B4A22', anchor: 'middle', ls: 1 }));
+  p.push(`<rect x="${(W - 560) / 2}" y="168" width="560" height="32" rx="16" fill="#FFFFFF"/>`);
+  p.push(t(W / 2, 191, `${sp.gia} · ${dm(sp.tu)} → ${dm(sp.den)}/2026`, { size: 18, bold: true, fill: '#C62828', anchor: 'middle' }));
+  p.push(t(W / 2, 224, d.ngay ? `Số ngày ${dm(d.ngay)} · cập nhật ${d.cap}` : 'Chưa có số', { size: 16, fill: '#FFFFFF', anchor: 'middle' }));
+  let y = HH + 14;
+  const xTen = PAD + 56;
+  const cot = [[`TỒN (${sp.dv})`, 700], [`BÁN HÔM NAY`, 840], ['% BÁN/TỒN', 990], ['CÒN LẠI', 1110], ['BÁN LK', 1205]];
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="54" fill="${C.xanhDam}"/>`);
+  p.push(t(PAD + 34, y + 35, '#', { bold: true, fill: '#FFFFFF', anchor: 'middle' }));
+  p.push(t(xTen, y + 35, 'SIÊU THỊ', { bold: true, fill: '#FFFFFF' }));
+  cot.forEach(([n, x]) => p.push(t(x, y + 35, n, { size: 16, bold: true, fill: '#FFFFFF', anchor: 'middle' })));
+  y += 54;
+  const ds = d.ds;
+  const tg = ds.reduce((a, o) => ({ ton: a.ton + o.ton, ban: a.ban + o.ban, con: a.con + o.con, lk: a.lk + o.lk }), { ton: 0, ban: 0, con: 0, lk: 0 });
+  tg.pct = tg.ton > 0 ? tg.ban / tg.ton : 0;
+  const mau = (pct, co) => (!co ? C.xam : pct >= 0.7 ? C.ok : pct >= 0.4 ? C.cam : C.do);
+  const veDong = (o, i, tong) => {
+    const h = tong ? ROW + 8 : ROW;
+    if (tong) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" fill="#DFF2E5"/>`);
+    else if (o.ma === '8104') p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" fill="#FFFBE0"/>`);
+    else if (i % 2 === 1) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" fill="${C.chan}"/>`);
+    p.push(`<line x1="${PAD}" y1="${y + h}" x2="${W - PAD}" y2="${y + h}" stroke="${C.vien}"/>`);
+    const yt = y + (tong ? 32 : 28), sz = tong ? 22 : 20, co = o.ton > 0 || o.ban > 0;
+    if (!tong) p.push(t(PAD + 34, yt, i + 1, { size: 18, fill: C.phu, anchor: 'middle' }));
+    if (tong) p.push(t(xTen, yt, `TỔNG KHU VỰC (${ds.length} SIÊU THỊ)`, { size: 22, bold: true }));
+    else p.push(`<text x="${xTen}" y="${yt}" font-size="20" fill="#1D2B1F"><tspan font-weight="700">${escXml(o.ma)}</tspan> · ${escXml(rutGonTen(String(o.ten).replace(/\(\s+/g, '(').replace(/\s+\)/g, ')'), 30))}</text>`);
+    const vals = [
+      [fq(o.ton), co ? '#1D2B1F' : C.xam, false], [fq(o.ban), co ? '#1D2B1F' : C.xam, true],
+      [o.ton > 0 ? `${Math.round(o.pct * 100)}%` : '–', mau(o.pct, o.ton > 0), true],
+      [fq(o.con), o.con < 0 ? C.do : co ? C.lam : C.xam, false], [fq(o.lk), o.lk > 0 ? '#1D2B1F' : C.xam, false],
+    ];
+    vals.forEach(([v, f, b], k) => p.push(t(cot[k][1], yt, v, { size: sz, bold: b || tong, fill: f, anchor: 'middle' })));
+    y += h;
+  };
+  if (!d.maST) veDong(tg, 0, true);
+  ds.forEach((o, i) => veDong(o, i, false));
+  y += 14;
+  p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="62" rx="8" fill="#FFF8E1"/>`);
+  p.push(t(PAD + 16, y + 26, `Sản phẩm: ${sp.ma} · ${sp.ten} · Nguồn POS 3624 (Bán = SL thực xuất) · cộng dồn từ ${dm(d.tu || sp.tu)} · Xếp % bán/tồn cao → thấp`, { size: 16, fill: '#555555' }));
+  p.push(t(PAD + 16, y + 50, 'TỒN = Nhập LK − Hủy/MMKK − Bán các ngày trước · CÒN LẠI = Tồn − Bán hôm nay · % = Bán ÷ Tồn · Xanh ≥ 70%, Cam 40–69%, Đỏ < 40%', { size: 16, fill: '#555555' }));
+  y += 88;
+  p.push(t(W / 2, y, 'Báo Cáo Thuộc Bản Quyền Quản Lý Siêu Thị | Thạch Phạm Hoàng Anh - 197042', { size: 14, fill: '#888888', anchor: 'middle' }));
+  const H = y + 20;
+  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="${FONT_FAMILY_SVG}"><rect width="${W}" height="${H}" fill="#FFFFFF"/>${p.join('')}</svg>`, W };
+}
+async function veAnhRauKM(k, maST) {
+  const d = await docDuLieuRauKM(rauKmTheoK(k) || RAU_KM[0], maST);
+  const { svg, W } = veSvgRauKM(d);
+  return { png: svgThanhPng(svg, Math.round(W * 1.4)), preview: svgThanhPng(svg, 600) };
+}
+async function taoAnhRauKM(sp, maST) {
+  const { png, preview } = await veAnhRauKM(sp.k, maST);
+  const id = `rk-${sp.k}-${maST || 'kv'}-${Date.now().toString(36)}`;
+  luuAnh(id, png, preview);
+  const q = `loai=raukm&k=${sp.k}${maST ? `&st=${maST}` : ''}`;
+  return { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?${q}`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?${q}&nho=1` };
+}
+async function generateRauKMReport(text, sp) {
+  const maST = await timMaST(String(text || '').replace(/\d{10,}/g, ' '));
+  return taoAnhRauKM(sp, maST);
+}
+// SP rau KM đang chạy hôm nay (để gửi kèm sau ảnh C2 mỗi giờ)
+const rauKmHomNay = () => { const h = homNayVN(); return RAU_KM.filter((x) => h >= x.tu && h <= x.den); };
+
 async function veAnhThiDua(maST) {
   const d = await docDuLieuThiDua(maST);
   const { svg, W } = veSvgThiDua(d);
@@ -5053,7 +5166,12 @@ async function chayLenh(text) {
   // TẮT 27/10: ĐMSK, THS + Trứng, DT NGÀNH HÀNG, ĐẶT MỨC, BNNB, DTLK KV (BC NGÀY bật lại 31/10: mẫu KHUNG 22H)
   const tat = [[laTriggerDtNganhHang, 'DT NGÀNH HÀNG'], [laTriggerThst, 'THS + Trứng'], [laTriggerBnnb, 'BNNB'], [laTriggerDmsk, 'ĐMSK'], [(x) => /đ[ặa]t\s*m[ứu]c/i.test(x), 'ĐẶT MỨC'], [laTriggerDtlk, 'DTLK'], [laTriggerHuyMmkk, 'HUỶ MMKK'], [laTriggerCvst, 'BC CVST'], [laTriggerSua, 'SỮA CELANO + C2']].find(([f]) => f(text)); // TẮT 31/10: BC SỮA
   if (tat) return { ten: 'Đã tắt', ket: { type: 'text', text: `Báo cáo ${tat[1]} đã tắt. Gõ MENU để xem các báo cáo đang dùng.` } };
-  if (laTriggerC2(text)) return { ten: 'BC C2', ket: await generateC2Report(text) };
+  if (laTriggerC2(text)) { // 19/11: ngày có lô gói rau KM -> gửi kèm ảnh dưa leo / bắp Mỹ sau ảnh C2 (cùng 1 lần bấm)
+    const ket = [await generateC2Report(text)];
+    if (!/\d{4,}/.test(text)) for (const sp of rauKmHomNay()) { try { ket.push(await taoAnhRauKM(sp, '')); } catch (err) { console.error('[raukm]', err.message); } }
+    return { ten: 'BC C2', ket: ket.length === 1 ? ket[0] : ket };
+  }
+  { const sp = laTriggerRauKM(text); if (sp) return { ten: sp.ten, ket: await generateRauKMReport(text, sp) }; } // 19/11
   if (laTriggerCherry(text)) return { ten: 'Táo Cherry', ket: await generateCherryReport(text) }; // 18/11
   if (laTriggerThiDua(text)) return { ten: 'Thi đua T11', ket: await generateThiDuaReport(text) };
   const datMuc = null;
@@ -5853,6 +5971,8 @@ app.get('/anh/:id.png', async (req, res) => {
         ve = await veAnhDmsk(String(req.query.st || ''));
       } else if (req.query.loai === 'tdoi1' || req.query.loai === 'tdoi2') {
         ve = await veAnhTheoDoi(req.query.loai, String(req.query.st || ''));
+      } else if (req.query.loai === 'raukm') {
+        ve = await veAnhRauKM(String(req.query.k || ''), String(req.query.st || ''));
       } else if (req.query.loai === 'cherry') {
         ve = await veAnhCherry(String(req.query.st || ''));
       } else if (req.query.loai === 'c2') {
