@@ -2942,7 +2942,7 @@ function veSvgHnKV(d) {
     p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${ROW}" fill="${tong ? C.nen : i % 2 ? C.nhat : '#FFFFFF'}"/>`);
     const pHn = pct(o.hn, o.hnT), pLk = pct(o.lk, o.lkT);
     if (!tong) p.push(t(X.stt, y + 21, String(i + 1), { size: 13, fill: C.phu, anchor: 'end' }));
-    p.push(t(X.st, y + 21, tong ? o.ten : `${o.ma} · ${rutGonTen(o.ten, 34)}`, { size: 15, bold: tong || o.ma === MENU_MA_ST, fill: o.ma === MENU_MA_ST ? C.xanhDam : '#1a1a1a' }));
+    p.push(t(X.st, y + 21, tong ? o.ten : `${o.ma} · ${rutGonTen(o.ten, 34)}`, { size: 15, bold: tong, fill: '#1a1a1a' }));
     p.push(t(X.hn, y + 21, tr(o.hn), { size: 16, bold: true, fill: C.xanhDam, anchor: 'end' }));
     p.push(t(X.hnT, y + 21, o.hnT ? tr(o.hnT) : '–', { size: 15, fill: C.phu, anchor: 'end' }));
     p.push(t(X.p, y + 21, fp(pHn), { size: 15, bold: true, fill: mau(pHn), anchor: 'end' }));
@@ -4542,7 +4542,6 @@ function veSvgCherry(d) {
   const veDong = (o, i, tong) => {
     const h = tong ? ROW + 8 : ROW;
     if (tong) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" fill="#DFF2E5"/>`);
-    else if (o.ma === '8104') p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" fill="#FFFBE0"/>`);
     else if (i % 2 === 1) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" fill="${C.chan}"/>`);
     p.push(`<line x1="${PAD}" y1="${y + h}" x2="${W - PAD}" y2="${y + h}" stroke="${C.vien}"/>`);
     const yt = y + (tong ? 32 : 28), sz = tong ? 22 : 20, co = o.n > 0 || o.x > 0;
@@ -4655,7 +4654,6 @@ function veSvgRauKM(d) {
   const veDong = (o, i, tong) => {
     const h = tong ? ROW + 8 : ROW;
     if (tong) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" fill="#DFF2E5"/>`);
-    else if (o.ma === '8104') p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" fill="#FFFBE0"/>`);
     else if (i % 2 === 1) p.push(`<rect x="${PAD}" y="${y}" width="${W - PAD * 2}" height="${h}" fill="${C.chan}"/>`);
     p.push(`<line x1="${PAD}" y1="${y + h}" x2="${W - PAD}" y2="${y + h}" stroke="${C.vien}"/>`);
     const yt = y + (tong ? 32 : 28), sz = tong ? 22 : 20, co = o.ton > 0 || o.ban > 0;
