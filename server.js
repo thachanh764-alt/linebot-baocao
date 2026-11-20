@@ -5452,6 +5452,7 @@ async function tenNhom(groupId) {
 const laNhomBiaNuoc = async (groupId) => /BIA\s*N[ƯU][ỚO]C/i.test((await tenNhom(groupId)).normalize('NFC'));
 async function taoMenuFlex(groupId = '') {
   if (await laNhomBiaNuoc(groupId)) return taoMenuBiaNuoc();
+  if (/^\s*8104\b/.test(await tenNhom(groupId))) return taoMenu8104(); // 20/11: nhóm siêu thị 8104 có menu riêng
   let cfg = {};
   try { cfg = await docCauHinhRobot(); } catch (_) { /* chưa có tab */ }
   const cam = { nen: '#FFF5EA', vien: '#F2C08A', chu: '#C2570C' };
@@ -5495,6 +5496,46 @@ async function taoMenuFlex(groupId = '') {
   };
 }
 
+
+
+// 20/11: menu nhóm siêu thị "8104 - HHN - 3.5 Tỷ": các báo cáo của 8104 đang được robot cập nhật mỗi giờ (không có số thu nhập)
+function taoMenu8104() {
+  const cam = { nen: '#FFF5EA', vien: '#F2C08A', chu: '#C2570C' };
+  const xanh = { nen: '#F1F8F3', vien: '#BFDCC8', chu: '#0B8A3E' };
+  const st = MENU_MA_ST, h = homNayVN();
+  const hang1 = h <= '2026-11-22' ? [nutMenu(`Celano thạch ${st}`, `THI ĐUA T11 ${st}`, xanh), nutMenu(`C2 + 888 ${st}`, `BC C2 ${st}`, xanh)] : [nutMenu(`C2 + 888 ${st}`, `BC C2 ${st}`, xanh)];
+  const hang2 = [nutMenu(`Tồn bán sữa ${st}`, `BC SỮA ${st}`, xanh), nutMenu(`Bia Corona ${st}`, `CORONA ${st}`, xanh)];
+  const coCherry = h >= '2026-11-21' && h <= '2026-11-28';
+  return {
+    type: 'flex',
+    altText: 'Menu báo cáo — bấm nút để xem',
+    contents: {
+      type: 'bubble', size: 'mega',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: '#0B8A3E', paddingAll: '16px',
+        contents: [
+          { type: 'text', text: `MENU BÁO CÁO · ST ${st}`, weight: 'bold', size: 'lg', color: '#FFFFFF' },
+          { type: 'text', text: 'Tự cập nhật mỗi giờ, phút 17 (10h17 → 22h17)', size: 'xxs', color: '#D7F0DF', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '14px', spacing: 'none',
+        contents: [
+          tieuDeMuc('🏆', `THI ĐUA ${st}`, 'tự cập nhật'),
+          hangNut(hang1),
+          hangNut(hang2),
+          ...(coCherry ? [hangNut([nutMenu(`Táo Cherry ${st}`, `TÁO CHERRY ${st}`, cam)])] : []),
+        ],
+      },
+      footer: {
+        type: 'box', layout: 'vertical', backgroundColor: '#FAFAF7', paddingAll: '12px',
+        contents: [
+          { type: 'text', text: 'Gõ "menu" để hiện lại thẻ này', size: 'xxs', color: '#666666', wrap: true },
+        ],
+      },
+    },
+  };
+}
 
 function taoMenuBiaNuoc() {
   const xanh = { nen: '#F1F8F3', vien: '#BFDCC8', chu: '#0B8A3E' };
@@ -5715,21 +5756,25 @@ async function traLoiCauHoiAI(event, targetId, question) {
 // Người khác bấm/gõ -> bot im lặng, không trả gì. Thêm người: biến môi trường BOT_CHO_PHEP_TEN (tên LINE, cách nhau dấu phẩy).
 const chuanTen = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const TEN_DUOC_PHEP = new Set(['STR_QUỐC NAM 40909', 'STR_HHN_Anh_197042', 'BOT_AI_KV', ...String(process.env.BOT_CHO_PHEP_TEN || '').split(',')].map(chuanTen).filter(Boolean));
-const quyenCache = new Map(); // userId -> { ok, luc }
+const quyenCache = new Map(); // userId|nhóm -> { ok, luc }
+// 20/11: anh cấp quyền dùng bot cho nhân viên trong nhóm "8104 - HHN - 3.5 Tỷ" (chỉ trong nhóm đó, không dùng được ở nhóm khu vực)
+const TEN_DUOC_PHEP_8104 = new Set(['HHN_An_206712', 'HHN_Linh_89860', 'HHN_Lộc_301214', 'HHN_T.Đài_177205', 'HHN_Thảo_91092', 'HHN_TRINH_251554', 'HHN_Đệ_317306', 'HHN_ĐOAN_238535'].map(chuanTen));
 async function duocDungBot(event) {
   const src = event.source || {};
   if (src.type !== 'group' && src.type !== 'room') return true; // chat 1:1 với bot: không chặn
   const uid = src.userId;
   if (!uid) return false;
-  const c = quyenCache.get(uid);
+  const kc = `${uid}|${src.groupId || src.roomId || ''}`;
+  const c = quyenCache.get(kc);
   if (c && Date.now() - c.luc < 6 * 3600 * 1000) return c.ok;
   let ten = '';
   try {
     const p = src.groupId ? await client.getGroupMemberProfile(src.groupId, uid) : await client.getRoomMemberProfile(src.roomId, uid);
     ten = (p && p.displayName) || '';
   } catch (_) { /* không lấy được tên -> không cho */ }
-  const ok = TEN_DUOC_PHEP.has(chuanTen(ten));
-  quyenCache.set(uid, { ok, luc: Date.now() });
+  let ok = TEN_DUOC_PHEP.has(chuanTen(ten));
+  if (!ok && src.groupId && TEN_DUOC_PHEP_8104.has(chuanTen(ten)) && /^\s*8104\b/.test(await tenNhom(src.groupId))) ok = true; // 20/11: nhân viên 8104 chỉ dùng được bot trong nhóm 8104
+  quyenCache.set(kc, { ok, luc: Date.now() });
   if (!ok) console.log(`[quyen] bỏ qua "${ten}" (${uid.slice(0, 8)}…)`);
   return ok;
 }
