@@ -4697,7 +4697,8 @@ async function generateRauKMReport(text, sp) {
   return taoAnhRauKM(sp, maST);
 }
 // SP rau KM đang chạy hôm nay (để gửi kèm sau ảnh C2 mỗi giờ)
-const rauKmHomNay = () => { const h = homNayVN(); return RAU_KM.filter((x) => h >= x.tu && h <= x.den); };
+const RAU_KM_TAT = new Set(['dualeo']); // 20/11 11h19: anh OFF báo cáo dưa leo (không gửi kèm sau C2 nữa)
+const rauKmHomNay = () => { const h = homNayVN(); return RAU_KM.filter((x) => !RAU_KM_TAT.has(x.k) && h >= x.tu && h <= x.den); };
 
 
 // ---------------------------------------------------------------------------
