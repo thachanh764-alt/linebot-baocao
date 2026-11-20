@@ -5525,6 +5525,10 @@ function taoMenu8104() {
           hangNut(hang1),
           hangNut(hang2),
           ...(coCherry ? [hangNut([nutMenu(`Táo Cherry ${st}`, `TÁO CHERRY ${st}`, cam)])] : []),
+          // 20/11: anh mở lại DT hôm nay + Giá vốn + Nấm 8104 (robot nạp SAU khi gửi nhóm KV, khoảng phút 25–30)
+          tieuDeMuc('📊', `SỐ RIÊNG ${st}`, 'nạp sau báo cáo KV'),
+          hangNut([nutMenu(`DT hôm nay ${st}`, `DT HÔM NAY ${st}`, cam), nutMenu(`Giá vốn + LN Fresh ${st}`, `GIÁ VỐN ${st}`, cam)]),
+          hangNut([nutMenu(`Nấm ${st}`, `NẤM ${st}`, cam)]),
         ],
       },
       footer: {
