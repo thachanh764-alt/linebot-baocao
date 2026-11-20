@@ -5771,17 +5771,24 @@ async function duocDungBot(event) {
   const kc = `${uid}|${src.groupId || src.roomId || ''}`;
   const c = quyenCache.get(kc);
   if (c && Date.now() - c.luc < 6 * 3600 * 1000) return c.ok;
-  let ten = '';
+  let ten = '', loiTen = '';
   try {
     const p = src.groupId ? await client.getGroupMemberProfile(src.groupId, uid) : await client.getRoomMemberProfile(src.roomId, uid);
     ten = (p && p.displayName) || '';
-  } catch (_) { /* không lấy được tên -> không cho */ }
+  } catch (err) { loiTen = chiTietLoiLine(err); console.error(`[quyen] không lấy được tên (${uid.slice(0, 8)}…):`, loiTen); }
+  const la8104 = !!src.groupId && /^\s*8104\b/.test(await tenNhom(src.groupId));
   let ok = TEN_DUOC_PHEP.has(chuanTen(ten));
-  if (!ok && src.groupId && TEN_DUOC_PHEP_8104.has(chuanTen(ten)) && /^\s*8104\b/.test(await tenNhom(src.groupId))) ok = true; // 20/11: nhân viên 8104 chỉ dùng được bot trong nhóm 8104
-  quyenCache.set(kc, { ok, luc: Date.now() });
+  if (!ok && la8104 && TEN_DUOC_PHEP_8104.has(chuanTen(ten))) ok = true; // 20/11: nhân viên 8104 chỉ dùng được bot trong nhóm 8104
+  if (!ok && la8104 && loiTen) ok = true; // 20/11 20h: nhóm 8104 chỉ có anh + nhân viên -> LINE không trả tên thì vẫn cho dùng (không im lặng)
+  if (!loiTen) quyenCache.set(kc, { ok, luc: Date.now() }); // lỗi lấy tên -> không nhớ kết quả, lần sau hỏi lại
   if (!ok) console.log(`[quyen] bỏ qua "${ten}" (${uid.slice(0, 8)}…)`);
   return ok;
 }
+
+// 20/11: nhật ký 300 dòng gần nhất (máy Dell đọc qua GET /robot/nhat-ky để tìm lỗi khi bot không trả lời)
+const NHAT_KY = [];
+for (const k of ['log', 'error']) { const goc = console[k].bind(console); console[k] = (...a) => { try { NHAT_KY.push(`${new Date().toISOString().slice(11, 19)} ${k === 'error' ? 'LỖI ' : ''}${a.map((x) => (typeof x === 'string' ? x : (x && x.message) || JSON.stringify(x))).join(' ').slice(0, 400)}`); if (NHAT_KY.length > 300) NHAT_KY.shift(); } catch (_) {} goc(...a); }; }
+app.get('/robot/nhat-ky', (req, res) => { if (!kiemTraKhoaRobot(req, res)) return; res.type('text/plain; charset=utf-8').send(NHAT_KY.join('\n')); });
 
 app.post('/webhook', line.middleware(config), async (req, res) => {
   res.status(200).end();
