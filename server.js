@@ -3852,7 +3852,7 @@ const TAB_TD_BAN_NGAY = 'TD_BAN_NGAY';
 const TAB_TD_BAN_LK = 'TD_BAN_LK';
 const TD_ST_LOAI = new Set(['14978', '14652', ...ST_CHUA_KHAI_TRUONG]); // Phạm Hùng, 244 Trương Công Định: đã off
 // 01/11: CHỈ LẤY DATA CELANO (robot không lấy mã Joyday/Milo/C2 nữa). Lấy lại: thêm 'joyday', 'milo', 'c2' vào đây.
-const TD_LAY = new Set(['ps', 'celth', 'c2', 'g888']); // 13/11: thêm 'celth' = thi đua tuần 3 Celano sữa tươi có thạch (16–22/11) // 05/11: OFF Celano (bỏ 'celym'), thêm 'ps' = thi đua tuần 2 KĐR P/S; // 03/11: thêm 'g888' (Nước giặt 888, hiện chung BC C2) // 02/11: thêm 'c2' (báo cáo riêng BC C2, 7 mã theo hình KV) // 01/11 15h: chỉ CELANO 4 SKU (bỏ Celano có thạch). Lấy lại: thêm 'celth'
+const TD_LAY = new Set(['ps', 'c2', 'g888']); // 21/11: OFF Celano thạch (bỏ 'celth'), P/S vẫn chạy // 13/11: thêm 'celth' = thi đua tuần 3 Celano sữa tươi có thạch (16–22/11) // 05/11: OFF Celano (bỏ 'celym'), thêm 'ps' = thi đua tuần 2 KĐR P/S; // 03/11: thêm 'g888' (Nước giặt 888, hiện chung BC C2) // 02/11: thêm 'c2' (báo cáo riêng BC C2, 7 mã theo hình KV) // 01/11 15h: chỉ CELANO 4 SKU (bỏ Celano có thạch). Lấy lại: thêm 'celth'
 const TD_NHOM = [
   {
     k: 'joyday', ten: 'KEM JOYDAY', phu: 'mốc ×2 so T10', mau: '#7B4BB7', dv: 'SP',
@@ -3867,7 +3867,7 @@ const TD_NHOM = [
   { k: 'g888', ten: 'NƯỚC GIẶT 888', phu: '', mau: '#1565C0', dv: 'túi', ma: ['2505002080'] }, // 03/11: hiện chung BC C2
 ].filter((g) => TD_LAY.has(g.k));
 // 01/11: bảng CHỈ hiện Celano (tuần 1 RSM chọn CELANO). Hiện lại nhóm khác: thêm 'joyday', 'milo', 'c2' vào đây.
-const TD_HIEN = new Set(['ps', 'celth']); // 13/11: thêm 'celth' (tuần 3) // 05/11: OFF Celano, báo cáo THI ĐUA = KĐR P/S; // 02/11: bảng THI ĐUA chỉ Celano; C2 xem lệnh BC C2
+const TD_HIEN = new Set(['ps']); // 21/11: OFF Celano thạch // 13/11: thêm 'celth' (tuần 3) // 05/11: OFF Celano, báo cáo THI ĐUA = KĐR P/S; // 02/11: bảng THI ĐUA chỉ Celano; C2 xem lệnh BC C2
 // MỤC TIÊU CHU KỲ (chỉ hiện khi xem 1 siêu thị, vd "BC CELANO 8104"): MT = bán TB/ngày T10 × 1,5 × số ngày chu kỳ
 const TD_CK = { tu: '2026-11-02', den: '2026-11-08', soNgay: 7, heSo: 1.5, ngayT10: 31, nhom: 'celym' };
 // DOANH THU T10 (đồng) Celano 4 SKU theo siêu thị — file Doanh Thu Theo Model tháng 10 gửi 01/11 15:11. Mục tiêu tính theo DOANH THU.
@@ -5040,10 +5040,10 @@ async function generateCelThReport(text) {
   return { type: 'image', originalContentUrl: `${PUBLIC_URL}/anh/${id}.png?${q}`, previewImageUrl: `${PUBLIC_URL}/anh/${id}.png?${q}&nho=1` };
 }
 // Bộ chọn: gõ "celano"/"thạch"/"tuần 3" -> Celano thạch; gõ "p/s"/"kđr" -> P/S; còn lại theo ngày (từ 16/11 tự chuyển Celano thạch)
-function tdTuanDangChay() { return homNayVN() >= CT_CK.tu ? 'celth' : 'ps'; }
+function tdTuanDangChay() { return 'ps'; } // 21/11: OFF Celano thạch, KĐR P/S vẫn chạy
 async function generateThiDuaReport(text) {
   const x = String(text || '').toLowerCase();
-  if (/celano|th[ạa]ch|tu[ầa]n\s*3/.test(x)) return generateCelThReport(text);
+  // 21/11 OFF Celano thạch: // if celano -> generateCelThReport
   if (/p\s*\/?\s*s\b|kđr|kdr|kem đánh răng|kem danh rang/.test(x)) return generatePSReport(text);
   return tdTuanDangChay() === 'celth' ? generateCelThReport(text) : generatePSReport(text);
 }
