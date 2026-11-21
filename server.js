@@ -5479,8 +5479,8 @@ async function taoMenuFlex(groupId = '') {
           // 18/11: anh chỉ giữ 2 nút KV (Thi đua Celano thạch KV + C2 + 888 KV), tắt hết các nút khác kể cả nút 8104
           tieuDeMuc('🏆', 'THI ĐUA KV', 'tự cập nhật'),
           // 18/11: thi đua Celano thạch hết 22/11 -> từ 23/11 bỏ nút Celano, chỉ còn C2 + 888 (anh dặn)
-          hangNut(homNayVN() <= '2026-11-22'
-            ? [nutMenu('Thi đua Celano thạch KV', 'THI ĐUA T11', xanh), nutMenu('C2 + 888 KV', 'BC C2', xanh)]
+          hangNut(true /* 21/11: P/S còn chạy, OFF Celano */
+            ? [nutMenu('Thi đua P/S KV', 'THI ĐUA T11', xanh), nutMenu('C2 + 888 KV', 'BC C2', xanh)]
             : [nutMenu('C2 + 888 KV', 'BC C2', xanh)]),
           hangNut([nutMenu('Táo Cherry KV', 'TÁO CHERRY', cam)]), // 18/11: thi đua Táo Cherry 21–28/11
         ],
@@ -5503,7 +5503,7 @@ function taoMenu8104() {
   const cam = { nen: '#FFF5EA', vien: '#F2C08A', chu: '#C2570C' };
   const xanh = { nen: '#F1F8F3', vien: '#BFDCC8', chu: '#0B8A3E' };
   const st = MENU_MA_ST, h = homNayVN();
-  const hang1 = h <= '2026-11-22' ? [nutMenu(`Celano thạch ${st}`, `THI ĐUA T11 ${st}`, xanh), nutMenu(`C2 + 888 ${st}`, `BC C2 ${st}`, xanh)] : [nutMenu(`C2 + 888 ${st}`, `BC C2 ${st}`, xanh)];
+  const hang1 = true /* 21/11 */ ? [nutMenu(`Thi đua P/S ${st}`, `THI ĐUA T11 ${st}`, xanh), nutMenu(`C2 + 888 ${st}`, `BC C2 ${st}`, xanh)] : [nutMenu(`C2 + 888 ${st}`, `BC C2 ${st}`, xanh)];
   const hang2 = [nutMenu(`Tồn bán sữa ${st}`, `BC SỮA ${st}`, xanh), nutMenu(`Bia Corona ${st}`, `CORONA ${st}`, xanh)];
   const coCherry = h >= '2026-11-21' && h <= '2026-11-28';
   return {
